@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -27,16 +28,18 @@ type PostgresReconciler struct {
 	Scheme *runtime.Scheme
 	pg     postgres.PG
 	// pgHost         string
-	instanceFilter string
+	instanceFilter    string
+	reconcileInterval time.Duration
 }
 
 // NewPostgresReconciler returns a new reconcile.Reconciler
 func NewPostgresReconciler(mgr manager.Manager, c *config.Cfg, pg postgres.PG) *PostgresReconciler {
 	return &PostgresReconciler{
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		pg:             pg,
-		instanceFilter: c.AnnotationFilter,
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		pg:                pg,
+		instanceFilter:    c.AnnotationFilter,
+		reconcileInterval: c.ReconcileInterval,
 	}
 }
 
@@ -290,8 +293,8 @@ func (r *PostgresReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	reqLogger.Info("Reconciling done")
-	return ctrl.Result{}, nil
+	reqLogger.Info("Reconciling done", "requeueAfter", r.reconcileInterval)
+	return ctrl.Result{RequeueAfter: r.reconcileInterval}, nil
 }
 
 func (r *PostgresReconciler) addFinalizer(reqLogger logr.Logger, m *dbv1alpha1.Postgres) error {

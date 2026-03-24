@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/movetokube/postgres-operator/pkg/utils"
 )
@@ -18,6 +19,7 @@ type Cfg struct {
 	CloudProvider     CloudProvider
 	AnnotationFilter  string
 	KeepSecretName    bool
+	ReconcileInterval time.Duration
 }
 
 var (
@@ -47,11 +49,12 @@ func Get() *Cfg {
 		if value, err := strconv.ParseBool(utils.GetEnv("KEEP_SECRET_NAME")); err == nil {
 			config.KeepSecretName = value
 		}
+		config.ReconcileInterval = parseReconcileInterval(utils.GetEnv("RECONCILE_INTERVAL"))
 	})
 	return config
 }
 
-// CloudProvider is an enum for supported cloud providers.
+const defaultReconcileInterval = 2 * time.Hour
 
 func ParseCloudProvider(s string) CloudProvider {
 	switch strings.ToLower(s) {
@@ -64,4 +67,15 @@ func ParseCloudProvider(s string) CloudProvider {
 	default:
 		return CloudProviderNone
 	}
+}
+
+func parseReconcileInterval(s string) time.Duration {
+	if s == "" {
+		return defaultReconcileInterval
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return defaultReconcileInterval
+	}
+	return d
 }

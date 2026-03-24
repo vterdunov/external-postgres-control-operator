@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"net"
+	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -27,26 +28,28 @@ import (
 // PostgresUserReconciler reconciles a PostgresUser object
 type PostgresUserReconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	pg             postgres.PG
-	pgHost         string
-	pgUriArgs      string
-	instanceFilter string
-	keepSecretName bool // use secret name as defined in PostgresUserSpec
-	cloudProvider  config.CloudProvider
+	Scheme            *runtime.Scheme
+	pg                postgres.PG
+	pgHost            string
+	pgUriArgs         string
+	instanceFilter    string
+	keepSecretName    bool // use secret name as defined in PostgresUserSpec
+	cloudProvider     config.CloudProvider
+	reconcileInterval time.Duration
 }
 
 // NewPostgresUserReconciler returns a new reconcile.Reconciler
 func NewPostgresUserReconciler(mgr manager.Manager, cfg *config.Cfg, pg postgres.PG) *PostgresUserReconciler {
 	return &PostgresUserReconciler{
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		pg:             pg,
-		pgHost:         cfg.PostgresHost,
-		pgUriArgs:      cfg.PostgresUriArgs,
-		instanceFilter: cfg.AnnotationFilter,
-		keepSecretName: cfg.KeepSecretName,
-		cloudProvider:  cfg.CloudProvider,
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		pg:                pg,
+		pgHost:            cfg.PostgresHost,
+		pgUriArgs:         cfg.PostgresUriArgs,
+		instanceFilter:    cfg.AnnotationFilter,
+		keepSecretName:    cfg.KeepSecretName,
+		cloudProvider:     cfg.CloudProvider,
+		reconcileInterval: cfg.ReconcileInterval,
 	}
 }
 
@@ -296,8 +299,8 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.requeue(ctx, instance, err)
 	}
 
-	reqLogger.Info("Reconciling done")
-	return ctrl.Result{}, nil
+	reqLogger.Info("Reconciling done", "requeueAfter", r.reconcileInterval)
+	return ctrl.Result{RequeueAfter: r.reconcileInterval}, nil
 }
 
 func (r *PostgresUserReconciler) getPostgresCR(ctx context.Context, instance *dbv1alpha1.PostgresUser) (*dbv1alpha1.Postgres, error) {
@@ -431,7 +434,7 @@ func (r *PostgresUserReconciler) finish(ctx context.Context, cr *dbv1alpha1.Post
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: r.reconcileInterval}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
