@@ -12,8 +12,7 @@ commands:
       set -e
       ROLE=$(kubectl get secret min-secret -n "$NAMESPACE" \
         -o jsonpath='{.data.ROLE}' | base64 -d)
-      result=$(kubectl exec postgresql-0 -n default -- \
-        psql -U postgres -t -c \
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres         psql -h 127.0.0.1 -U postgres -t -c \
         "SELECT 1 FROM pg_roles WHERE rolname='$ROLE'")
       if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
         echo "User role $ROLE not found in pg_roles"
@@ -25,8 +24,7 @@ commands:
       set -e
       ROLE=$(kubectl get secret min-secret -n "$NAMESPACE" \
         -o jsonpath='{.data.ROLE}' | base64 -d)
-      result=$(kubectl exec postgresql-0 -n default -- \
-        psql -U postgres -t -c \
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres         psql -h 127.0.0.1 -U postgres -t -c \
         "SELECT pg_has_role('$ROLE', 'min-test-db-group', 'member')")
       if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then
         echo "User $ROLE is not a member of min-test-db-group"
