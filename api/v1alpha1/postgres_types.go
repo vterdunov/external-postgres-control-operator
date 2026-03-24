@@ -9,8 +9,11 @@ import (
 
 // PostgresSpec defines the desired state of Postgres
 type PostgresSpec struct {
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z_][a-zA-Z0-9_-]*$`
 	Database string `json:"database"`
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	MasterRole string `json:"masterRole,omitempty"`
 	// +optional
 	DropOnDelete bool `json:"dropOnDelete,omitempty"`
