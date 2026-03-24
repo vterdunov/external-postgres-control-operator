@@ -1,9 +1,39 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
+timeout: 60
 collectors:
   - type: pod
     selector: app.kubernetes.io/name=ext-postgres-operator
     tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      for key in DATABASE_NAME HOST URI_ARGS PASSWORD ROLE LOGIN POSTGRES_URL POSTGRES_JDBC_URL POSTGRES_DOTNET_URL HOSTNAME PORT; do
+        val=$(kubectl get secret my-secret -n "$NAMESPACE" -o jsonpath="{.data.$key}" | base64 -d)
+        if [ -z "$val" ]; then
+          echo "EMPTY: $key"
+          exit 1
+        fi
+      done
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret my-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT 1 FROM pg_roles WHERE rolname='$ROLE'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Role $ROLE not found"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret my-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT pg_has_role('$ROLE','test-db-group','MEMBER')")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then
+        echo "Role $ROLE not member of test-db-group"
+        exit 1
+      fi
 ---
 apiVersion: db.movetokube.com/v1alpha1
 kind: PostgresUser
