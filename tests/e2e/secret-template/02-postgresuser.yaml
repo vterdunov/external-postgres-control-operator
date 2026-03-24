@@ -1,0 +1,13 @@
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: tmpl-db-user
+spec:
+  role: tmpluser
+  database: tmpl-db
+  secretName: tmpl-secret
+  privileges: OWNER
+  dropOnDelete: true
+  secretTemplate:
+    CUSTOM_URL: "host={{.Host}} user={{.Role}} password={{.Password}} dbname={{.Database}}"
+    CUSTOM_DSN: "postgresql://{{.Role}}:{{.Password}}@{{.Hostname}}:{{.Port}}/{{.Database}}"
