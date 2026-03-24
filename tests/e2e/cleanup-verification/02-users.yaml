@@ -1,0 +1,22 @@
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: clean-owner
+spec:
+  role: cowner
+  database: clean-db
+  secretName: clean-owner-secret
+  privileges: OWNER
+  dropOnDelete: true
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: clean-writer
+spec:
+  role: cwriter
+  database: clean-db
+  secretName: clean-writer-secret
+  privileges: WRITE
+  dropOnDelete: true

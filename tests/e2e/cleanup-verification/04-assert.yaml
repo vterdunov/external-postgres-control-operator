@@ -1,0 +1,45 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - command: bash -c "! kubectl get postgres clean-db -n $NAMESPACE"
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT COUNT(*) FROM pg_database WHERE datname='clean-test-db'")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "0" ]; then
+        echo "ERROR: Database clean-test-db still exists but should be dropped (dropOnDelete=true)"
+        exit 1
+      fi
+      echo "OK: Database clean-test-db dropped as expected"
+  - script: |
+      #!/bin/bash
+      set -e
+      count=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname='clean-test-group'")
+      if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
+        echo "ERROR: Role clean-test-group still exists but should be dropped"
+        exit 1
+      fi
+      echo "OK: Role clean-test-group dropped as expected"
+  - script: |
+      #!/bin/bash
+      set -e
+      count=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname='clean-test-db-reader'")
+      if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
+        echo "ERROR: Role clean-test-db-reader still exists but should be dropped"
+        exit 1
+      fi
+      echo "OK: Role clean-test-db-reader dropped as expected"
+  - script: |
+      #!/bin/bash
+      set -e
+      count=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname='clean-test-db-writer'")
+      if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
+        echo "ERROR: Role clean-test-db-writer still exists but should be dropped"
+        exit 1
+      fi
+      echo "OK: Role clean-test-db-writer dropped as expected"
