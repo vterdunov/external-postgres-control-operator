@@ -353,22 +353,24 @@ func (r *PostgresUserReconciler) newSecretForCR(reqLogger logr.Logger, cr *dbv1a
 		return nil, fmt.Errorf("render templated keys: %w", err)
 	}
 
-	data := map[string][]byte{
-		"POSTGRES_URL":        []byte(pgUserUrl),
-		"POSTGRES_JDBC_URL":   []byte(pgJDBCUrl),
-		"POSTGRES_DOTNET_URL": []byte(pgDotnetUrl),
-		"HOST":                []byte(r.pgHost),
-		"DATABASE_NAME":       []byte(cr.Status.DatabaseName),
-		"URI_ARGS":            []byte(r.pgUriArgs),
-		"ROLE":                []byte(role),
-		"PASSWORD":            []byte(password),
-		"LOGIN":               []byte(login),
-		"PORT":                []byte(port),
-		"HOSTNAME":            []byte(hostname),
-	}
-	// templates may override standard keys
+	var data map[string][]byte
 	if len(templateData) > 0 {
-		maps.Copy(data, templateData)
+		// When secretTemplate is specified, use only the rendered template data
+		data = templateData
+	} else {
+		data = map[string][]byte{
+			"POSTGRES_URL":        []byte(pgUserUrl),
+			"POSTGRES_JDBC_URL":   []byte(pgJDBCUrl),
+			"POSTGRES_DOTNET_URL": []byte(pgDotnetUrl),
+			"HOST":                []byte(r.pgHost),
+			"DATABASE_NAME":       []byte(cr.Status.DatabaseName),
+			"URI_ARGS":            []byte(r.pgUriArgs),
+			"ROLE":                []byte(role),
+			"PASSWORD":            []byte(password),
+			"LOGIN":               []byte(login),
+			"PORT":                []byte(port),
+			"HOSTNAME":            []byte(hostname),
+		}
 	}
 
 	return &corev1.Secret{

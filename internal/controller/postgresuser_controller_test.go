@@ -491,44 +491,27 @@ var _ = Describe("PostgresUser Controller", func() {
 				err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundSecret)
 				Expect(err).NotTo(HaveOccurred())
 
-				// Get the role from the actual secret (since it might differ from what we expect)
-				actualRole := string(foundSecret.Data["ROLE"])
-				GinkgoWriter.Printf("Actual role: %s\n", actualRole)
+				Expect(foundSecret.Data).To(HaveLen(5), "secret should contain only the 5 template keys, no defaults")
 
-				// Check if POSTGRES_URL contains the actual role from the secret
-				pgUrl := string(foundSecret.Data["POSTGRES_URL"])
-				Expect(pgUrl).To(ContainSubstring(actualRole))
-
-				// Check if URI_ARGS contains the uri args from the secret
-				uriArgs := string(foundSecret.Data["URI_ARGS"])
-				Expect(uriArgs).To(Equal("sslmode=disable"))
-
-				// Check if the template was applied using the data in the actual secret
-				// Directly check the custom keys we're expecting
 				Expect(foundSecret.Data).To(HaveKey("CUSTOM_KEY"))
 				customKey := string(foundSecret.Data["CUSTOM_KEY"])
-				Expect(customKey).To(ContainSubstring("User: " + actualRole))
 				Expect(customKey).To(ContainSubstring("DB: " + databaseName))
 
-				// Check PGPASSWORD is present (should be generated from template)
 				Expect(foundSecret.Data).To(HaveKey("PGPASSWORD"))
-				pgPassword := string(foundSecret.Data["PGPASSWORD"])
-				Expect(pgPassword).NotTo(BeEmpty())
+				Expect(string(foundSecret.Data["PGPASSWORD"])).NotTo(BeEmpty())
 
-				// Check that uri parameters are copied
 				Expect(foundSecret.Data).To(HaveKey("URIARGSFILTER"))
-				uriArgsFilter := string(foundSecret.Data["URIARGSFILTER"])
-				Expect(uriArgsFilter).To(Equal("postgres://foobar?sslmode=disable"))
+				Expect(string(foundSecret.Data["URIARGSFILTER"])).To(Equal("postgres://foobar?sslmode=disable"))
 
-				// Check that uri parameters are merged with none in the templates
 				Expect(foundSecret.Data).To(HaveKey("URIARGSFILTER_EMPTYSTRING"))
-				uriArgsFilterEmptyString := string(foundSecret.Data["URIARGSFILTER_EMPTYSTRING"])
-				Expect(uriArgsFilterEmptyString).To(Equal("postgres://foobar?sslmode=disable"))
+				Expect(string(foundSecret.Data["URIARGSFILTER_EMPTYSTRING"])).To(Equal("postgres://foobar?sslmode=disable"))
 
-				// Check that uri parameters are merged
 				Expect(foundSecret.Data).To(HaveKey("URIARGSFILTER_COMBINED"))
-				uriArgsFilterCombined := string(foundSecret.Data["URIARGSFILTER_COMBINED"])
-				Expect(uriArgsFilterCombined).To(Equal("postgres://foobar?logging=true&sslmode=disable"))
+				Expect(string(foundSecret.Data["URIARGSFILTER_COMBINED"])).To(Equal("postgres://foobar?logging=true&sslmode=disable"))
+
+				Expect(foundSecret.Data).NotTo(HaveKey("POSTGRES_URL"), "default keys must not be present when secretTemplate is set")
+				Expect(foundSecret.Data).NotTo(HaveKey("ROLE"), "default keys must not be present when secretTemplate is set")
+				Expect(foundSecret.Data).NotTo(HaveKey("HOST"), "default keys must not be present when secretTemplate is set")
 
 			})
 		})
@@ -777,6 +760,45 @@ var _ = Describe("PostgresUser Controller", func() {
 
 			// Check that the original secret name is kept without appending the CR name
 			Expect(secret.Name).To(Equal("mysecret3"))
+		})
+
+		It("should include only template keys when secretTemplate is set", func() {
+			rp.pgHost = "dbhost:5432"
+			rp.keepSecretName = false
+
+			cr := &dbv1alpha1.PostgresUser{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "tpluser",
+					Namespace: "tplns",
+				},
+				Spec: dbv1alpha1.PostgresUserSpec{
+					SecretName: "tplsecret",
+					Labels:     map[string]string{},
+					SecretTemplate: map[string]string{
+						"DB_HOST": "{{.Hostname}}",
+						"DB_PORT": "{{.Port}}",
+						"DB_PASS": "{{.Password}}",
+					},
+				},
+				Status: dbv1alpha1.PostgresUserStatus{
+					DatabaseName: "tpldb",
+				},
+			}
+
+			secret, err := rp.newSecretForCR(logr.Discard(), cr, "tplrole", "tplpass", "tplogin")
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(secret.Data).To(HaveLen(3))
+			Expect(string(secret.Data["DB_HOST"])).To(Equal("dbhost"))
+			Expect(string(secret.Data["DB_PORT"])).To(Equal("5432"))
+			Expect(string(secret.Data["DB_PASS"])).To(Equal("tplpass"))
+
+			Expect(secret.Data).NotTo(HaveKey("POSTGRES_URL"))
+			Expect(secret.Data).NotTo(HaveKey("HOST"))
+			Expect(secret.Data).NotTo(HaveKey("ROLE"))
+			Expect(secret.Data).NotTo(HaveKey("PASSWORD"))
+			Expect(secret.Data).NotTo(HaveKey("LOGIN"))
+			Expect(secret.Data).NotTo(HaveKey("DATABASE_NAME"))
 		})
 	})
 })
