@@ -1,7 +1,6 @@
 # External PostgreSQL Server Operator for Kubernetes
 
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/ext-postgres-operator)](https://artifacthub.io/packages/search?repo=ext-postgres-operator)
-[![Sponsor](https://img.shields.io/badge/Sponsor_on_GitHub-ff69b4?style=for-the-badge&logo=github)](https://github.com/sponsors/hitman99)
 
 Manage external PostgreSQL databases in Kubernetes with ease—supporting AWS RDS, Azure Database for PostgreSQL, GCP Cloud SQL, and more.
 
@@ -9,7 +8,6 @@ Manage external PostgreSQL databases in Kubernetes with ease—supporting AWS RD
 
 ## Table of Contents
 
-- [Sponsors](#sponsors)
 - [Features](#features)
 - [Supported Cloud Providers](#supported-cloud-providers)
 - [Configuration](#configuration)
@@ -22,13 +20,6 @@ Manage external PostgreSQL databases in Kubernetes with ease—supporting AWS RD
 - [License](#license)
 
 ---
-
-## Sponsors
-
-Please consider supporting this project!
-
-**Current Sponsors:**
-_None yet. [Become a sponsor!](https://github.com/sponsors/hitman99)_
 
 ## Features
 
@@ -81,17 +72,12 @@ Set environment variables in [`config/manager/operator.yaml`](config/manager/ope
 
 The Helm chart for this operator is located in the `charts/ext-postgres-operator` subdirectory. Follow these steps to install:
 
-1. Add the Helm repository:
+1. Install the operator:
    ```bash
-   helm repo add ext-postgres-operator https://movetokube.github.io/postgres-operator/
+   helm install -n operators ext-postgres-operator oci://ghcr.io/vterdunov/external-postgres-control-operator/charts/ext-postgres-operator
    ```
 
-2. Install the operator:
-   ```bash
-   helm install -n operators ext-postgres-operator ext-postgres-operator/ext-postgres-operator
-   ```
-
-3. Customize the installation by modifying the values in [values.yaml](charts/ext-postgres-operator/values.yaml).
+2. Customize the installation by modifying the values in [values.yaml](charts/ext-postgres-operator/values.yaml).
 
 ### Install Using Kustomize
 

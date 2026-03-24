@@ -4,11 +4,10 @@ This Helm chart deploys the External Postgres Operator, which provides a way to 
 
 ## Installation
 
-To install the chart, add the repository and use the `helm upgrade --install` command:
+To install the chart, use the `helm upgrade --install` command:
 
 ```bash
-helm repo add ext-postgres-operator https://movetokube.github.io/postgres-operator/
-helm upgrade --install -n operators ext-postgres-operator ext-postgres-operator/ext-postgres-operator
+helm upgrade --install -n operators ext-postgres-operator oci://ghcr.io/vterdunov/external-postgres-control-operator/charts/ext-postgres-operator
 ```
 
 ## Compatibility
