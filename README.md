@@ -1,7 +1,5 @@
 # External PostgreSQL Server Operator for Kubernetes
 
-[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/ext-postgres-operator)](https://artifacthub.io/packages/search?repo=ext-postgres-operator)
-
 Manage external PostgreSQL databases in Kubernetes with ease—supporting AWS RDS, Azure Database for PostgreSQL, GCP Cloud SQL, and more.
 
 ---
