@@ -53,5 +53,4 @@ status:
     owner: min-test-db-group
     reader: min-test-db-reader
     writer: min-test-db-writer
-  schemas: []
   succeeded: true
