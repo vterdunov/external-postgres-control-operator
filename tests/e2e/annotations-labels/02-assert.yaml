@@ -1,0 +1,50 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret ann-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.ROLE}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+        psql -U postgres -t -c \
+        "SELECT 1 FROM pg_roles WHERE rolname='$ROLE'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Role $ROLE not found in pg_roles"
+        exit 1
+      fi
+      echo "ROLE $ROLE verified in pg_roles"
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: ann-db-user
+spec:
+  annotations:
+    custom-annotation: annotation-value
+    another-annotation: another-value
+  labels:
+    custom-label: label-value
+    env: test
+status:
+  databaseName: ann-test-db
+  postgresGroup: ann-test-db-group
+  succeeded: true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ann-secret
+  labels:
+    custom-label: label-value
+    env: test
+    app: ann-db-user
+  annotations:
+    custom-annotation: annotation-value
+    another-annotation: another-value
