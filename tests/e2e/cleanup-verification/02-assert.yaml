@@ -9,7 +9,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'cowner%'")
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'cowner%'")
       if [ "$(echo "$result" | tr -d '[:space:]')" = "0" ]; then
         echo "ERROR: No cowner role found in PostgreSQL"
         exit 1
@@ -18,7 +18,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'cwriter%'")
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'cwriter%'")
       if [ "$(echo "$result" | tr -d '[:space:]')" = "0" ]; then
         echo "ERROR: No cwriter role found in PostgreSQL"
         exit 1

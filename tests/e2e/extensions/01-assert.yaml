@@ -9,7 +9,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT 1 FROM pg_database WHERE datname='ext-test-db'")
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT 1 FROM pg_database WHERE datname='ext-test-db'")
       if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
         echo "Database ext-test-db not found"
         exit 1
@@ -17,7 +17,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -d ext-test-db -t -c "SELECT 1 FROM pg_extension WHERE extname='pgcrypto'")
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d ext-test-db -t -c "SELECT 1 FROM pg_extension WHERE extname='pgcrypto'")
       if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
         echo "Extension pgcrypto not installed in ext-test-db"
         exit 1
@@ -25,7 +25,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -d ext-test-db -t -c "SELECT 1 FROM pg_extension WHERE extname='fuzzystrmatch'")
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d ext-test-db -t -c "SELECT 1 FROM pg_extension WHERE extname='fuzzystrmatch'")
       if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
         echo "Extension fuzzystrmatch not installed in ext-test-db"
         exit 1

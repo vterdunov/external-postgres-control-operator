@@ -10,7 +10,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT COUNT(*) FROM pg_database WHERE datname='multi-test-db'")
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT COUNT(*) FROM pg_database WHERE datname='multi-test-db'")
       if [ "$(echo "$result" | tr -d '[:space:]')" != "0" ]; then
         echo "Database multi-test-db still exists but should be dropped"
         exit 1
@@ -19,7 +19,7 @@ commands:
       #!/bin/bash
       set -e
       for role in multi-test-group multi-test-db-reader multi-test-db-writer; do
-        count=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname='$role'")
+        count=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname='$role'")
         if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
           echo "Role $role still exists but should be dropped"
           exit 1

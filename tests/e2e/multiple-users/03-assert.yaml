@@ -13,7 +13,7 @@ commands:
       #!/bin/bash
       set -e
       for prefix in mowner mwriter mreader; do
-        count=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname LIKE '${prefix}%'")
+        count=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname LIKE '${prefix}%'")
         if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
           echo "Role with prefix ${prefix} still exists but should be dropped"
           exit 1

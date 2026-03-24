@@ -9,7 +9,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -d upd-test-db -t -c "SELECT count(*) FROM information_schema.schemata WHERE schema_name='schema2'")
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d upd-test-db -t -c "SELECT count(*) FROM information_schema.schemata WHERE schema_name='schema2'")
       if [ "$(echo "$result" | tr -d '[:space:]')" != "1" ]; then
         echo "Schema schema2 not found in upd-test-db"
         exit 1

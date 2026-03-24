@@ -10,7 +10,7 @@ commands:
       #!/bin/bash
       set -e
       ROLE=$(kubectl get secret multi-owner-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
-      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT pg_has_role('$ROLE','multi-test-group','MEMBER')")
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT pg_has_role('$ROLE','multi-test-group','MEMBER')")
       if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then
         echo "Role $ROLE is not member of multi-test-group"
         exit 1
@@ -19,7 +19,7 @@ commands:
       #!/bin/bash
       set -e
       ROLE=$(kubectl get secret multi-writer-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
-      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT pg_has_role('$ROLE','multi-test-db-writer','MEMBER')")
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT pg_has_role('$ROLE','multi-test-db-writer','MEMBER')")
       if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then
         echo "Role $ROLE is not member of multi-test-db-writer"
         exit 1
@@ -28,7 +28,7 @@ commands:
       #!/bin/bash
       set -e
       ROLE=$(kubectl get secret multi-reader-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
-      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT pg_has_role('$ROLE','multi-test-db-reader','MEMBER')")
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT pg_has_role('$ROLE','multi-test-db-reader','MEMBER')")
       if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then
         echo "Role $ROLE is not member of multi-test-db-reader"
         exit 1

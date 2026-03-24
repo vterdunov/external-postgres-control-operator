@@ -9,7 +9,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT 1 FROM pg_database WHERE datname='write-test-db'")
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT 1 FROM pg_database WHERE datname='write-test-db'")
       if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
         echo "Database write-test-db not found"
         exit 1
@@ -18,7 +18,7 @@ commands:
       #!/bin/bash
       set -e
       for role in write-test-group write-test-db-reader write-test-db-writer; do
-        result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT 1 FROM pg_roles WHERE rolname='$role'")
+        result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT 1 FROM pg_roles WHERE rolname='$role'")
         if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
           echo "Role $role not found"
           exit 1
@@ -27,7 +27,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -d write-test-db -t -c "SELECT 1 FROM information_schema.schemata WHERE schema_name='testschema'")
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d write-test-db -t -c "SELECT 1 FROM information_schema.schemata WHERE schema_name='testschema'")
       if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
         echo "Schema testschema not found in write-test-db"
         exit 1

@@ -10,7 +10,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'nodropuser%'")
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'nodropuser%'")
       COUNT=$(echo "$result" | tr -d '[:space:]')
       if [ "$COUNT" -eq 0 ]; then
         echo "ERROR: User role should still exist (dropOnDelete=false) but was dropped"
