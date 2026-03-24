@@ -1,0 +1,40 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - command: bash -c "! kubectl get postgresuser idem-db-user -n $NAMESPACE"
+  - command: bash -c "! kubectl get postgres idem-db -n $NAMESPACE"
+  - script: |
+      #!/bin/bash
+      set -e
+      # Verify database dropped (dropOnDelete: true)
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+        "SELECT COUNT(*) FROM pg_database WHERE datname='idem-test-db'")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "0" ]; then
+        echo "Database idem-test-db still exists after deletion"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      # Verify owner group role dropped (dropOnDelete: true)
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+        "SELECT COUNT(*) FROM pg_roles WHERE rolname='idem-test-group'")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "0" ]; then
+        echo "Role idem-test-group still exists after deletion"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      # Verify user role dropped (dropOnDelete: true on PostgresUser)
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+        "SELECT COUNT(*) FROM pg_roles WHERE rolname LIKE 'idemuser%'")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "0" ]; then
+        echo "User role idemuser* still exists after deletion"
+        exit 1
+      fi

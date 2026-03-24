@@ -1,0 +1,11 @@
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: idem-db-user
+spec:
+  role: idemuser
+  database: idem-db
+  secretName: idem-secret
+  privileges: OWNER
+  dropOnDelete: true

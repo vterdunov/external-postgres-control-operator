@@ -1,0 +1,26 @@
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: idem-db
+  annotations:
+    trigger: reapply
+spec:
+  database: idem-test-db
+  dropOnDelete: true
+  masterRole: idem-test-group
+  schemas:
+    - idemschema
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: idem-db-user
+  annotations:
+    trigger: reapply
+spec:
+  role: idemuser
+  database: idem-db
+  secretName: idem-secret
+  privileges: OWNER
+  dropOnDelete: true

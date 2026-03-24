@@ -1,0 +1,62 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      # Idempotency: database must still exist after re-apply
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+        "SELECT 1 FROM pg_database WHERE datname='idem-test-db'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Database idem-test-db not found after re-apply"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      # Idempotency: owner group role must still exist after re-apply
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+        "SELECT 1 FROM pg_roles WHERE rolname='idem-test-group'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Role idem-test-group not found after re-apply"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      # Idempotency: user role must still be member of group after re-apply
+      ROLE=$(kubectl get secret idem-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.ROLE}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+        "SELECT pg_has_role('$ROLE','idem-test-group','MEMBER')")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then
+        echo "Role $ROLE lost membership of idem-test-group after re-apply"
+        exit 1
+      fi
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: idem-db
+status:
+  roles:
+    owner: idem-test-group
+  succeeded: true
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: idem-db-user
+status:
+  postgresGroup: idem-test-group
+  succeeded: true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: idem-secret
