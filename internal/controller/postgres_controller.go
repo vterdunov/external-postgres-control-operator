@@ -140,6 +140,15 @@ func (r *PostgresReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{Requeue: true}, err
 	}
 
+	before = instance.DeepCopy()
+	if controllerutil.AddFinalizer(instance, "finalizer.db.movetokube.com") {
+		err = r.Patch(ctx, instance, client.MergeFrom(before))
+		if err != nil {
+			return requeue(err)
+		}
+		before = instance.DeepCopy()
+	}
+
 	// creation logic
 	if !instance.Status.Succeeded {
 		owner := instance.Spec.MasterRole
@@ -290,13 +299,6 @@ func (r *PostgresReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	err = r.Status().Patch(ctx, instance, client.MergeFrom(before))
 	if err != nil {
 		return requeue(err)
-	}
-	before = instance.DeepCopy()
-	if controllerutil.AddFinalizer(instance, "finalizer.db.movetokube.com") {
-		err = r.Patch(ctx, instance, client.MergeFrom(before))
-		if err != nil {
-			return requeue(err)
-		}
 	}
 
 	reqLogger.Info("Reconciling done", "requeueAfter", r.reconcileInterval)

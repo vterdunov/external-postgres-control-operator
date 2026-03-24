@@ -184,7 +184,7 @@ var _ = Describe("PostgresReconciler", func() {
 		// No error should be returned
 		Expect(err).NotTo(HaveOccurred())
 		// Request should not be requeued
-		Expect(res.Requeue).To(BeFalse())
+		Expect(res.RequeueAfter).To(BeZero())
 	})
 
 	Describe("Checking deletion logic", func() {
@@ -395,6 +395,10 @@ var _ = Describe("PostgresReconciler", func() {
 			})
 
 			It("should return an error when finalizer patch fails", func() {
+				pg.EXPECT().GetUser().Return("pguser").AnyTimes()
+				pg.EXPECT().DropRole(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				pg.EXPECT().DropDatabase(gomock.Any()).Return(nil).AnyTimes()
+
 				err := runReconcile(rp, ctx, req)
 				Expect(err).To(HaveOccurred())
 			})
@@ -559,6 +563,15 @@ var _ = Describe("PostgresReconciler", func() {
 				Expect(cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundPostgres)).To(BeNil())
 				Expect(foundPostgres.Status.Roles).To(Equal(expectedRoles))
 				Expect(foundPostgres.Status.Succeeded).To(BeFalse())
+			})
+
+			It("should set finalizer before side-effects when create database fails", func() {
+				_, err := rp.Reconcile(ctx, req)
+				Expect(err).To(HaveOccurred())
+
+				foundPostgres := &v1alpha1.Postgres{}
+				Expect(cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundPostgres)).To(BeNil())
+				Expect(foundPostgres.GetFinalizers()).To(ContainElement("finalizer.db.movetokube.com"))
 			})
 		})
 	})
