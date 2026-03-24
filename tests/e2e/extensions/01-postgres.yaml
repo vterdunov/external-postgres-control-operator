@@ -1,0 +1,10 @@
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: ext-db
+spec:
+  database: ext-test-db
+  dropOnDelete: true
+  extensions:
+    - pgcrypto
+    - fuzzystrmatch
