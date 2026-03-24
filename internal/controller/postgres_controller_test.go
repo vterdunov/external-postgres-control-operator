@@ -395,12 +395,6 @@ var _ = Describe("PostgresReconciler", func() {
 			})
 
 			It("should return an error when finalizer patch fails", func() {
-				pg.EXPECT().GetUser().Return("pguser").AnyTimes()
-				pg.EXPECT().DropRole(name+"-owner", "pguser", name).Return(nil)
-				pg.EXPECT().DropRole(name+"-reader", "pguser", name).Return(nil)
-				pg.EXPECT().DropRole(name+"-writer", "pguser", name).Return(nil)
-				pg.EXPECT().DropDatabase(name).Return(nil)
-
 				err := runReconcile(rp, ctx, req)
 				Expect(err).To(HaveOccurred())
 			})
