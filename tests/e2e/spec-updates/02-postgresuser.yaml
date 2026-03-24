@@ -1,0 +1,11 @@
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: upd-db-user
+spec:
+  role: upduser
+  database: upd-db
+  secretName: upd-secret
+  privileges: WRITE
+  dropOnDelete: true

@@ -1,0 +1,26 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -d upd-test-db -t -c "SELECT count(*) FROM information_schema.schemata WHERE schema_name='schema2'")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "1" ]; then
+        echo "Schema schema2 not found in upd-test-db"
+        exit 1
+      fi
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: upd-db
+status:
+  succeeded: true
+  schemas:
+    - schema1
+    - schema2
