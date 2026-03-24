@@ -21,6 +21,8 @@ type PostgresUserSpec struct {
 	// List of privileges to grant to this user
 	Privileges string `json:"privileges"`
 	// +optional
+	DropOnDelete bool `json:"dropOnDelete,omitempty"`
+	// +optional
 	AWS *PostgresUserAWSSpec `json:"aws,omitempty"`
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`

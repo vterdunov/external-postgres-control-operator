@@ -85,7 +85,7 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Deletion logic
 	if instance.GetDeletionTimestamp() != nil {
-		if instance.Status.Succeeded && instance.Status.PostgresRole != "" {
+		if instance.Spec.DropOnDelete && instance.Status.Succeeded && instance.Status.PostgresRole != "" {
 			// Initialize database name for connection with default database
 			// in case postgres cr isn't here anymore
 			db := r.pg.GetDefaultDatabase()

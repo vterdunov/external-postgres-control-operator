@@ -180,8 +180,30 @@ var _ = Describe("PostgresUser Controller", func() {
 			}
 		})
 
-		Context("User deletion", func() {
+		Context("User deletion with dropOnDelete unset (default)", func() {
 			BeforeEach(func() {
+				initClient(postgresDB, postgresUser, true)
+			})
+
+			It("should remove finalizer without dropping the role", func() {
+				// Call Reconcile
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Check if PostgresUser was properly deleted
+				foundUser := &dbv1alpha1.PostgresUser{}
+				err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundUser)
+				if err != nil {
+					Expect(errors.IsNotFound(err)).To(BeTrue())
+				} else {
+					Expect(foundUser.GetFinalizers()).To(BeEmpty())
+				}
+			})
+		})
+
+		Context("User deletion with dropOnDelete enabled", func() {
+			BeforeEach(func() {
+				postgresUser.Spec.DropOnDelete = true
 				initClient(postgresDB, postgresUser, true)
 			})
 
