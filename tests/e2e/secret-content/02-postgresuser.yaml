@@ -1,0 +1,11 @@
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: sec-db-user
+spec:
+  role: secuser
+  database: sec-db
+  secretName: sec-secret
+  privileges: OWNER
+  dropOnDelete: true
