@@ -1,0 +1,10 @@
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: read-db
+spec:
+  database: read-test-db
+  dropOnDelete: true
+  masterRole: read-test-group
+  schemas:
+    - testschema

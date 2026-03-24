@@ -1,0 +1,10 @@
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: read-db-user
+spec:
+  role: readuser
+  database: read-db
+  secretName: read-secret
+  privileges: READ
+  dropOnDelete: true
