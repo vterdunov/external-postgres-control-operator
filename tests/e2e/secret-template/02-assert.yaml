@@ -54,6 +54,37 @@ commands:
         exit 1
       fi
       echo "Template rendering verified successfully"
+  - script: |
+      #!/bin/bash
+      set -e
+      # Verify OTHER default keys also do NOT exist
+      for key in POSTGRES_URL HOSTNAME PORT HOST PASSWORD LOGIN; do
+        val=$(kubectl get secret tmpl-secret -n "$NAMESPACE" \
+          -o jsonpath="{.data.$key}")
+        if [ -n "$val" ]; then
+          echo "ERROR: Default key $key should NOT exist in template secret"
+          exit 1
+        fi
+        echo "OK: $key absent as expected"
+      done
+  - script: |
+      #!/bin/bash
+      set -e
+      url=$(kubectl get secret tmpl-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.CUSTOM_URL}' | base64 -d)
+      if ! echo "$url" | grep -q 'host='; then
+        echo "ERROR: CUSTOM_URL missing host= pattern: $url"
+        exit 1
+      fi
+      if ! echo "$url" | grep -q 'user='; then
+        echo "ERROR: CUSTOM_URL missing user= pattern: $url"
+        exit 1
+      fi
+      if ! echo "$url" | grep -q 'dbname=tmpl-test-db'; then
+        echo "ERROR: CUSTOM_URL missing dbname=tmpl-test-db: $url"
+        exit 1
+      fi
+      echo "CUSTOM_URL pattern verified: $url"
 ---
 apiVersion: db.movetokube.com/v1alpha1
 kind: PostgresUser

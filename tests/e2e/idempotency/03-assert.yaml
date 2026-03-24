@@ -38,6 +38,30 @@ commands:
         echo "Role $ROLE lost membership of idem-test-group after re-apply"
         exit 1
       fi
+  - script: |
+      #!/bin/bash
+      set -e
+      # Verify Secret still exists and ROLE is not empty (not regenerated to empty)
+      ROLE=$(kubectl get secret idem-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.ROLE}' | base64 -d)
+      if [ -z "$ROLE" ]; then
+        echo "ERROR: Secret idem-secret ROLE is empty after re-apply"
+        exit 1
+      fi
+      echo "OK: Secret idem-secret ROLE is non-empty after re-apply: $ROLE"
+  - script: |
+      #!/bin/bash
+      set -e
+      # Verify no error events on the CRs after re-apply
+      ERRORS=$(kubectl get events -n "$NAMESPACE" \
+        --field-selector reason=Error,involvedObject.name=idem-db 2>/dev/null | \
+        grep -v "^LAST\|^$" | wc -l)
+      if [ "$ERRORS" -gt 0 ]; then
+        echo "ERROR: Found error events for idem-db after re-apply"
+        kubectl get events -n "$NAMESPACE" --field-selector involvedObject.name=idem-db
+        exit 1
+      fi
+      echo "OK: No error events for idem-db after re-apply"
 ---
 apiVersion: db.movetokube.com/v1alpha1
 kind: Postgres

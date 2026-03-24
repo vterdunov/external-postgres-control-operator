@@ -27,3 +27,25 @@ commands:
         exit 1
       fi
       echo "OK: Owner role persists as expected"
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+        "SELECT count(*) FROM pg_roles WHERE rolname='nodrop-test-db-reader'")
+      COUNT=$(echo "$result" | tr -d '[:space:]')
+      if [ "$COUNT" -eq 0 ]; then
+        echo "ERROR: Reader role nodrop-test-db-reader should still exist"
+        exit 1
+      fi
+      echo "OK: Reader role persists as expected"
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+        "SELECT count(*) FROM pg_roles WHERE rolname='nodrop-test-db-writer'")
+      COUNT=$(echo "$result" | tr -d '[:space:]')
+      if [ "$COUNT" -eq 0 ]; then
+        echo "ERROR: Writer role nodrop-test-db-writer should still exist"
+        exit 1
+      fi
+      echo "OK: Writer role persists as expected"

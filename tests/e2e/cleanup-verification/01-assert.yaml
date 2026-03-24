@@ -24,6 +24,44 @@ commands:
         exit 1
       fi
       echo "OK: Extension pgcrypto exists in clean-test-db"
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+        "SELECT 1 FROM pg_roles WHERE rolname='clean-test-group'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Owner role clean-test-group not found"
+        exit 1
+      fi
+      echo "OK: Owner role clean-test-group exists"
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+        "SELECT 1 FROM pg_roles WHERE rolname='clean-test-db-reader'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Reader role clean-test-db-reader not found"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+        "SELECT 1 FROM pg_roles WHERE rolname='clean-test-db-writer'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Writer role clean-test-db-writer not found"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -d clean-test-db -t -c \
+        "SELECT 1 FROM information_schema.schemata WHERE schema_name='cleanschema'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Schema cleanschema not found in clean-test-db"
+        exit 1
+      fi
+      echo "OK: Schema cleanschema exists"
 ---
 apiVersion: db.movetokube.com/v1alpha1
 kind: Postgres

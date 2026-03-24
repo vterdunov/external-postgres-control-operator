@@ -34,6 +34,18 @@ commands:
         echo "Role $ROLE not member of test-db-group"
         exit 1
       fi
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret my-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      PASSWORD=$(kubectl get secret my-secret -n "$NAMESPACE" -o jsonpath='{.data.PASSWORD}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+        env PGPASSWORD="$PASSWORD" psql -U "$ROLE" -d test-db -t -c "SELECT 1")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Connection as $ROLE failed"
+        exit 1
+      fi
+      echo "Connection test passed for role $ROLE"
 ---
 apiVersion: db.movetokube.com/v1alpha1
 kind: PostgresUser
