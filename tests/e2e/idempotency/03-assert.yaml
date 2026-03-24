@@ -10,7 +10,7 @@ commands:
       #!/bin/bash
       set -e
       # Idempotency: database must still exist after re-apply
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c \
         "SELECT 1 FROM pg_database WHERE datname='idem-test-db'")
       if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
         echo "Database idem-test-db not found after re-apply"
@@ -20,7 +20,7 @@ commands:
       #!/bin/bash
       set -e
       # Idempotency: owner group role must still exist after re-apply
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c \
         "SELECT 1 FROM pg_roles WHERE rolname='idem-test-group'")
       if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
         echo "Role idem-test-group not found after re-apply"
@@ -32,7 +32,7 @@ commands:
       # Idempotency: user role must still be member of group after re-apply
       ROLE=$(kubectl get secret idem-secret -n "$NAMESPACE" \
         -o jsonpath='{.data.ROLE}' | base64 -d)
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c \
+      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c \
         "SELECT pg_has_role('$ROLE','idem-test-group','MEMBER')")
       if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then
         echo "Role $ROLE lost membership of idem-test-group after re-apply"

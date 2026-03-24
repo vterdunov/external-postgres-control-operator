@@ -12,7 +12,7 @@ commands:
       set -e
       ROLE=$(kubectl get secret min-secret -n "$NAMESPACE" \
         -o jsonpath='{.data.ROLE}' | base64 -d)
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+      result=$(kubectl exec postgresql-0 -n default -- \
         psql -U postgres -t -c \
         "SELECT 1 FROM pg_roles WHERE rolname='$ROLE'")
       if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
@@ -25,7 +25,7 @@ commands:
       set -e
       ROLE=$(kubectl get secret min-secret -n "$NAMESPACE" \
         -o jsonpath='{.data.ROLE}' | base64 -d)
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+      result=$(kubectl exec postgresql-0 -n default -- \
         psql -U postgres -t -c \
         "SELECT pg_has_role('$ROLE', 'min-test-db-group', 'member')")
       if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then

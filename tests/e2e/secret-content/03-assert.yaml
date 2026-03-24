@@ -12,7 +12,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+      result=$(kubectl exec postgresql-0 -n default -- \
         psql -U postgres -t -c \
         "SELECT 1 FROM pg_database WHERE datname='sec-test-db'")
       if [ -n "$(echo "$result" | tr -d '[:space:]')" ]; then

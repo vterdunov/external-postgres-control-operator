@@ -11,7 +11,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      count=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname LIKE 'cowner%'")
+      count=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname LIKE 'cowner%'")
       if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
         echo "ERROR: cowner roles still exist but should be dropped (dropOnDelete=true)"
         exit 1
@@ -20,7 +20,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      count=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname LIKE 'cwriter%'")
+      count=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname LIKE 'cwriter%'")
       if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
         echo "ERROR: cwriter roles still exist but should be dropped (dropOnDelete=true)"
         exit 1

@@ -48,7 +48,7 @@ commands:
       set -e
       ROLE=$(kubectl get secret sec-secret -n "$NAMESPACE" \
         -o jsonpath='{.data.ROLE}' | base64 -d)
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+      result=$(kubectl exec postgresql-0 -n default -- \
         psql -U postgres -t -c \
         "SELECT 1 FROM pg_roles WHERE rolname='$ROLE'")
       if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
@@ -63,7 +63,7 @@ commands:
         -o jsonpath='{.data.ROLE}' | base64 -d)
       PASSWORD=$(kubectl get secret sec-secret -n "$NAMESPACE" \
         -o jsonpath='{.data.PASSWORD}' | base64 -d)
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+      result=$(kubectl exec postgresql-0 -n default -- \
         env PGPASSWORD="$PASSWORD" psql -U "$ROLE" -d sec-test-db -t -c "SELECT 1")
       if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
         echo "Connection as $ROLE to sec-test-db failed"

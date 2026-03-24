@@ -12,7 +12,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+      result=$(kubectl exec postgresql-0 -n default -- \
         psql -U postgres -t -c \
         "SELECT count(*) FROM pg_database WHERE datname='ann-test-db'")
       COUNT=$(echo "$result" | tr -d '[:space:]')
@@ -24,7 +24,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+      result=$(kubectl exec postgresql-0 -n default -- \
         psql -U postgres -t -c \
         "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'annuser%'")
       COUNT=$(echo "$result" | tr -d '[:space:]')

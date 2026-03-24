@@ -10,7 +10,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT 1 FROM pg_database WHERE datname='ext-test-db'")
+      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT 1 FROM pg_database WHERE datname='ext-test-db'")
       if [ -n "$(echo "$result" | tr -d '[:space:]')" ]; then
         echo "Database ext-test-db still exists but should be dropped"
         exit 1

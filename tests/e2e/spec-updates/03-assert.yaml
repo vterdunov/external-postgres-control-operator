@@ -10,7 +10,7 @@ commands:
       #!/bin/bash
       set -e
       ROLE=$(kubectl get secret upd-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT pg_has_role('$ROLE','upd-test-db-reader','MEMBER')")
+      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT pg_has_role('$ROLE','upd-test-db-reader','MEMBER')")
       if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then
         echo "Role $ROLE is not member of upd-test-db-reader"
         exit 1
@@ -19,7 +19,7 @@ commands:
       #!/bin/bash
       set -e
       ROLE=$(kubectl get secret upd-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT pg_has_role('$ROLE','upd-test-db-writer','MEMBER')")
+      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -t -c "SELECT pg_has_role('$ROLE','upd-test-db-writer','MEMBER')")
       if [ "$(echo "$result" | tr -d '[:space:]')" != "f" ]; then
         echo "Role $ROLE is still member of upd-test-db-writer"
         exit 1

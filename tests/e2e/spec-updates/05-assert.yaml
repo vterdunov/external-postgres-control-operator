@@ -9,7 +9,7 @@ commands:
   - script: |
       #!/bin/bash
       set -e
-      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -d upd-test-db -t -c "SELECT count(*) FROM pg_extension WHERE extname='pgcrypto'")
+      result=$(kubectl exec postgresql-0 -n default -- psql -U postgres -d upd-test-db -t -c "SELECT count(*) FROM pg_extension WHERE extname='pgcrypto'")
       if [ "$(echo "$result" | tr -d '[:space:]')" != "1" ]; then
         echo "Extension pgcrypto not found in upd-test-db"
         exit 1
