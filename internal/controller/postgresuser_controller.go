@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"net"
+	"reflect"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -120,6 +121,10 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		role, login string
 	)
 	password, err := utils.GetSecureRandomString(15)
+	if err != nil {
+		return r.requeue(ctx, instance, err)
+	}
+	err = r.addFinalizer(ctx, reqLogger, instance)
 	if err != nil {
 		return r.requeue(ctx, instance, err)
 	}
@@ -254,10 +259,6 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	err = r.addFinalizer(ctx, reqLogger, instance)
-	if err != nil {
-		return r.requeue(ctx, instance, err)
-	}
 	err = r.addOwnerRef(ctx, reqLogger, instance)
 	if err != nil {
 		return r.requeue(ctx, instance, err)
@@ -295,6 +296,21 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.finish(ctx, instance)
 	} else if err != nil {
 		return r.requeue(ctx, instance, err)
+	}
+
+	if existingPassword, hasPassword := found.Data["PASSWORD"]; hasPassword {
+		desiredSecret, err := r.newSecretForCR(reqLogger, instance, role, string(existingPassword), login)
+		if err != nil {
+			return r.requeue(ctx, instance, err)
+		}
+
+		if !reflect.DeepEqual(found.Data, desiredSecret.Data) {
+			found.Data = desiredSecret.Data
+			err = r.Update(ctx, found)
+			if err != nil {
+				return r.requeue(ctx, instance, err)
+			}
+		}
 	}
 
 	reqLogger.Info("Reconciling done", "requeueAfter", r.reconcileInterval)

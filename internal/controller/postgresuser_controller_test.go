@@ -132,7 +132,7 @@ var _ = Describe("PostgresUser Controller", func() {
 		// No error should be returned
 		Expect(err).NotTo(HaveOccurred())
 		// Request should not be requeued
-		Expect(res.Requeue).To(BeFalse())
+		Expect(res.RequeueAfter).To(BeZero())
 	})
 
 	Describe("Checking deletion logic", func() {
@@ -390,6 +390,17 @@ var _ = Describe("PostgresUser Controller", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(foundUser.Status.Succeeded).To(BeFalse())
 			})
+
+			It("should set finalizer before side-effects when CreateUserRole fails", func() {
+				pg.EXPECT().CreateUserRole(gomock.Any(), gomock.Any()).Return("", fmt.Errorf("could not create user role"))
+
+				err := runReconcile(rp, ctx, req)
+				Expect(err).To(HaveOccurred())
+
+				foundUser := &dbv1alpha1.PostgresUser{}
+				Expect(cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundUser)).NotTo(HaveOccurred())
+				Expect(foundUser.GetFinalizers()).To(ContainElement("finalizer.db.movetokube.com"))
+			})
 		})
 
 		Context("New PostgresUser creation with dropOnDelete enabled", func() {
@@ -422,6 +433,110 @@ var _ = Describe("PostgresUser Controller", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(foundSecret.GetOwnerReferences()).NotTo(BeEmpty())
 				Expect(foundSecret.GetOwnerReferences()[0].Name).To(Equal(name))
+			})
+		})
+
+		Context("Existing Secret has stale data", func() {
+			var (
+				existingPassword string
+				existingRole     string
+				existingLogin    string
+			)
+
+			BeforeEach(func() {
+				existingPassword = "existing-password"
+				existingRole = "app-abc123"
+				existingLogin = "app-abc123"
+
+				postgresUser.Status = dbv1alpha1.PostgresUserStatus{
+					Succeeded:     true,
+					PostgresGroup: databaseName + "-writer",
+					PostgresRole:  existingRole,
+					PostgresLogin: existingLogin,
+					DatabaseName:  databaseName,
+				}
+
+				initClient(postgresDB, postgresUser, false)
+
+				desiredSecret, err := rp.newSecretForCR(logr.Discard(), postgresUser, existingRole, existingPassword, existingLogin)
+				Expect(err).NotTo(HaveOccurred())
+				desiredSecret.Data["HOST"] = []byte("wrong-host")
+				desiredSecret.Data["DATABASE_NAME"] = []byte("wrong-db")
+				Expect(cl.Create(ctx, desiredSecret)).To(Succeed())
+			})
+
+			AfterEach(func() {
+				secretList := &corev1.SecretList{}
+				Expect(cl.List(ctx, secretList, client.InNamespace(namespace))).To(Succeed())
+				for _, secret := range secretList.Items {
+					Expect(cl.Delete(ctx, &secret)).To(Succeed())
+				}
+			})
+
+			It("should update stale Secret data and preserve PASSWORD", func() {
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				foundSecret := &corev1.Secret{}
+				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(string(foundSecret.Data["HOST"])).To(Equal("postgres.local"))
+				Expect(string(foundSecret.Data["DATABASE_NAME"])).To(Equal(databaseName))
+				Expect(string(foundSecret.Data["PASSWORD"])).To(Equal(existingPassword))
+			})
+		})
+
+		Context("Existing Secret is up to date", func() {
+			var (
+				existingPassword string
+				existingRole     string
+				existingLogin    string
+			)
+
+			BeforeEach(func() {
+				existingPassword = "existing-password"
+				existingRole = "app-abc123"
+				existingLogin = "app-abc123"
+
+				postgresUser.Status = dbv1alpha1.PostgresUserStatus{
+					Succeeded:     true,
+					PostgresGroup: databaseName + "-writer",
+					PostgresRole:  existingRole,
+					PostgresLogin: existingLogin,
+					DatabaseName:  databaseName,
+				}
+
+				initClient(postgresDB, postgresUser, false)
+
+				desiredSecret, err := rp.newSecretForCR(logr.Discard(), postgresUser, existingRole, existingPassword, existingLogin)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cl.Create(ctx, desiredSecret)).To(Succeed())
+			})
+
+			AfterEach(func() {
+				secretList := &corev1.SecretList{}
+				Expect(cl.List(ctx, secretList, client.InNamespace(namespace))).To(Succeed())
+				for _, secret := range secretList.Items {
+					Expect(cl.Delete(ctx, &secret)).To(Succeed())
+				}
+			})
+
+			It("should reconcile idempotently when Secret data already matches", func() {
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				foundSecret := &corev1.Secret{}
+				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
+				Expect(err).NotTo(HaveOccurred())
+				resourceVersionAfterFirstReconcile := foundSecret.ResourceVersion
+
+				err = runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(foundSecret.ResourceVersion).To(Equal(resourceVersionAfterFirstReconcile))
+				Expect(string(foundSecret.Data["PASSWORD"])).To(Equal(existingPassword))
 			})
 		})
 
