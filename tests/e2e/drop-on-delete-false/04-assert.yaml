@@ -1,0 +1,29 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - command: bash -c "! kubectl get postgres nodrop-db -n $NAMESPACE"
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT count(*) FROM pg_database WHERE datname='nodrop-test-db'")
+      COUNT=$(echo "$result" | tr -d '[:space:]')
+      if [ "$COUNT" -eq 0 ]; then
+        echo "ERROR: Database should still exist (dropOnDelete=false) but was dropped"
+        exit 1
+      fi
+      echo "OK: Database nodrop-test-db persists as expected"
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT count(*) FROM pg_roles WHERE rolname='nodrop-test-group'")
+      COUNT=$(echo "$result" | tr -d '[:space:]')
+      if [ "$COUNT" -eq 0 ]; then
+        echo "ERROR: Owner role nodrop-test-group should still exist"
+        exit 1
+      fi
+      echo "OK: Owner role persists as expected"

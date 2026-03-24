@@ -1,0 +1,10 @@
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: nodrop-db-user
+spec:
+  role: nodropuser
+  database: nodrop-db
+  secretName: nodrop-secret
+  privileges: OWNER
+  dropOnDelete: false

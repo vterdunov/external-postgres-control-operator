@@ -1,0 +1,8 @@
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: nodrop-db
+spec:
+  database: nodrop-test-db
+  dropOnDelete: false
+  masterRole: nodrop-test-group
