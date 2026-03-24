@@ -21,6 +21,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type listFailingClient struct {
+	client.Client
+	err error
+}
+
+func (c *listFailingClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	return c.err
+}
+
 var _ = Describe("PostgresReconciler", func() {
 	const (
 		name      = "test-db"
@@ -304,6 +313,32 @@ var _ = Describe("PostgresReconciler", func() {
 					err := runReconcile(rp, ctx, req)
 					Expect(err).NotTo(HaveOccurred())
 				})
+			})
+		})
+
+		Context("shouldDropDB returns false when List fails", func() {
+			BeforeEach(func() {
+				failingPostgres := postgresCR.DeepCopy()
+				failingPostgres.Spec.DropOnDelete = true
+				initClient(failingPostgres, true)
+
+				rp = &PostgresReconciler{
+					Client: &listFailingClient{
+						Client: managerClient,
+						err:    fmt.Errorf("list failed"),
+					},
+					Scheme: sc,
+					pg:     pg,
+				}
+			})
+
+			It("should return an error when listing Postgres fails during deletion", func() {
+				pg.EXPECT().GetUser().Times(0)
+				pg.EXPECT().DropRole(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+				pg.EXPECT().DropDatabase(gomock.Any()).Times(0)
+
+				err := runReconcile(rp, ctx, req)
+				Expect(err).To(HaveOccurred())
 			})
 		})
 	})
