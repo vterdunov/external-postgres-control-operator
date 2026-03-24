@@ -1,0 +1,60 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+        psql -U postgres -t -c \
+        "SELECT 1 FROM pg_database WHERE datname='min-test-db'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Database min-test-db not found"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+        psql -U postgres -t -c \
+        "SELECT 1 FROM pg_roles WHERE rolname='min-test-db-group'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Owner role min-test-db-group not found"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+        psql -U postgres -t -c \
+        "SELECT 1 FROM pg_roles WHERE rolname='min-test-db-reader'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Reader role min-test-db-reader not found"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+        psql -U postgres -t -c \
+        "SELECT 1 FROM pg_roles WHERE rolname='min-test-db-writer'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Writer role min-test-db-writer not found"
+        exit 1
+      fi
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: min-db
+status:
+  roles:
+    owner: min-test-db-group
+    reader: min-test-db-reader
+    writer: min-test-db-writer
+  succeeded: true

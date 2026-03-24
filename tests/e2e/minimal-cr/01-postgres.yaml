@@ -1,0 +1,8 @@
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: min-db
+spec:
+  database: min-test-db
+  dropOnDelete: true

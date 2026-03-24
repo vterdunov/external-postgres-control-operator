@@ -1,0 +1,35 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - command: bash -c "! kubectl get postgresuser min-db-user -n $NAMESPACE"
+  - command: bash -c "! kubectl get postgres min-db -n $NAMESPACE"
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+        psql -U postgres -t -c \
+        "SELECT count(*) FROM pg_database WHERE datname='min-test-db'")
+      COUNT=$(echo "$result" | tr -d '[:space:]')
+      if [ "$COUNT" -ne 0 ]; then
+        echo "Database min-test-db still exists but should be dropped"
+        exit 1
+      fi
+      echo "OK: Database min-test-db dropped"
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- \
+        psql -U postgres -t -c \
+        "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'minuser%'")
+      COUNT=$(echo "$result" | tr -d '[:space:]')
+      if [ "$COUNT" -ne 0 ]; then
+        echo "User role(s) still exist but should be dropped"
+        exit 1
+      fi
+      echo "OK: User role(s) dropped"
