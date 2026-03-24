@@ -1,0 +1,13 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: db.movetokube.com/v1alpha1
+    kind: PostgresUser
+    name: multi-owner
+  - apiVersion: db.movetokube.com/v1alpha1
+    kind: PostgresUser
+    name: multi-writer
+  - apiVersion: db.movetokube.com/v1alpha1
+    kind: PostgresUser
+    name: multi-reader

@@ -1,0 +1,41 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT 1 FROM pg_database WHERE datname='multi-test-db'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Database multi-test-db not found"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT 1 FROM pg_roles WHERE rolname='multi-test-group'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Role multi-test-group not found"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -d multi-test-db -t -c "SELECT 1 FROM information_schema.schemata WHERE schema_name='appschema'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Schema appschema not found in multi-test-db"
+        exit 1
+      fi
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: multi-db
+status:
+  roles:
+    owner: multi-test-group
+  succeeded: true

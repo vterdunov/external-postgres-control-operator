@@ -1,0 +1,33 @@
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: multi-owner
+spec:
+  role: mowner
+  database: multi-db
+  secretName: multi-owner-secret
+  privileges: OWNER
+  dropOnDelete: true
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: multi-writer
+spec:
+  role: mwriter
+  database: multi-db
+  secretName: multi-writer-secret
+  privileges: WRITE
+  dropOnDelete: true
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: multi-reader
+spec:
+  role: mreader
+  database: multi-db
+  secretName: multi-reader-secret
+  privileges: READ
+  dropOnDelete: true
