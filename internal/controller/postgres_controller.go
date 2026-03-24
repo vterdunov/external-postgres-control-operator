@@ -118,10 +118,12 @@ func (r *PostgresReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err != nil {
 			reqLogger.Error(err, "could not update db status")
 		}
+		before = instance.DeepCopy()
 		controllerutil.RemoveFinalizer(instance, "finalizer.db.movetokube.com")
 		err = r.Patch(ctx, instance, client.MergeFrom(before))
 		if err != nil {
 			reqLogger.Error(err, "could not remove finalizer")
+			return ctrl.Result{}, err
 		}
 
 		return ctrl.Result{}, nil
@@ -189,7 +191,7 @@ func (r *PostgresReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return requeue(errors.NewInternalError(err))
 		}
 		// Alter database owner if the owner role was changed
-		err = r.pg.AlterDatabaseOwner(instance.Spec.Database, instance.Status.Roles.Owner)
+		err = r.pg.AlterDatabaseOwner(instance.Spec.Database, desiredOwner)
 		if err != nil {
 			return requeue(errors.NewInternalError(err))
 		}
