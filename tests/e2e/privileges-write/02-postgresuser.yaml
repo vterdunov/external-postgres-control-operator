@@ -1,0 +1,10 @@
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: write-db-user
+spec:
+  role: writeuser
+  database: write-db
+  secretName: write-secret
+  privileges: WRITE
+  dropOnDelete: true

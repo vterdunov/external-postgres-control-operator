@@ -1,0 +1,10 @@
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: write-db
+spec:
+  database: write-test-db
+  dropOnDelete: true
+  masterRole: write-test-group
+  schemas:
+    - testschema

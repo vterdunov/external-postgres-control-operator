@@ -1,0 +1,47 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT 1 FROM pg_database WHERE datname='write-test-db'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Database write-test-db not found"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      for role in write-test-group write-test-db-reader write-test-db-writer; do
+        result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT 1 FROM pg_roles WHERE rolname='$role'")
+        if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+          echo "Role $role not found"
+          exit 1
+        fi
+      done
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -d write-test-db -t -c "SELECT 1 FROM information_schema.schemata WHERE schema_name='testschema'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Schema testschema not found in write-test-db"
+        exit 1
+      fi
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: write-db
+status:
+  roles:
+    owner: write-test-group
+    reader: write-test-db-reader
+    writer: write-test-db-writer
+  schemas:
+    - testschema
+  succeeded: true

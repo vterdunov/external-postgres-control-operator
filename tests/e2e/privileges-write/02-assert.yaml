@@ -1,0 +1,73 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret write-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT 1 FROM pg_roles WHERE rolname='$ROLE'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Role $ROLE not found in pg_roles"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret write-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -t -c "SELECT pg_has_role('$ROLE','write-test-db-writer','MEMBER')")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then
+        echo "Role $ROLE is not member of write-test-db-writer"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      # Create test table as superuser for privilege testing
+      kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -d write-test-db -c "CREATE TABLE IF NOT EXISTS testschema.test_write_tbl (id int)"
+      kubectl exec postgresql-0 -n "$NAMESPACE" -- psql -U postgres -d write-test-db -c "INSERT INTO testschema.test_write_tbl VALUES (1)"
+      # Verify writer CAN SELECT
+      ROLE=$(kubectl get secret write-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      PASS=$(kubectl get secret write-secret -n "$NAMESPACE" -o jsonpath='{.data.PASSWORD}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n "$NAMESPACE" -- env PGPASSWORD="$PASS" psql -U "$ROLE" -d write-test-db -t -c "SELECT COUNT(*) FROM testschema.test_write_tbl")
+      echo "SELECT result: $result"
+      # Verify writer CAN INSERT
+      kubectl exec postgresql-0 -n "$NAMESPACE" -- env PGPASSWORD="$PASS" psql -U "$ROLE" -d write-test-db -c "INSERT INTO testschema.test_write_tbl VALUES (2)"
+      echo "INSERT: success"
+      # Verify writer CAN UPDATE
+      kubectl exec postgresql-0 -n "$NAMESPACE" -- env PGPASSWORD="$PASS" psql -U "$ROLE" -d write-test-db -c "UPDATE testschema.test_write_tbl SET id=3 WHERE id=2"
+      echo "UPDATE: success"
+      # Verify writer CAN DELETE
+      kubectl exec postgresql-0 -n "$NAMESPACE" -- env PGPASSWORD="$PASS" psql -U "$ROLE" -d write-test-db -c "DELETE FROM testschema.test_write_tbl WHERE id=3"
+      echo "DELETE: success"
+      # Verify writer CAN CREATE TABLE in schema
+      kubectl exec postgresql-0 -n "$NAMESPACE" -- env PGPASSWORD="$PASS" psql -U "$ROLE" -d write-test-db -c "CREATE TABLE testschema.writer_created_tbl (val text)"
+      echo "CREATE TABLE: success"
+  - script: |
+      #!/bin/bash
+      # Verify writer CANNOT DROP TABLE (should fail)
+      ROLE=$(kubectl get secret write-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      PASS=$(kubectl get secret write-secret -n "$NAMESPACE" -o jsonpath='{.data.PASSWORD}' | base64 -d)
+      if kubectl exec postgresql-0 -n "$NAMESPACE" -- env PGPASSWORD="$PASS" psql -U "$ROLE" -d write-test-db -c "DROP TABLE testschema.test_write_tbl" 2>/dev/null; then
+        echo "ERROR: WRITE user should not be able to DROP TABLE"
+        exit 1
+      fi
+      echo "Correctly: WRITE user cannot DROP TABLE"
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: write-db-user
+status:
+  databaseName: write-test-db
+  postgresGroup: write-test-db-writer
+  succeeded: true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: write-secret
