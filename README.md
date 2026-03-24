@@ -61,11 +61,7 @@ Set environment variables in [`config/manager/operator.yaml`](config/manager/ope
 | --- | --- | --- |
 | `WATCH_NAMESPACE` | Namespace to watch. Empty string = all namespaces. | (all namespaces) |
 | `POSTGRES_INSTANCE` | Operator identity for multi-instance deployments. | (empty) |
-| `KEEP_SECRET_NAME` | Use user-provided secret names instead of auto-generated ones. | disabled |
 | `RECONCILE_INTERVAL` | How often controllers re-check desired state (Go duration, e.g. `1h`, `30m`). | `2h` |
-
-> **Note:**
-> If enabling `KEEP_SECRET_NAME`, ensure there are no secret name conflicts in your namespace to avoid reconcile loops.
 
 ## Installation
 
@@ -171,7 +167,7 @@ spec:
     PQ_URL: "host={{.Host}} user={{.Role}} password={{.Password}} dbname={{.Database}}"
 ```
 
-This creates a user role `username-<hash>` and grants role `test-db-group`, `test-db-writer` or `test-db-reader` depending on `privileges` property. Its credentials are put in secret `my-secret-my-db-user` (unless `KEEP_SECRET_NAME` is enabled).
+This creates a user role `username-<hash>` and grants role `test-db-group`, `test-db-writer` or `test-db-reader` depending on `privileges` property. Its credentials are put in secret `my-secret`.
 
 `PostgresUser` needs to reference a `Postgres` in the same namespace.
 

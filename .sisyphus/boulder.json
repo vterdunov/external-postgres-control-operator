@@ -1,0 +1,13 @@
+{
+  "active_plan": "/Users/vterdunov/work/projects/vterdunov/external-postgres-control-operator/.sisyphus/plans/remove-keep-secret-name.md",
+  "started_at": "2026-03-24T16:49:55.870Z",
+  "session_ids": [
+    "ses_2df4af014ffepfHhkz6DSY2ZNs",
+    "ses_2df3ead5bffe98HwT6baPujTdr",
+    "ses_2df3dd9a5ffeb37POWlxBgeV7B",
+    "ses_2df3c89a9ffe1nU0AFn2H1CErc",
+    "ses_2df3c4951ffeYvGLBAwtBkgPow"
+  ],
+  "plan_name": "remove-keep-secret-name",
+  "agent": "atlas"
+}

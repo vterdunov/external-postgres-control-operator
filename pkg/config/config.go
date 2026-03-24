@@ -2,7 +2,6 @@ package config
 
 import (
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +17,6 @@ type Cfg struct {
 	PostgresDefaultDb string
 	CloudProvider     CloudProvider
 	AnnotationFilter  string
-	KeepSecretName    bool
 	ReconcileInterval time.Duration
 }
 
@@ -46,9 +44,6 @@ func Get() *Cfg {
 		config.PostgresDefaultDb = utils.GetEnv("POSTGRES_DEFAULT_DATABASE")
 		config.CloudProvider = ParseCloudProvider(utils.GetEnv("POSTGRES_CLOUD_PROVIDER"))
 		config.AnnotationFilter = utils.GetEnv("POSTGRES_INSTANCE")
-		if value, err := strconv.ParseBool(utils.GetEnv("KEEP_SECRET_NAME")); err == nil {
-			config.KeepSecretName = value
-		}
 		config.ReconcileInterval = parseReconcileInterval(utils.GetEnv("RECONCILE_INTERVAL"))
 	})
 	return config

@@ -33,7 +33,6 @@ type PostgresUserReconciler struct {
 	pgHost            string
 	pgUriArgs         string
 	instanceFilter    string
-	keepSecretName    bool // use secret name as defined in PostgresUserSpec
 	cloudProvider     config.CloudProvider
 	reconcileInterval time.Duration
 }
@@ -47,7 +46,6 @@ func NewPostgresUserReconciler(mgr manager.Manager, cfg *config.Cfg, pg postgres
 		pgHost:            cfg.PostgresHost,
 		pgUriArgs:         cfg.PostgresUriArgs,
 		instanceFilter:    cfg.AnnotationFilter,
-		keepSecretName:    cfg.KeepSecretName,
 		cloudProvider:     cfg.CloudProvider,
 		reconcileInterval: cfg.ReconcileInterval,
 	}
@@ -339,10 +337,7 @@ func (r *PostgresUserReconciler) newSecretForCR(reqLogger logr.Logger, cr *dbv1a
 	maps.Copy(labels, cr.Spec.Labels)
 
 	annotations := cr.Spec.Annotations
-	name := fmt.Sprintf("%s-%s", cr.Spec.SecretName, cr.Name)
-	if r.keepSecretName {
-		name = cr.Spec.SecretName
-	}
+	name := cr.Spec.SecretName
 
 	templateData, err := utils.RenderTemplate(cr.Spec.SecretTemplate, utils.TemplateContext{
 		Role:     role,

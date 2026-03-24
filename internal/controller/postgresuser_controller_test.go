@@ -339,7 +339,7 @@ var _ = Describe("PostgresUser Controller", func() {
 
 				// Check if secret was created
 				foundSecret := &corev1.Secret{}
-				err = cl.Get(ctx, types.NamespacedName{Name: secretName + "-" + name, Namespace: namespace}, foundSecret)
+				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(foundSecret.Data).To(HaveKey("DATABASE_NAME"))
 				Expect(foundSecret.Data).To(HaveKey("HOST"))
@@ -418,7 +418,7 @@ var _ = Describe("PostgresUser Controller", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				foundSecret := &corev1.Secret{}
-				err = cl.Get(ctx, types.NamespacedName{Name: secretName + "-" + name, Namespace: namespace}, foundSecret)
+				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(foundSecret.GetOwnerReferences()).NotTo(BeEmpty())
 				Expect(foundSecret.GetOwnerReferences()[0].Name).To(Equal(name))
@@ -543,9 +543,8 @@ var _ = Describe("PostgresUser Controller", func() {
 
 				// Now check if the secret was created with the templated values
 				foundSecret := &corev1.Secret{}
-				name := fmt.Sprintf("%s-%s", secretName, name)
-				GinkgoWriter.Printf("Getting secret %s\n", name)
-				err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundSecret)
+				GinkgoWriter.Printf("Getting secret %s\n", secretName)
+				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
 				Expect(err).NotTo(HaveOccurred())
 
 				Expect(foundSecret.Data).To(HaveLen(5), "secret should contain only the 5 template keys, no defaults")
@@ -704,9 +703,8 @@ var _ = Describe("PostgresUser Controller", func() {
 	})
 	Context("Secret creation with user-defined labels and annotations", func() {
 		It("should create a secret with user-defined labels and annotations", func() {
-			// Set up the reconciler with host and keepSecretName setting
+			// Set up the reconciler with host setting
 			rp.pgHost = "localhost"
-			rp.keepSecretName = false
 
 			// Create a PostgresUser with custom labels and annotations
 			cr := &dbv1alpha1.PostgresUser{
@@ -741,7 +739,7 @@ var _ = Describe("PostgresUser Controller", func() {
 			Expect(secret.Labels).To(Equal(expectedLabels))
 
 			// Check name and namespace
-			Expect(secret.Name).To(Equal("mysecret-myuser"))
+			Expect(secret.Name).To(Equal("mysecret"))
 			Expect(secret.Namespace).To(Equal("myns"))
 
 			// Check secret data
@@ -755,7 +753,6 @@ var _ = Describe("PostgresUser Controller", func() {
 		It("should handle empty labels map correctly", func() {
 			// Set up the reconciler
 			rp.pgHost = "localhost"
-			rp.keepSecretName = false
 
 			// Create a PostgresUser with empty labels
 			cr := &dbv1alpha1.PostgresUser{
@@ -785,43 +782,12 @@ var _ = Describe("PostgresUser Controller", func() {
 			Expect(secret.Labels).To(Equal(expectedLabels))
 
 			// Check name and namespace
-			Expect(secret.Name).To(Equal("mysecret2-myuser2"))
+			Expect(secret.Name).To(Equal("mysecret2"))
 			Expect(secret.Namespace).To(Equal("myns2"))
-		})
-
-		It("should respect keepSecretName setting when true", func() {
-			// Set up the reconciler with keepSecretName=true
-			rp.pgHost = "localhost"
-			rp.keepSecretName = true
-
-			// Create a PostgresUser
-			cr := &dbv1alpha1.PostgresUser{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "myuser3",
-					Namespace: "myns3",
-				},
-				Spec: dbv1alpha1.PostgresUserSpec{
-					SecretName: "mysecret3",
-					Labels:     map[string]string{},
-				},
-				Status: dbv1alpha1.PostgresUserStatus{
-					DatabaseName: "somedb3",
-				},
-			}
-
-			// Call newSecretForCR
-			secret, err := rp.newSecretForCR(logr.Discard(), cr, "role3", "pass3", "login3")
-
-			// Verify results
-			Expect(err).NotTo(HaveOccurred())
-
-			// Check that the original secret name is kept without appending the CR name
-			Expect(secret.Name).To(Equal("mysecret3"))
 		})
 
 		It("should include only template keys when secretTemplate is set", func() {
 			rp.pgHost = "dbhost:5432"
-			rp.keepSecretName = false
 
 			cr := &dbv1alpha1.PostgresUser{
 				ObjectMeta: metav1.ObjectMeta{
