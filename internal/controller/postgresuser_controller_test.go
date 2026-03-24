@@ -351,6 +351,8 @@ var _ = Describe("PostgresUser Controller", func() {
 				Expect(foundSecret.Data).To(HaveKey("ROLE"))
 				Expect(foundSecret.Data).To(HaveKey("HOSTNAME"))
 				Expect(foundSecret.Data).To(HaveKey("PORT"))
+
+				Expect(foundSecret.GetOwnerReferences()).To(BeEmpty())
 			})
 
 			It("should fail if the database does not exist", func() {
@@ -387,6 +389,39 @@ var _ = Describe("PostgresUser Controller", func() {
 				err = cl.Get(ctx, types.NamespacedName{Name: "nonexistent-user", Namespace: namespace}, foundUser)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(foundUser.Status.Succeeded).To(BeFalse())
+			})
+		})
+
+		Context("New PostgresUser creation with dropOnDelete enabled", func() {
+			BeforeEach(func() {
+				initClient(postgresDB, nil, false)
+
+				postgresUser.Spec.DropOnDelete = true
+				Expect(cl.Create(ctx, postgresUser)).To(Succeed())
+			})
+
+			AfterEach(func() {
+				secretList := &corev1.SecretList{}
+				Expect(cl.List(ctx, secretList, client.InNamespace(namespace))).To(Succeed())
+				for _, secret := range secretList.Items {
+					Expect(cl.Delete(ctx, &secret)).To(Succeed())
+				}
+			})
+
+			It("should set owner reference on the secret", func() {
+				pg.EXPECT().GetDefaultDatabase().Return("postgres").AnyTimes()
+				pg.EXPECT().CreateUserRole(gomock.Any(), gomock.Any()).Return(roleName+"-mock", nil)
+				pg.EXPECT().GrantRole(databaseName+"-writer", gomock.Any()).Return(nil)
+				pg.EXPECT().AlterDefaultLoginRole(gomock.Any(), gomock.Any()).Return(nil)
+
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				foundSecret := &corev1.Secret{}
+				err = cl.Get(ctx, types.NamespacedName{Name: secretName + "-" + name, Namespace: namespace}, foundSecret)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(foundSecret.GetOwnerReferences()).NotTo(BeEmpty())
+				Expect(foundSecret.GetOwnerReferences()[0].Name).To(Equal(name))
 			})
 		})
 

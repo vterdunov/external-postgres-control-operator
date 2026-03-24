@@ -267,9 +267,10 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.requeue(ctx, instance, err)
 	}
 
-	// Set PostgresUser instance as the owner and controller
-	if err := controllerutil.SetControllerReference(instance, secret, r.Scheme); err != nil {
-		return r.requeue(ctx, instance, err)
+	if instance.Spec.DropOnDelete {
+		if err := controllerutil.SetControllerReference(instance, secret, r.Scheme); err != nil {
+			return r.requeue(ctx, instance, err)
+		}
 	}
 
 	// Check if this Secret already exists
