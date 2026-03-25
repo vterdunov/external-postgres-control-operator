@@ -685,7 +685,7 @@ var _ = Describe("PostgresUser Controller", func() {
 				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
 				Expect(err).NotTo(HaveOccurred())
 
-				Expect(foundSecret.Data).To(HaveLen(6), "secret should contain the 5 template keys plus _OPERATOR_PASSWORD")
+				Expect(foundSecret.Data).To(HaveLen(6), "secret should contain the 5 template keys plus _POSTGRES_PASSWORD_STORED")
 
 				Expect(foundSecret.Data).To(HaveKey("CUSTOM_KEY"))
 				customKey := string(foundSecret.Data["CUSTOM_KEY"])
@@ -833,7 +833,7 @@ var _ = Describe("PostgresUser Controller", func() {
 			})
 		})
 
-		Context("Legacy templated Secret without _OPERATOR_PASSWORD (Issue #3)", func() {
+		Context("Legacy templated Secret without _POSTGRES_PASSWORD_STORED (Issue #3)", func() {
 			var (
 				existingPassword string
 				existingRole     string
@@ -861,7 +861,7 @@ var _ = Describe("PostgresUser Controller", func() {
 				initClient(postgresDB, postgresUser, false)
 
 				// Simulate a legacy secret that was created BEFORE the fix:
-				// it has only template keys, no _OPERATOR_PASSWORD key
+				// it has only template keys, no _POSTGRES_PASSWORD_STORED key
 				legacySecret := &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      secretName,
@@ -884,8 +884,8 @@ var _ = Describe("PostgresUser Controller", func() {
 				}
 			})
 
-			It("should backfill _OPERATOR_PASSWORD for legacy template secrets", func() {
-				// After reconcile, legacy secret should get _OPERATOR_PASSWORD backfilled
+			It("should backfill _POSTGRES_PASSWORD_STORED for legacy template secrets", func() {
+				// After reconcile, legacy secret should get _POSTGRES_PASSWORD_STORED backfilled
 				// and the password in PG should be rotated since we can't recover the old one
 				pg.EXPECT().UpdatePassword(existingRole, gomock.Any()).Return(nil)
 
@@ -895,8 +895,8 @@ var _ = Describe("PostgresUser Controller", func() {
 				foundSecret := &corev1.Secret{}
 				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(foundSecret.Data).To(HaveKey("_OPERATOR_PASSWORD"), "legacy secret must get _OPERATOR_PASSWORD backfilled")
-				Expect(string(foundSecret.Data["_OPERATOR_PASSWORD"])).NotTo(BeEmpty())
+				Expect(foundSecret.Data).To(HaveKey("_POSTGRES_PASSWORD_STORED"), "legacy secret must get _POSTGRES_PASSWORD_STORED backfilled")
+				Expect(string(foundSecret.Data["_POSTGRES_PASSWORD_STORED"])).NotTo(BeEmpty())
 				// DB_HOST should still be correct
 				Expect(string(foundSecret.Data["DB_HOST"])).To(Equal("postgres.local"))
 			})
@@ -1145,7 +1145,7 @@ var _ = Describe("PostgresUser Controller", func() {
 			Expect(string(secret.Data["DB_HOST"])).To(Equal("dbhost"))
 			Expect(string(secret.Data["DB_PORT"])).To(Equal("5432"))
 			Expect(string(secret.Data["DB_PASS"])).To(Equal("tplpass"))
-			Expect(string(secret.Data["_OPERATOR_PASSWORD"])).To(Equal("tplpass"))
+			Expect(string(secret.Data["_POSTGRES_PASSWORD_STORED"])).To(Equal("tplpass"))
 
 			Expect(secret.Data).NotTo(HaveKey("POSTGRES_URL"))
 			Expect(secret.Data).NotTo(HaveKey("HOST"))

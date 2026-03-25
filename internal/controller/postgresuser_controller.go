@@ -26,7 +26,7 @@ import (
 	"github.com/movetokube/postgres-operator/pkg/utils"
 )
 
-const operatorPasswordKey = "_OPERATOR_PASSWORD"
+const operatorPasswordKey = "_POSTGRES_PASSWORD_STORED"
 
 // PostgresUserReconciler reconciles a PostgresUser object
 type PostgresUserReconciler struct {

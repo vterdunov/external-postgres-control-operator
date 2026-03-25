@@ -216,6 +216,13 @@ Available context:
 | `.Hostname` | Database host (without port) |
 | `.Port`     | Database port                |
 
+> **Note:** When `secretTemplate` is used, the operator automatically adds a reserved
+> `_POSTGRES_PASSWORD_STORED` key to the generated Secret. This key holds the raw PostgreSQL
+> password and is used internally by the operator for drift detection and secret reconciliation.
+> Without it, the operator cannot compare the current secret state against the expected one,
+> because the password is embedded inside rendered template values and cannot be extracted back.
+> This key should not be referenced by applications — use your own template keys instead.
+
 ### Compatibility
 
 Postgres operator uses Operator SDK, which uses kubernetes client. Kubernetes client compatibility with Kubernetes cluster
