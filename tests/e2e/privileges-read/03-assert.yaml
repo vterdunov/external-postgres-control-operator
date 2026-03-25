@@ -26,3 +26,11 @@ commands:
           exit 1
         fi
       done
+  - script: |
+      #!/bin/bash
+      set -e
+      count=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname LIKE 'readuser%'")
+      if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
+        echo "User role readuser* still exists but should be dropped"
+        exit 1
+      fi

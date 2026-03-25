@@ -87,6 +87,11 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Deletion logic
 	if instance.GetDeletionTimestamp() != nil {
+		reqLogger.Info("Handling deletion",
+			"dropOnDelete", instance.Spec.DropOnDelete,
+			"postgresRole", instance.Status.PostgresRole,
+			"postgresGroup", instance.Status.PostgresGroup,
+			"databaseName", instance.Status.DatabaseName)
 		if instance.Spec.DropOnDelete && instance.Status.PostgresRole != "" {
 			db := instance.Status.DatabaseName
 			if db == "" {
@@ -94,8 +99,10 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			}
 			err = r.pg.DropRole(instance.Status.PostgresRole, instance.Status.PostgresGroup, db)
 			if err != nil {
+				reqLogger.Error(err, "Failed to drop role", "role", instance.Status.PostgresRole, "database", db)
 				return ctrl.Result{}, err
 			}
+			reqLogger.Info("Role dropped successfully", "role", instance.Status.PostgresRole)
 		}
 		controllerutil.RemoveFinalizer(instance, "finalizer.db.movetokube.com")
 
@@ -104,6 +111,7 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if err != nil {
 			return ctrl.Result{}, err
 		}
+		reqLogger.Info("Deletion complete, finalizer removed")
 		return ctrl.Result{}, nil
 	}
 

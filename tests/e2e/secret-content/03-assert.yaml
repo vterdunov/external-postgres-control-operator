@@ -18,3 +18,21 @@ commands:
         echo "Database sec-test-db still exists but should be dropped"
         exit 1
       fi
+  - script: |
+      #!/bin/bash
+      set -e
+      for role in sec-test-group sec-test-db-reader sec-test-db-writer; do
+        count=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname='$role'")
+        if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
+          echo "Role $role still exists but should be dropped"
+          exit 1
+        fi
+      done
+  - script: |
+      #!/bin/bash
+      set -e
+      count=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname LIKE 'secuser%'")
+      if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
+        echo "User role secuser* still exists but should be dropped"
+        exit 1
+      fi
