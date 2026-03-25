@@ -1,0 +1,41 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 120
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - command: bash -c "! kubectl get postgres dotted-db -n $NAMESPACE"
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT 1 FROM pg_database WHERE datname='my.test.db'")
+      if [ -n "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Database my.test.db still exists"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname='my.test.db-group'")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "0" ]; then
+        echo "Role my.test.db-group still exists"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname='my.test.db-reader'")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "0" ]; then
+        echo "Role my.test.db-reader still exists"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname='my.test.db-writer'")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "0" ]; then
+        echo "Role my.test.db-writer still exists"
+        exit 1
+      fi

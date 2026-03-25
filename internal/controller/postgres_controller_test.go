@@ -887,4 +887,45 @@ var _ = Describe("PostgresReconciler", func() {
 			})
 		})
 	})
+
+	Describe("Database names with special characters", func() {
+		DescribeTable("should create database and roles successfully",
+			func(dbName string) {
+				postgresCR := &v1alpha1.Postgres{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      name,
+						Namespace: namespace,
+					},
+					Spec: v1alpha1.PostgresSpec{
+						Database: dbName,
+					},
+					Status: v1alpha1.PostgresStatus{},
+				}
+				initClient(postgresCR, false)
+
+				expectedOwner := dbName + "-group"
+				expectedReader := dbName + "-reader"
+				expectedWriter := dbName + "-writer"
+
+				pg.EXPECT().CreateGroupRole(expectedOwner).Return(nil)
+				pg.EXPECT().CreateGroupRole(expectedReader).Return(nil)
+				pg.EXPECT().CreateGroupRole(expectedWriter).Return(nil)
+				pg.EXPECT().CreateDB(dbName, expectedOwner).Return(nil)
+
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				foundPostgres := &v1alpha1.Postgres{}
+				Expect(cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundPostgres)).To(BeNil())
+				Expect(foundPostgres.Status.Succeeded).To(BeTrue())
+				Expect(foundPostgres.Status.Roles.Owner).To(Equal(expectedOwner))
+				Expect(foundPostgres.Status.Roles.Reader).To(Equal(expectedReader))
+				Expect(foundPostgres.Status.Roles.Writer).To(Equal(expectedWriter))
+			},
+			Entry("dotted database name", "my.database"),
+			Entry("name starting with digit", "123db"),
+			Entry("name with dollar sign", "test$db"),
+			Entry("digit prefix with dot", "1.db"),
+		)
+	})
 })
