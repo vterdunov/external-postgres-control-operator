@@ -25,7 +25,7 @@ type PostgresUserSpec struct {
 	// +kubebuilder:validation:Enum=OWNER;READ;WRITE
 	Privileges string `json:"privileges"`
 	// +optional
-	DropOnDelete bool `json:"dropOnDelete,omitempty"`
+	DropOnDelete bool `json:"dropOnDelete"`
 	// +optional
 	AWS *PostgresUserAWSSpec `json:"aws,omitempty"`
 	// +optional

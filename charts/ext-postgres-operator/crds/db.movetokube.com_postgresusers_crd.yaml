@@ -1,6 +1,9 @@
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
   name: postgresusers.db.movetokube.com
 spec:
   group: db.movetokube.com
@@ -17,14 +20,19 @@ spec:
         description: PostgresUser is the Schema for the postgresusers API
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
@@ -36,28 +44,41 @@ spec:
                   type: string
                 type: object
               aws:
-                description: AWS specific settings for the user
+                description: PostgresUserAWSSpec encapsulates AWS specific configuration
+                  toggles.
                 properties:
                   enableIamAuth:
-                    description: Enable IAM authentication for this user (PostgreSQL on AWS RDS only)
                     default: false
+                    description: Enable IAM authentication for this user (PostgreSQL
+                      on AWS RDS only)
                     type: boolean
                 type: object
               database:
-                description: Name of the PostgresDatabase this user will be related to
+                description: Name of the PostgresDatabase this user will be related
+                  to
+                minLength: 1
                 type: string
+              dropOnDelete:
+                type: boolean
               labels:
                 additionalProperties:
                   type: string
                 type: object
               privileges:
                 description: List of privileges to grant to this user
+                enum:
+                - OWNER
+                - READ
+                - WRITE
                 type: string
               role:
-                description: Name of the PostgresRole this user will be associated with
+                description: Name of the PostgresRole this user will be associated
+                  with
+                minLength: 1
                 type: string
               secretName:
                 description: Name of the secret to create with user credentials
+                minLength: 1
                 type: string
               secretTemplate:
                 additionalProperties:
@@ -71,11 +92,17 @@ spec:
           status:
             description: PostgresUserStatus defines the observed state of PostgresUser
             properties:
-              enableIamAuth:
-                description: Reflects whether IAM authentication is enabled for this user.
-                type: boolean
               databaseName:
                 type: string
+              dropOnDelete:
+                description: |-
+                  Whether the PostgreSQL role should be dropped when this CR is deleted.
+                  Copied from spec to survive potential spec field loss during concurrent updates.
+                type: boolean
+              enableIamAuth:
+                description: Reflects whether IAM authentication is enabled for this
+                  user.
+                type: boolean
               postgresGroup:
                 type: string
               postgresLogin:
