@@ -56,6 +56,7 @@ spec:
               database:
                 description: Name of the PostgresDatabase this user will be related
                   to
+                minLength: 1
                 type: string
               dropOnDelete:
                 type: boolean
@@ -65,13 +66,19 @@ spec:
                 type: object
               privileges:
                 description: List of privileges to grant to this user
+                enum:
+                - OWNER
+                - READ
+                - WRITE
                 type: string
               role:
                 description: Name of the PostgresRole this user will be associated
                   with
+                minLength: 1
                 type: string
               secretName:
                 description: Name of the secret to create with user credentials
+                minLength: 1
                 type: string
               secretTemplate:
                 additionalProperties:
@@ -87,6 +94,11 @@ spec:
             properties:
               databaseName:
                 type: string
+              dropOnDelete:
+                description: |-
+                  Whether the PostgreSQL role should be dropped when this CR is deleted.
+                  Copied from spec to survive potential spec field loss during concurrent updates.
+                type: boolean
               enableIamAuth:
                 description: Reflects whether IAM authentication is enabled for this
                   user.

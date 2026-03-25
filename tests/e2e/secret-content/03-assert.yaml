@@ -1,0 +1,38 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 120
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - command: bash -c "! kubectl get postgresuser sec-db-user -n $NAMESPACE"
+  - command: bash -c "! kubectl get postgres sec-db -n $NAMESPACE"
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres         psql -h 127.0.0.1 -U postgres -t -c \
+        "SELECT 1 FROM pg_database WHERE datname='sec-test-db'")
+      if [ -n "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Database sec-test-db still exists but should be dropped"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      for role in sec-test-group sec-test-db-reader sec-test-db-writer; do
+        count=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname='$role'")
+        if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
+          echo "Role $role still exists but should be dropped"
+          exit 1
+        fi
+      done
+  - script: |
+      #!/bin/bash
+      set -e
+      count=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname LIKE 'secuser%'")
+      if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
+        echo "User role secuser* still exists but should be dropped"
+        exit 1
+      fi

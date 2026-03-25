@@ -1,8 +1,24 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
+timeout: 60
 collectors:
   - type: pod
     selector: app.kubernetes.io/name=ext-postgres-operator
     tail: 100
 commands:
   - command: bash -c "! kubectl get postgresuser my-db-user -n $NAMESPACE"
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret my-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT 1 FROM pg_roles WHERE rolname='$ROLE'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "ERROR: Role $ROLE was dropped but should persist (dropOnDelete=false)"
+        exit 1
+      fi
+      echo "Correctly: role $ROLE persists after CR deletion"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-secret

@@ -10,18 +10,22 @@ import (
 // PostgresUserSpec defines the desired state of PostgresUser
 type PostgresUserSpec struct {
 	// Name of the PostgresRole this user will be associated with
+	// +kubebuilder:validation:MinLength=1
 	Role string `json:"role"`
 	// Name of the PostgresDatabase this user will be related to
+	// +kubebuilder:validation:MinLength=1
 	Database string `json:"database"`
 	// Name of the secret to create with user credentials
+	// +kubebuilder:validation:MinLength=1
 	SecretName string `json:"secretName"`
 	// +optional
 	SecretTemplate map[string]string `json:"secretTemplate,omitempty"` // key-value, where key is secret field, value is go template
 	// +optional
 	// List of privileges to grant to this user
+	// +kubebuilder:validation:Enum=OWNER;READ;WRITE
 	Privileges string `json:"privileges"`
 	// +optional
-	DropOnDelete bool `json:"dropOnDelete,omitempty"`
+	DropOnDelete bool `json:"dropOnDelete"`
 	// +optional
 	AWS *PostgresUserAWSSpec `json:"aws,omitempty"`
 	// +optional
@@ -45,6 +49,10 @@ type PostgresUserStatus struct {
 	PostgresLogin string `json:"postgresLogin"`
 	PostgresGroup string `json:"postgresGroup"`
 	DatabaseName  string `json:"databaseName"`
+	// Whether the PostgreSQL role should be dropped when this CR is deleted.
+	// Copied from spec to survive potential spec field loss during concurrent updates.
+	// +optional
+	DropOnDelete bool `json:"dropOnDelete"`
 	// Reflects whether IAM authentication is enabled for this user.
 	// +optional
 	EnableIamAuth bool `json:"enableIamAuth"`

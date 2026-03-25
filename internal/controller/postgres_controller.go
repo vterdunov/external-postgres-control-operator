@@ -83,9 +83,13 @@ func (r *PostgresReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// deletion logic
 	if !instance.GetDeletionTimestamp().IsZero() {
-		if r.shouldDropDB(ctx, instance, reqLogger) && instance.Status.Succeeded {
+		shouldDrop, err := r.shouldDropDB(ctx, instance, reqLogger)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if shouldDrop {
 			if instance.Status.Roles.Owner != "" {
-				err := r.pg.DropRole(instance.Status.Roles.Owner, r.pg.GetUser(), instance.Spec.Database)
+				err = r.pg.DropRole(instance.Status.Roles.Owner, r.pg.GetUser(), instance.Spec.Database)
 				if err != nil {
 					return ctrl.Result{}, err
 				}
@@ -114,10 +118,12 @@ func (r *PostgresReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err != nil {
 			reqLogger.Error(err, "could not update db status")
 		}
+		before = instance.DeepCopy()
 		controllerutil.RemoveFinalizer(instance, "finalizer.db.movetokube.com")
 		err = r.Patch(ctx, instance, client.MergeFrom(before))
 		if err != nil {
 			reqLogger.Error(err, "could not remove finalizer")
+			return ctrl.Result{}, err
 		}
 
 		return ctrl.Result{}, nil
@@ -132,6 +138,15 @@ func (r *PostgresReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			err = kerrors.NewAggregate([]error{err, updateErr})
 		}
 		return ctrl.Result{Requeue: true}, err
+	}
+
+	before = instance.DeepCopy()
+	if controllerutil.AddFinalizer(instance, "finalizer.db.movetokube.com") {
+		err = r.Patch(ctx, instance, client.MergeFrom(before))
+		if err != nil {
+			return requeue(err)
+		}
+		before = instance.DeepCopy()
 	}
 
 	// creation logic
@@ -185,7 +200,7 @@ func (r *PostgresReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return requeue(errors.NewInternalError(err))
 		}
 		// Alter database owner if the owner role was changed
-		err = r.pg.AlterDatabaseOwner(instance.Spec.Database, instance.Status.Roles.Owner)
+		err = r.pg.AlterDatabaseOwner(instance.Spec.Database, desiredOwner)
 		if err != nil {
 			return requeue(errors.NewInternalError(err))
 		}
@@ -285,13 +300,6 @@ func (r *PostgresReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		return requeue(err)
 	}
-	before = instance.DeepCopy()
-	if controllerutil.AddFinalizer(instance, "finalizer.db.movetokube.com") {
-		err = r.Patch(ctx, instance, client.MergeFrom(before))
-		if err != nil {
-			return requeue(err)
-		}
-	}
 
 	reqLogger.Info("Reconciling done", "requeueAfter", r.reconcileInterval)
 	return ctrl.Result{RequeueAfter: r.reconcileInterval}, nil
@@ -310,17 +318,17 @@ func (r *PostgresReconciler) requeue(cr *dbv1alpha1.Postgres, reason error) (ctr
 	return ctrl.Result{}, reason
 }
 
-func (r *PostgresReconciler) shouldDropDB(ctx context.Context, cr *dbv1alpha1.Postgres, logger logr.Logger) bool {
+func (r *PostgresReconciler) shouldDropDB(ctx context.Context, cr *dbv1alpha1.Postgres, logger logr.Logger) (bool, error) {
 	// If DropOnDelete is false we don't need to check any further
 	if !cr.Spec.DropOnDelete {
-		return false
+		return false, nil
 	}
 	// Get a list of all Postgres
 	dbs := dbv1alpha1.PostgresList{}
 	err := r.List(ctx, &dbs, &client.ListOptions{})
 	if err != nil {
 		logger.Info(fmt.Sprintf("%v", err))
-		return true
+		return false, err
 	}
 
 	for _, db := range dbs.Items {
@@ -331,11 +339,11 @@ func (r *PostgresReconciler) shouldDropDB(ctx context.Context, cr *dbv1alpha1.Po
 		// There already exists another Postgres who has the same database
 		// Let's not drop the database
 		if db.Spec.Database == cr.Spec.Database {
-			return false
+			return false, nil
 		}
 	}
 
-	return true
+	return true, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

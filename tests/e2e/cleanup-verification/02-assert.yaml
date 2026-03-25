@@ -1,0 +1,52 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'cowner%'")
+      if [ "$(echo "$result" | tr -d '[:space:]')" = "0" ]; then
+        echo "ERROR: No cowner role found in PostgreSQL"
+        exit 1
+      fi
+      echo "OK: cowner role exists in PostgreSQL"
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'cwriter%'")
+      if [ "$(echo "$result" | tr -d '[:space:]')" = "0" ]; then
+        echo "ERROR: No cwriter role found in PostgreSQL"
+        exit 1
+      fi
+      echo "OK: cwriter role exists in PostgreSQL"
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: clean-owner
+status:
+  postgresGroup: clean-test-group
+  succeeded: true
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: clean-writer
+status:
+  postgresGroup: clean-test-db-writer
+  succeeded: true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: clean-owner-secret
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: clean-writer-secret

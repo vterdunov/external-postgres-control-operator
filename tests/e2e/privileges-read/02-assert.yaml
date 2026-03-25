@@ -1,0 +1,61 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret read-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT 1 FROM pg_roles WHERE rolname='$ROLE'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Role $ROLE not found in pg_roles"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret read-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT pg_has_role('$ROLE','read-test-db-reader','MEMBER')")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then
+        echo "Role $ROLE is not member of read-test-db-reader"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      # Create test table as superuser for privilege testing
+      kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d read-test-db -c "CREATE TABLE IF NOT EXISTS testschema.test_read_tbl (id int)"
+      kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d read-test-db -c "GRANT SELECT ON testschema.test_read_tbl TO \"read-test-db-reader\""
+      # Verify reader CAN SELECT
+      ROLE=$(kubectl get secret read-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      PASS=$(kubectl get secret read-secret -n "$NAMESPACE" -o jsonpath='{.data.PASSWORD}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD="$PASS" psql -U "$ROLE" -d read-test-db -t -c "SELECT COUNT(*) FROM testschema.test_read_tbl")
+      echo "SELECT result: $result"
+  - script: |
+      #!/bin/bash
+      # Verify reader CANNOT INSERT (should fail)
+      ROLE=$(kubectl get secret read-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      PASS=$(kubectl get secret read-secret -n "$NAMESPACE" -o jsonpath='{.data.PASSWORD}' | base64 -d)
+      if kubectl exec postgresql-0 -n default -- env PGPASSWORD="$PASS" psql -U "$ROLE" -d read-test-db -c "INSERT INTO testschema.test_read_tbl VALUES (1)" 2>/dev/null; then
+        echo "ERROR: READ user should not be able to INSERT"
+        exit 1
+      fi
+      echo "Correctly: READ user cannot INSERT"
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: read-db-user
+status:
+  databaseName: read-test-db
+  postgresGroup: read-test-db-reader
+  succeeded: true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: read-secret

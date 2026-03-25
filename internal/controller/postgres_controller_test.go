@@ -21,6 +21,50 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type listFailingClient struct {
+	client.Client
+	err error
+}
+
+func (c *listFailingClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	return c.err
+}
+
+type patchFailingClient struct {
+	client.Client
+	err             error
+	patchCalls      int
+	failOnPatchCall int
+}
+
+func (c *patchFailingClient) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+	c.patchCalls++
+	if c.patchCalls == c.failOnPatchCall {
+		return c.err
+	}
+	return c.Client.Patch(ctx, obj, patch, opts...)
+}
+
+func (c *patchFailingClient) Status() client.SubResourceWriter {
+	return &patchFailingStatusWriter{
+		SubResourceWriter: c.Client.Status(),
+		parent:            c,
+	}
+}
+
+type patchFailingStatusWriter struct {
+	client.SubResourceWriter
+	parent *patchFailingClient
+}
+
+func (s *patchFailingStatusWriter) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+	s.parent.patchCalls++
+	if s.parent.patchCalls == s.parent.failOnPatchCall {
+		return s.parent.err
+	}
+	return s.SubResourceWriter.Patch(ctx, obj, patch, opts...)
+}
+
 var _ = Describe("PostgresReconciler", func() {
 	const (
 		name      = "test-db"
@@ -140,7 +184,7 @@ var _ = Describe("PostgresReconciler", func() {
 		// No error should be returned
 		Expect(err).NotTo(HaveOccurred())
 		// Request should not be requeued
-		Expect(res.Requeue).To(BeFalse())
+		Expect(res.RequeueAfter).To(BeZero())
 	})
 
 	Describe("Checking deletion logic", func() {
@@ -306,6 +350,59 @@ var _ = Describe("PostgresReconciler", func() {
 				})
 			})
 		})
+
+		Context("shouldDropDB returns false when List fails", func() {
+			BeforeEach(func() {
+				failingPostgres := postgresCR.DeepCopy()
+				failingPostgres.Spec.DropOnDelete = true
+				initClient(failingPostgres, true)
+
+				rp = &PostgresReconciler{
+					Client: &listFailingClient{
+						Client: managerClient,
+						err:    fmt.Errorf("list failed"),
+					},
+					Scheme: sc,
+					pg:     pg,
+				}
+			})
+
+			It("should return an error when listing Postgres fails during deletion", func() {
+				pg.EXPECT().GetUser().Times(0)
+				pg.EXPECT().DropRole(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+				pg.EXPECT().DropDatabase(gomock.Any()).Times(0)
+
+				err := runReconcile(rp, ctx, req)
+				Expect(err).To(HaveOccurred())
+			})
+		})
+
+		Context("Finalizer removal fails", func() {
+			BeforeEach(func() {
+				failingPostgres := postgresCR.DeepCopy()
+				failingPostgres.Spec.DropOnDelete = true
+				initClient(failingPostgres, true)
+
+				rp = &PostgresReconciler{
+					Client: &patchFailingClient{
+						Client:          managerClient,
+						err:             fmt.Errorf("patch failed"),
+						failOnPatchCall: 2,
+					},
+					Scheme: sc,
+					pg:     pg,
+				}
+			})
+
+			It("should return an error when finalizer patch fails", func() {
+				pg.EXPECT().GetUser().Return("pguser").AnyTimes()
+				pg.EXPECT().DropRole(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				pg.EXPECT().DropDatabase(gomock.Any()).Return(nil).AnyTimes()
+
+				err := runReconcile(rp, ctx, req)
+				Expect(err).To(HaveOccurred())
+			})
+		})
 	})
 
 	Describe("Checking creation logic", func() {
@@ -466,6 +563,15 @@ var _ = Describe("PostgresReconciler", func() {
 				Expect(cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundPostgres)).To(BeNil())
 				Expect(foundPostgres.Status.Roles).To(Equal(expectedRoles))
 				Expect(foundPostgres.Status.Succeeded).To(BeFalse())
+			})
+
+			It("should set finalizer before side-effects when create database fails", func() {
+				_, err := rp.Reconcile(ctx, req)
+				Expect(err).To(HaveOccurred())
+
+				foundPostgres := &v1alpha1.Postgres{}
+				Expect(cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundPostgres)).To(BeNil())
+				Expect(foundPostgres.GetFinalizers()).To(ContainElement("finalizer.db.movetokube.com"))
 			})
 		})
 	})
@@ -708,6 +814,43 @@ var _ = Describe("PostgresReconciler", func() {
 					Expect(cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundPostgres)).To(BeNil())
 					Expect(foundPostgres.Status.Schemas).To(ConsistOf("stores", "customers"))
 				})
+			})
+		})
+	})
+
+	Describe("MasterRole is changed", func() {
+		var postgresCR *v1alpha1.Postgres
+
+		BeforeEach(func() {
+			postgresCR = &v1alpha1.Postgres{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: namespace,
+				},
+				Spec: v1alpha1.PostgresSpec{
+					Database:   name,
+					MasterRole: "new-owner",
+				},
+				Status: v1alpha1.PostgresStatus{
+					Succeeded: true,
+					Roles: v1alpha1.PostgresRoles{
+						Owner:  "old-owner",
+						Reader: name + "-reader",
+						Writer: name + "-writer",
+					},
+				},
+			}
+			initClient(postgresCR, false)
+		})
+
+		Context("Owner rename is successful", func() {
+			It("should update owner to the new name after rename", func() {
+				pg.EXPECT().RenameGroupRole("old-owner", "new-owner").Return(nil)
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+				foundPostgres := &v1alpha1.Postgres{}
+				Expect(cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundPostgres)).To(BeNil())
+				Expect(foundPostgres.Status.Roles.Owner).To(Equal("new-owner"))
 			})
 		})
 	})

@@ -1,0 +1,17 @@
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: ann-db-user
+spec:
+  role: annuser
+  database: ann-db
+  secretName: ann-secret
+  privileges: OWNER
+  dropOnDelete: true
+  annotations:
+    custom-annotation: annotation-value
+    another-annotation: another-value
+  labels:
+    custom-label: label-value
+    env: test

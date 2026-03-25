@@ -1,0 +1,88 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret multi-owner-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT pg_has_role('$ROLE','multi-test-group','MEMBER')")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then
+        echo "Role $ROLE is not member of multi-test-group"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret multi-writer-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT pg_has_role('$ROLE','multi-test-db-writer','MEMBER')")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then
+        echo "Role $ROLE is not member of multi-test-db-writer"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret multi-reader-secret -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT pg_has_role('$ROLE','multi-test-db-reader','MEMBER')")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "t" ]; then
+        echo "Role $ROLE is not member of multi-test-db-reader"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      for secret_name in multi-owner-secret multi-writer-secret multi-reader-secret; do
+        ROLE=$(kubectl get secret $secret_name -n "$NAMESPACE" -o jsonpath='{.data.ROLE}' | base64 -d)
+        PASSWORD=$(kubectl get secret $secret_name -n "$NAMESPACE" -o jsonpath='{.data.PASSWORD}' | base64 -d)
+        result=$(kubectl exec postgresql-0 -n default -- \
+          env PGPASSWORD="$PASSWORD" psql -U "$ROLE" -d multi-test-db -t -c "SELECT 1")
+        if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+          echo "Connection failed for $ROLE (from $secret_name)"
+          exit 1
+        fi
+        echo "Connection OK for $ROLE (from $secret_name)"
+      done
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: multi-owner
+status:
+  postgresGroup: multi-test-group
+  succeeded: true
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: multi-writer
+status:
+  postgresGroup: multi-test-db-writer
+  succeeded: true
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: multi-reader
+status:
+  postgresGroup: multi-test-db-reader
+  succeeded: true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: multi-owner-secret
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: multi-writer-secret
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: multi-reader-secret

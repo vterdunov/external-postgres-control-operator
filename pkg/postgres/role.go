@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"database/sql"
 	"fmt"
 
 	"github.com/lib/pq"
@@ -22,7 +23,10 @@ const (
 func (c *pg) CreateGroupRole(role string) error {
 	// Error code 42710 is duplicate_object (role already exists)
 	_, err := c.db.Exec(fmt.Sprintf(CREATE_GROUP_ROLE, role))
-	if err != nil && err.(*pq.Error).Code != "42710" {
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "42710" {
+			return nil
+		}
 		return err
 	}
 	return nil
@@ -75,33 +79,52 @@ func (c *pg) RevokeRole(role, revoked string) error {
 }
 
 func (c *pg) DropRole(role, newOwner, database string) error {
-	// REASSIGN OWNED BY only works if the correct database is selected
 	tmpDb, err := GetConnection(c.user, c.pass, c.host, database, c.args)
 	if err != nil {
-		if err.(*pq.Error).Code == "3D000" {
-			return nil // Database is does not exist (anymore)
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "3D000" {
 		} else {
 			return err
 		}
-	}
-	_, err = tmpDb.Exec(fmt.Sprintf(REASIGN_OBJECTS, role, newOwner))
-	defer tmpDb.Close()
-	// Check if error exists and if different from "ROLE NOT FOUND" => 42704
-	if err != nil && err.(*pq.Error).Code != "42704" {
-		return err
+	} else {
+		defer tmpDb.Close()
+
+		if err := c.reassignAndDrop(tmpDb, role, newOwner); err != nil {
+			return err
+		}
 	}
 
-	// We previously assigned all objects to the operator's role so DROP OWNED BY will drop privileges of role
-	_, err = tmpDb.Exec(fmt.Sprintf(DROP_OWNED_BY, role))
-	// Check if error exists and if different from "ROLE NOT FOUND" => 42704
-	if err != nil && err.(*pq.Error).Code != "42704" {
+	// Also clean up privileges on the default database (e.g. CONNECT grants)
+	if err := c.reassignAndDrop(c.db, role, newOwner); err != nil {
 		return err
 	}
 
 	_, err = c.db.Exec(fmt.Sprintf(DROP_ROLE, role))
-	// Check if error exists and if different from "ROLE NOT FOUND" => 42704
-	if err != nil && err.(*pq.Error).Code != "42704" {
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "42704" {
+			return nil
+		}
 		return err
+	}
+	return nil
+}
+
+func (c *pg) reassignAndDrop(db *sql.DB, role, newOwner string) error {
+	_, err := db.Exec(fmt.Sprintf(REASIGN_OBJECTS, role, newOwner))
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "42704" {
+			// role not found, continue
+		} else {
+			return err
+		}
+	}
+
+	_, err = db.Exec(fmt.Sprintf(DROP_OWNED_BY, role))
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "42704" {
+			// role not found, continue
+		} else {
+			return err
+		}
 	}
 	return nil
 }

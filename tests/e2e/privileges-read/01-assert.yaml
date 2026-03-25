@@ -1,0 +1,47 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT 1 FROM pg_database WHERE datname='read-test-db'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Database read-test-db not found"
+        exit 1
+      fi
+  - script: |
+      #!/bin/bash
+      set -e
+      for role in read-test-group read-test-db-reader read-test-db-writer; do
+        result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT 1 FROM pg_roles WHERE rolname='$role'")
+        if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+          echo "Role $role not found"
+          exit 1
+        fi
+      done
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d read-test-db -t -c "SELECT 1 FROM information_schema.schemata WHERE schema_name='testschema'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Schema testschema not found in read-test-db"
+        exit 1
+      fi
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: read-db
+status:
+  roles:
+    owner: read-test-group
+    reader: read-test-db-reader
+    writer: read-test-db-writer
+  schemas:
+    - testschema
+  succeeded: true

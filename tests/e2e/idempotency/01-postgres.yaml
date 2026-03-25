@@ -1,0 +1,11 @@
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: idem-db
+spec:
+  database: idem-test-db
+  dropOnDelete: true
+  masterRole: idem-test-group
+  schemas:
+    - idemschema

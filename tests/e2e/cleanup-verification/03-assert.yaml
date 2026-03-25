@@ -1,0 +1,44 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 120
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - command: bash -c "! kubectl get postgresuser clean-owner -n $NAMESPACE"
+  - command: bash -c "! kubectl get postgresuser clean-writer -n $NAMESPACE"
+  - script: |
+      #!/bin/bash
+      set -e
+      count=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname LIKE 'cowner%'")
+      if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
+        echo "ERROR: cowner roles still exist but should be dropped (dropOnDelete=true)"
+        exit 1
+      fi
+      echo "OK: cowner roles dropped as expected"
+  - script: |
+      #!/bin/bash
+      set -e
+      count=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -t -c "SELECT COUNT(*) FROM pg_roles WHERE rolname LIKE 'cwriter%'")
+      if [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]; then
+        echo "ERROR: cwriter roles still exist but should be dropped (dropOnDelete=true)"
+        exit 1
+      fi
+      echo "OK: cwriter roles dropped as expected"
+  - script: |
+      #!/bin/bash
+      set -e
+      if kubectl get secret clean-owner-secret -n "$NAMESPACE" 2>/dev/null; then
+        echo "ERROR: Secret clean-owner-secret should be deleted (ownerReference cascade)"
+        exit 1
+      fi
+      echo "OK: Secret clean-owner-secret deleted as expected"
+  - script: |
+      #!/bin/bash
+      set -e
+      if kubectl get secret clean-writer-secret -n "$NAMESPACE" 2>/dev/null; then
+        echo "ERROR: Secret clean-writer-secret should be deleted (ownerReference cascade)"
+        exit 1
+      fi
+      echo "OK: Secret clean-writer-secret deleted as expected"

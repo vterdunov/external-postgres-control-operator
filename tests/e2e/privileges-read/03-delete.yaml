@@ -1,0 +1,9 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: db.movetokube.com/v1alpha1
+    kind: PostgresUser
+    name: read-db-user
+  - apiVersion: db.movetokube.com/v1alpha1
+    kind: Postgres
+    name: read-db

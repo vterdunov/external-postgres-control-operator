@@ -33,7 +33,21 @@ jobs:
       - name: Install KUTTL
         run: kubectl krew install kuttl
       - name: Run tests
-        run: kubectl kuttl test --config ./tests/kuttl-test-self-hosted-postgres.yaml
+        run: >-
+          kubectl kuttl test --config ./tests/kuttl-test-self-hosted-postgres.yaml
+          --test annotations-labels
+          --test basic-operations
+          --test cleanup-verification
+          --test drop-on-delete-false
+          --test extensions
+          --test idempotency
+          --test minimal-cr
+          --test multiple-users
+          --test privileges-read
+          --test privileges-write
+          --test secret-content
+          --test secret-template
+          --test spec-updates
       - name: Upload test artifacts
         if: always() # Run even if tests fail
         uses: actions/upload-artifact@v6

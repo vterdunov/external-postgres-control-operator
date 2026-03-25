@@ -40,3 +40,6 @@ kubeconfig
 # helm template output temporary files
 /**/out
 out
+
+# Sisyphus orchestration artifacts
+.sisyphus/

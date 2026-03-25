@@ -1,0 +1,23 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d upd-test-db -t -c "SELECT count(*) FROM pg_extension WHERE extname='pgcrypto'")
+      if [ "$(echo "$result" | tr -d '[:space:]')" != "1" ]; then
+        echo "Extension pgcrypto not found in upd-test-db"
+        exit 1
+      fi
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: upd-db
+status:
+  succeeded: true

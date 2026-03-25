@@ -1,0 +1,7 @@
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: tmpl-db
+spec:
+  database: tmpl-test-db
+  dropOnDelete: true

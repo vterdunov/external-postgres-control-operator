@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"net"
+	"reflect"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -86,28 +87,21 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Deletion logic
 	if instance.GetDeletionTimestamp() != nil {
-		if instance.Spec.DropOnDelete && instance.Status.Succeeded && instance.Status.PostgresRole != "" {
-			// Initialize database name for connection with default database
-			// in case postgres cr isn't here anymore
-			db := r.pg.GetDefaultDatabase()
-			// Search Postgres CR
-			postgres, err := r.getPostgresCR(ctx, instance)
-			// Check if error exists and not a not found error
-			if err != nil && !errors.IsNotFound(err) {
-				return ctrl.Result{}, err
-			}
-			// Check if postgres cr is found and not in deletion state
-			if postgres != nil && postgres.GetDeletionTimestamp().IsZero() {
-				db = instance.Status.DatabaseName
+		shouldDrop := instance.Spec.DropOnDelete || instance.Status.DropOnDelete
+		if shouldDrop && instance.Status.PostgresRole != "" {
+			db := instance.Status.DatabaseName
+			if db == "" {
+				db = r.pg.GetDefaultDatabase()
 			}
 			err = r.pg.DropRole(instance.Status.PostgresRole, instance.Status.PostgresGroup, db)
 			if err != nil {
+				reqLogger.Error(err, "Failed to drop role", "role", instance.Status.PostgresRole, "database", db)
 				return ctrl.Result{}, err
 			}
+			reqLogger.Info("Dropped role", "role", instance.Status.PostgresRole)
 		}
 		controllerutil.RemoveFinalizer(instance, "finalizer.db.movetokube.com")
 
-		// Update CR
 		err = r.Update(ctx, instance)
 		if err != nil {
 			return ctrl.Result{}, err
@@ -123,10 +117,14 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err != nil {
 		return r.requeue(ctx, instance, err)
 	}
+	err = r.addFinalizer(ctx, reqLogger, instance)
+	if err != nil {
+		return r.requeue(ctx, instance, err)
+	}
 
 	if instance.Status.PostgresRole == "" {
 		// We need to get the Postgres CR to get the group role name
-		database, err := r.getPostgresCR(ctx, instance)
+		database, err := r.getPostgresCR(ctx, instance, false)
 		if err != nil {
 			return r.requeue(ctx, instance, errors.NewInternalError(err))
 		}
@@ -165,6 +163,7 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		instance.Status.PostgresGroup = groupRole
 		instance.Status.PostgresLogin = login
 		instance.Status.DatabaseName = database.Spec.Database
+		instance.Status.DropOnDelete = instance.Spec.DropOnDelete
 		err = r.Status().Update(ctx, instance)
 		if err != nil {
 			return r.requeue(ctx, instance, err)
@@ -210,7 +209,7 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if instance.Status.PostgresRole != "" {
 
 		// We need to get the Postgres CR to get the group role name
-		database, err := r.getPostgresCR(ctx, instance)
+		database, err := r.getPostgresCR(ctx, instance, false)
 		if err != nil {
 			return r.requeue(ctx, instance, errors.NewInternalError(err))
 		}
@@ -254,10 +253,14 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	err = r.addFinalizer(ctx, reqLogger, instance)
-	if err != nil {
-		return r.requeue(ctx, instance, err)
+	// Keep status.DropOnDelete in sync with spec
+	if instance.Status.DropOnDelete != instance.Spec.DropOnDelete {
+		instance.Status.DropOnDelete = instance.Spec.DropOnDelete
+		if err := r.Status().Update(ctx, instance); err != nil {
+			return r.requeue(ctx, instance, err)
+		}
 	}
+
 	err = r.addOwnerRef(ctx, reqLogger, instance)
 	if err != nil {
 		return r.requeue(ctx, instance, err)
@@ -297,11 +300,26 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.requeue(ctx, instance, err)
 	}
 
+	if existingPassword, hasPassword := found.Data["PASSWORD"]; hasPassword {
+		desiredSecret, err := r.newSecretForCR(reqLogger, instance, role, string(existingPassword), login)
+		if err != nil {
+			return r.requeue(ctx, instance, err)
+		}
+
+		if !reflect.DeepEqual(found.Data, desiredSecret.Data) {
+			found.Data = desiredSecret.Data
+			err = r.Update(ctx, found)
+			if err != nil {
+				return r.requeue(ctx, instance, err)
+			}
+		}
+	}
+
 	reqLogger.Info("Reconciling done", "requeueAfter", r.reconcileInterval)
 	return ctrl.Result{RequeueAfter: r.reconcileInterval}, nil
 }
 
-func (r *PostgresUserReconciler) getPostgresCR(ctx context.Context, instance *dbv1alpha1.PostgresUser) (*dbv1alpha1.Postgres, error) {
+func (r *PostgresUserReconciler) getPostgresCR(ctx context.Context, instance *dbv1alpha1.PostgresUser, forDeletion bool) (*dbv1alpha1.Postgres, error) {
 	database := dbv1alpha1.Postgres{}
 	err := r.Get(ctx,
 		types.NamespacedName{Namespace: instance.Namespace, Name: instance.Spec.Database}, &database)
@@ -312,7 +330,9 @@ func (r *PostgresUserReconciler) getPostgresCR(ctx context.Context, instance *db
 		err = fmt.Errorf("database \"%s\" is not managed by this operator", database.Name)
 		return nil, err
 	}
-	if !database.Status.Succeeded {
+	// During deletion we only need connection info to drop the role;
+	// the database does not have to be fully ready.
+	if !forDeletion && !database.Status.Succeeded {
 		err = fmt.Errorf("database \"%s\" is not ready", database.Name)
 		return nil, err
 	}
@@ -400,7 +420,7 @@ func (r *PostgresUserReconciler) addFinalizer(ctx context.Context, reqLogger log
 
 func (r *PostgresUserReconciler) addOwnerRef(ctx context.Context, _ logr.Logger, instance *dbv1alpha1.PostgresUser) error {
 	// Search postgres database CR
-	pg, err := r.getPostgresCR(ctx, instance)
+	pg, err := r.getPostgresCR(ctx, instance, false)
 	if err != nil {
 		return err
 	}

@@ -1,0 +1,97 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      for key in DATABASE_NAME HOST URI_ARGS PASSWORD ROLE LOGIN \
+          POSTGRES_URL POSTGRES_JDBC_URL POSTGRES_DOTNET_URL \
+          HOSTNAME PORT; do
+        val=$(kubectl get secret sec-secret -n "$NAMESPACE" \
+          -o jsonpath="{.data.$key}" | base64 -d)
+        if [ -z "$val" ]; then
+          echo "EMPTY: $key"
+          exit 1
+        fi
+        echo "OK: $key=$val"
+      done
+  - script: |
+      #!/bin/bash
+      set -e
+      db=$(kubectl get secret sec-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.DATABASE_NAME}' | base64 -d)
+      if [ "$db" != "sec-test-db" ]; then
+        echo "DATABASE_NAME mismatch: got $db, expected sec-test-db"
+        exit 1
+      fi
+      url=$(kubectl get secret sec-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.POSTGRES_URL}' | base64 -d)
+      if [[ "$url" != postgresql://* ]]; then
+        echo "POSTGRES_URL format wrong: $url"
+        exit 1
+      fi
+      jdbc=$(kubectl get secret sec-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.POSTGRES_JDBC_URL}' | base64 -d)
+      if [[ "$jdbc" != jdbc:postgresql://* ]]; then
+        echo "POSTGRES_JDBC_URL format wrong: $jdbc"
+        exit 1
+      fi
+      echo "All format validations passed"
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret sec-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.ROLE}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres         psql -h 127.0.0.1 -U postgres -t -c \
+        "SELECT 1 FROM pg_roles WHERE rolname='$ROLE'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Role $ROLE from Secret not found in pg_roles"
+        exit 1
+      fi
+      echo "ROLE $ROLE verified in pg_roles"
+  - script: |
+      #!/bin/bash
+      set -e
+      ROLE=$(kubectl get secret sec-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.ROLE}' | base64 -d)
+      PASSWORD=$(kubectl get secret sec-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.PASSWORD}' | base64 -d)
+      result=$(kubectl exec postgresql-0 -n default -- \
+        env PGPASSWORD="$PASSWORD" psql -U "$ROLE" -d sec-test-db -t -c "SELECT 1")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Connection as $ROLE to sec-test-db failed"
+        exit 1
+      fi
+      echo "Connection test passed for $ROLE"
+  - script: |
+      #!/bin/bash
+      set -e
+      SECRET_ROLE=$(kubectl get secret sec-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.ROLE}' | base64 -d)
+      STATUS_ROLE=$(kubectl get postgresuser sec-db-user -n "$NAMESPACE" \
+        -o jsonpath='{.status.postgresRole}')
+      if [ "$SECRET_ROLE" != "$STATUS_ROLE" ]; then
+        echo "ROLE mismatch: Secret=$SECRET_ROLE, Status=$STATUS_ROLE"
+        exit 1
+      fi
+      echo "ROLE matches status.postgresRole: $SECRET_ROLE"
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: sec-db-user
+status:
+  databaseName: sec-test-db
+  postgresGroup: sec-test-group
+  succeeded: true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sec-secret

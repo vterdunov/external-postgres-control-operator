@@ -1,0 +1,100 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      # Verify CUSTOM_URL key exists and is non-empty
+      val=$(kubectl get secret tmpl-secret -n "$NAMESPACE" -o jsonpath='{.data.CUSTOM_URL}' | base64 -d)
+      if [ -z "$val" ]; then
+        echo "CUSTOM_URL is empty"
+        exit 1
+      fi
+      echo "CUSTOM_URL=$val"
+      # Verify CUSTOM_DSN key exists and is non-empty
+      dsn=$(kubectl get secret tmpl-secret -n "$NAMESPACE" -o jsonpath='{.data.CUSTOM_DSN}' | base64 -d)
+      if [ -z "$dsn" ]; then
+        echo "CUSTOM_DSN is empty"
+        exit 1
+      fi
+      echo "CUSTOM_DSN=$dsn"
+  - script: |
+      #!/bin/bash
+      set -e
+      # Verify default key DATABASE_NAME does NOT exist (template replaces defaults)
+      val=$(kubectl get secret tmpl-secret -n "$NAMESPACE" -o jsonpath='{.data.DATABASE_NAME}')
+      if [ -n "$val" ]; then
+        echo "ERROR: DATABASE_NAME should NOT exist when secretTemplate is used"
+        exit 1
+      fi
+      echo "Correctly: DATABASE_NAME not present in template secret"
+  - script: |
+      #!/bin/bash
+      set -e
+      # Verify no Go template literals remain (rendering was successful)
+      url=$(kubectl get secret tmpl-secret -n "$NAMESPACE" -o jsonpath='{.data.CUSTOM_URL}' | base64 -d)
+      if echo "$url" | grep -q '{{'; then
+        echo "ERROR: Go template not rendered in CUSTOM_URL: $url"
+        exit 1
+      fi
+      # Verify CUSTOM_DSN starts with postgresql://
+      dsn=$(kubectl get secret tmpl-secret -n "$NAMESPACE" -o jsonpath='{.data.CUSTOM_DSN}' | base64 -d)
+      if [[ "$dsn" != postgresql://* ]]; then
+        echo "ERROR: CUSTOM_DSN format wrong: $dsn"
+        exit 1
+      fi
+      # Verify database name in CUSTOM_DSN
+      if ! echo "$dsn" | grep -q 'tmpl-test-db'; then
+        echo "ERROR: tmpl-test-db not found in CUSTOM_DSN: $dsn"
+        exit 1
+      fi
+      echo "Template rendering verified successfully"
+  - script: |
+      #!/bin/bash
+      set -e
+      # Verify OTHER default keys also do NOT exist
+      for key in POSTGRES_URL HOSTNAME PORT HOST PASSWORD LOGIN; do
+        val=$(kubectl get secret tmpl-secret -n "$NAMESPACE" \
+          -o jsonpath="{.data.$key}")
+        if [ -n "$val" ]; then
+          echo "ERROR: Default key $key should NOT exist in template secret"
+          exit 1
+        fi
+        echo "OK: $key absent as expected"
+      done
+  - script: |
+      #!/bin/bash
+      set -e
+      url=$(kubectl get secret tmpl-secret -n "$NAMESPACE" \
+        -o jsonpath='{.data.CUSTOM_URL}' | base64 -d)
+      if ! echo "$url" | grep -q 'host='; then
+        echo "ERROR: CUSTOM_URL missing host= pattern: $url"
+        exit 1
+      fi
+      if ! echo "$url" | grep -q 'user='; then
+        echo "ERROR: CUSTOM_URL missing user= pattern: $url"
+        exit 1
+      fi
+      if ! echo "$url" | grep -q 'dbname=tmpl-test-db'; then
+        echo "ERROR: CUSTOM_URL missing dbname=tmpl-test-db: $url"
+        exit 1
+      fi
+      echo "CUSTOM_URL pattern verified: $url"
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: tmpl-db-user
+status:
+  databaseName: tmpl-test-db
+  succeeded: true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tmpl-secret

@@ -30,8 +30,9 @@ const (
 func (c *pg) CreateDB(dbname, role string) error {
 	_, err := c.db.Exec(fmt.Sprintf(CREATE_DB, dbname))
 	if err != nil {
-		// eat DUPLICATE DATABASE ERROR
-		if err.(*pq.Error).Code != "42P04" {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "42P04" {
+			// duplicate database, continue
+		} else {
 			return err
 		}
 	}
@@ -94,19 +95,27 @@ func (c *pg) CreateSchema(db, role, schema string) error {
 
 func (c *pg) DropDatabase(database string) error {
 	_, err := c.db.Exec(fmt.Sprintf(REVOKE_CONNECT, database))
-	// Error code 3D000 is returned if database doesn't exist
-	if err != nil && err.(*pq.Error).Code != "3D000" {
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "3D000" {
+			// database doesn't exist, nothing to drop
+			return nil
+		}
 		return err
 	}
 
 	_, err = c.db.Exec(fmt.Sprintf(TERMINATE_BACKEND, database))
-	// Error code 3D000 is returned if database doesn't exist
-	if err != nil && err.(*pq.Error).Code != "3D000" {
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "3D000" {
+			return nil
+		}
 		return err
 	}
+
 	_, err = c.db.Exec(fmt.Sprintf(DROP_DATABASE, database))
-	// Error code 3D000 is returned if database doesn't exist
-	if err != nil && err.(*pq.Error).Code != "3D000" {
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "3D000" {
+			return nil
+		}
 		return err
 	}
 

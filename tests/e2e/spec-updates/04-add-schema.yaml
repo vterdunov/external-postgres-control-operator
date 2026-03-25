@@ -1,0 +1,12 @@
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: upd-db
+spec:
+  database: upd-test-db
+  dropOnDelete: true
+  masterRole: upd-test-group
+  schemas:
+    - schema1
+    - schema2

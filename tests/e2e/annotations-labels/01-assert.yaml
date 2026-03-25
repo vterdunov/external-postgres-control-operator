@@ -1,0 +1,29 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=ext-postgres-operator
+    tail: 100
+commands:
+  - script: |
+      #!/bin/bash
+      set -e
+      result=$(kubectl exec postgresql-0 -n default -- env PGPASSWORD=postgres         psql -h 127.0.0.1 -U postgres -t -c \
+        "SELECT 1 FROM pg_database WHERE datname='ann-test-db'")
+      if [ -z "$(echo "$result" | tr -d '[:space:]')" ]; then
+        echo "Database ann-test-db not found"
+        exit 1
+      fi
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: ann-db
+status:
+  roles:
+    owner: ann-test-db-group
+    reader: ann-test-db-reader
+    writer: ann-test-db-writer
+  succeeded: true

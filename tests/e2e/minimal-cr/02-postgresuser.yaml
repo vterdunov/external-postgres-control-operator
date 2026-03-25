@@ -1,0 +1,11 @@
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: PostgresUser
+metadata:
+  name: min-db-user
+spec:
+  role: minuser
+  database: min-db
+  secretName: min-secret
+  privileges: OWNER
+  dropOnDelete: true

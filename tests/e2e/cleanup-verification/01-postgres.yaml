@@ -1,0 +1,13 @@
+---
+apiVersion: db.movetokube.com/v1alpha1
+kind: Postgres
+metadata:
+  name: clean-db
+spec:
+  database: clean-test-db
+  dropOnDelete: true
+  masterRole: clean-test-group
+  schemas:
+    - cleanschema
+  extensions:
+    - pgcrypto
