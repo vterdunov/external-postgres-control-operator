@@ -26,6 +26,8 @@ import (
 	"github.com/movetokube/postgres-operator/pkg/utils"
 )
 
+const operatorPasswordKey = "_POSTGRES_PASSWORD_STORED"
+
 // PostgresUserReconciler reconciles a PostgresUser object
 type PostgresUserReconciler struct {
 	client.Client
@@ -300,18 +302,25 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.requeue(ctx, instance, err)
 	}
 
-	if existingPassword, hasPassword := found.Data["PASSWORD"]; hasPassword {
-		desiredSecret, err := r.newSecretForCR(reqLogger, instance, role, string(existingPassword), login)
-		if err != nil {
+	existingPassword, hasStoredPassword := getStoredPassword(found)
+	if !hasStoredPassword {
+		existingPassword = password
+		reqLogger.Info("No stored password found in existing secret, rotating password", "Secret.Name", found.Name)
+		if err := r.pg.UpdatePassword(role, existingPassword); err != nil {
 			return r.requeue(ctx, instance, err)
 		}
+	}
 
-		if !reflect.DeepEqual(found.Data, desiredSecret.Data) {
-			found.Data = desiredSecret.Data
-			err = r.Update(ctx, found)
-			if err != nil {
-				return r.requeue(ctx, instance, err)
-			}
+	desiredSecret, err := r.newSecretForCR(reqLogger, instance, role, existingPassword, login)
+	if err != nil {
+		return r.requeue(ctx, instance, err)
+	}
+
+	if !reflect.DeepEqual(found.Data, desiredSecret.Data) {
+		found.Data = desiredSecret.Data
+		err = r.Update(ctx, found)
+		if err != nil {
+			return r.requeue(ctx, instance, err)
 		}
 	}
 
@@ -374,7 +383,7 @@ func (r *PostgresUserReconciler) newSecretForCR(reqLogger logr.Logger, cr *dbv1a
 
 	var data map[string][]byte
 	if len(templateData) > 0 {
-		// When secretTemplate is specified, use only the rendered template data
+		templateData[operatorPasswordKey] = []byte(password)
 		data = templateData
 	} else {
 		data = map[string][]byte{
@@ -401,6 +410,16 @@ func (r *PostgresUserReconciler) newSecretForCR(reqLogger logr.Logger, cr *dbv1a
 		},
 		Data: data,
 	}, nil
+}
+
+func getStoredPassword(secret *corev1.Secret) (string, bool) {
+	if pw, ok := secret.Data[operatorPasswordKey]; ok && len(pw) > 0 {
+		return string(pw), true
+	}
+	if pw, ok := secret.Data["PASSWORD"]; ok && len(pw) > 0 {
+		return string(pw), true
+	}
+	return "", false
 }
 
 func (r *PostgresUserReconciler) addFinalizer(ctx context.Context, reqLogger logr.Logger, m *dbv1alpha1.PostgresUser) error {

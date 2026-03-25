@@ -685,7 +685,7 @@ var _ = Describe("PostgresUser Controller", func() {
 				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
 				Expect(err).NotTo(HaveOccurred())
 
-				Expect(foundSecret.Data).To(HaveLen(5), "secret should contain only the 5 template keys, no defaults")
+				Expect(foundSecret.Data).To(HaveLen(6), "secret should contain the 5 template keys plus _POSTGRES_PASSWORD_STORED")
 
 				Expect(foundSecret.Data).To(HaveKey("CUSTOM_KEY"))
 				customKey := string(foundSecret.Data["CUSTOM_KEY"])
@@ -707,6 +707,198 @@ var _ = Describe("PostgresUser Controller", func() {
 				Expect(foundSecret.Data).NotTo(HaveKey("ROLE"), "default keys must not be present when secretTemplate is set")
 				Expect(foundSecret.Data).NotTo(HaveKey("HOST"), "default keys must not be present when secretTemplate is set")
 
+			})
+		})
+
+		Context("Existing templated Secret has stale data (Issue #3)", func() {
+			var (
+				existingPassword string
+				existingRole     string
+				existingLogin    string
+			)
+
+			BeforeEach(func() {
+				existingPassword = "existing-tpl-password"
+				existingRole = "app-tpl123"
+				existingLogin = "app-tpl123"
+
+				postgresUser.Spec.SecretTemplate = map[string]string{
+					"DB_HOST": "{{.Host}}",
+					"DB_NAME": "{{.Database}}",
+					"DB_PASS": "{{.Password}}",
+				}
+
+				postgresUser.Status = dbv1alpha1.PostgresUserStatus{
+					Succeeded:     true,
+					PostgresGroup: databaseName + "-writer",
+					PostgresRole:  existingRole,
+					PostgresLogin: existingLogin,
+					DatabaseName:  databaseName,
+				}
+
+				initClient(postgresDB, postgresUser, false)
+
+				// Build the secret as it currently exists — with the OLD host
+				oldRp := &PostgresUserReconciler{
+					Client:    managerClient,
+					Scheme:    sc,
+					pgHost:    "old-host:5432",
+					pgUriArgs: "",
+				}
+				existingSecret, err := oldRp.newSecretForCR(logr.Discard(), postgresUser, existingRole, existingPassword, existingLogin)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cl.Create(ctx, existingSecret)).To(Succeed())
+			})
+
+			AfterEach(func() {
+				secretList := &corev1.SecretList{}
+				Expect(cl.List(ctx, secretList, client.InNamespace(namespace))).To(Succeed())
+				for _, secret := range secretList.Items {
+					Expect(cl.Delete(ctx, &secret)).To(Succeed())
+				}
+			})
+
+			It("should update stale templated Secret data when host changes", func() {
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				foundSecret := &corev1.Secret{}
+				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
+				Expect(err).NotTo(HaveOccurred())
+				// Host should now reflect the reconciler's current pgHost
+				Expect(string(foundSecret.Data["DB_HOST"])).To(Equal("postgres.local"), "template secret should be updated with new host")
+				Expect(string(foundSecret.Data["DB_NAME"])).To(Equal(databaseName))
+				// Password must be preserved — not rotated
+				Expect(string(foundSecret.Data["DB_PASS"])).To(Equal(existingPassword), "password must be preserved during drift fix")
+			})
+		})
+
+		Context("Existing templated Secret is up to date (Issue #3)", func() {
+			var (
+				existingPassword string
+				existingRole     string
+				existingLogin    string
+			)
+
+			BeforeEach(func() {
+				existingPassword = "existing-tpl-password"
+				existingRole = "app-tpl123"
+				existingLogin = "app-tpl123"
+
+				postgresUser.Spec.SecretTemplate = map[string]string{
+					"DB_HOST": "{{.Host}}",
+					"DB_PASS": "{{.Password}}",
+				}
+
+				postgresUser.Status = dbv1alpha1.PostgresUserStatus{
+					Succeeded:     true,
+					PostgresGroup: databaseName + "-writer",
+					PostgresRole:  existingRole,
+					PostgresLogin: existingLogin,
+					DatabaseName:  databaseName,
+				}
+
+				initClient(postgresDB, postgresUser, false)
+
+				// Build secret with current reconciler settings — already correct
+				desiredSecret, err := rp.newSecretForCR(logr.Discard(), postgresUser, existingRole, existingPassword, existingLogin)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cl.Create(ctx, desiredSecret)).To(Succeed())
+			})
+
+			AfterEach(func() {
+				secretList := &corev1.SecretList{}
+				Expect(cl.List(ctx, secretList, client.InNamespace(namespace))).To(Succeed())
+				for _, secret := range secretList.Items {
+					Expect(cl.Delete(ctx, &secret)).To(Succeed())
+				}
+			})
+
+			It("should reconcile idempotently for template secrets when data already matches", func() {
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				foundSecret := &corev1.Secret{}
+				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
+				Expect(err).NotTo(HaveOccurred())
+				resourceVersionAfterFirstReconcile := foundSecret.ResourceVersion
+
+				err = runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(foundSecret.ResourceVersion).To(Equal(resourceVersionAfterFirstReconcile), "template secret should not be updated when data matches")
+				Expect(string(foundSecret.Data["DB_PASS"])).To(Equal(existingPassword))
+			})
+		})
+
+		Context("Legacy templated Secret without _POSTGRES_PASSWORD_STORED (Issue #3)", func() {
+			var (
+				existingPassword string
+				existingRole     string
+				existingLogin    string
+			)
+
+			BeforeEach(func() {
+				existingPassword = "legacy-tpl-password"
+				existingRole = "app-legacy123"
+				existingLogin = "app-legacy123"
+
+				postgresUser.Spec.SecretTemplate = map[string]string{
+					"DB_HOST": "{{.Host}}",
+					"DB_PASS": "{{.Password}}",
+				}
+
+				postgresUser.Status = dbv1alpha1.PostgresUserStatus{
+					Succeeded:     true,
+					PostgresGroup: databaseName + "-writer",
+					PostgresRole:  existingRole,
+					PostgresLogin: existingLogin,
+					DatabaseName:  databaseName,
+				}
+
+				initClient(postgresDB, postgresUser, false)
+
+				// Simulate a legacy secret that was created BEFORE the fix:
+				// it has only template keys, no _POSTGRES_PASSWORD_STORED key
+				legacySecret := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      secretName,
+						Namespace: namespace,
+						Labels:    map[string]string{"app": name},
+					},
+					Data: map[string][]byte{
+						"DB_HOST": []byte("postgres.local"),
+						"DB_PASS": []byte(existingPassword),
+					},
+				}
+				Expect(cl.Create(ctx, legacySecret)).To(Succeed())
+			})
+
+			AfterEach(func() {
+				secretList := &corev1.SecretList{}
+				Expect(cl.List(ctx, secretList, client.InNamespace(namespace))).To(Succeed())
+				for _, secret := range secretList.Items {
+					Expect(cl.Delete(ctx, &secret)).To(Succeed())
+				}
+			})
+
+			It("should backfill _POSTGRES_PASSWORD_STORED for legacy template secrets", func() {
+				// After reconcile, legacy secret should get _POSTGRES_PASSWORD_STORED backfilled
+				// and the password in PG should be rotated since we can't recover the old one
+				pg.EXPECT().UpdatePassword(existingRole, gomock.Any()).Return(nil)
+
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				foundSecret := &corev1.Secret{}
+				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(foundSecret.Data).To(HaveKey("_POSTGRES_PASSWORD_STORED"), "legacy secret must get _POSTGRES_PASSWORD_STORED backfilled")
+				Expect(string(foundSecret.Data["_POSTGRES_PASSWORD_STORED"])).NotTo(BeEmpty())
+				// DB_HOST should still be correct
+				Expect(string(foundSecret.Data["DB_HOST"])).To(Equal("postgres.local"))
 			})
 		})
 	})
@@ -949,10 +1141,11 @@ var _ = Describe("PostgresUser Controller", func() {
 			secret, err := rp.newSecretForCR(logr.Discard(), cr, "tplrole", "tplpass", "tplogin")
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(secret.Data).To(HaveLen(3))
+			Expect(secret.Data).To(HaveLen(4))
 			Expect(string(secret.Data["DB_HOST"])).To(Equal("dbhost"))
 			Expect(string(secret.Data["DB_PORT"])).To(Equal("5432"))
 			Expect(string(secret.Data["DB_PASS"])).To(Equal("tplpass"))
+			Expect(string(secret.Data["_POSTGRES_PASSWORD_STORED"])).To(Equal("tplpass"))
 
 			Expect(secret.Data).NotTo(HaveKey("POSTGRES_URL"))
 			Expect(secret.Data).NotTo(HaveKey("HOST"))
