@@ -82,30 +82,33 @@ func (c *pg) DropRole(role, newOwner, database string) error {
 	tmpDb, err := GetConnection(c.user, c.pass, c.host, database, c.args)
 	if err != nil {
 		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "3D000" {
-			return nil // Database does not exist (anymore)
-		}
-		return err
-	}
-	defer tmpDb.Close()
-
-	_, err = tmpDb.Exec(fmt.Sprintf(REASIGN_OBJECTS, role, newOwner))
-	// Check if error exists and if different from "ROLE NOT FOUND" => 42704
-	if err != nil {
-		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "42704" {
-			// role not found, continue
+			// Database does not exist (anymore), skip REASSIGN/DROP OWNED
+			// but still drop the role itself below
 		} else {
 			return err
 		}
-	}
+	} else {
+		defer tmpDb.Close()
 
-	// We previously assigned all objects to the operator's role so DROP OWNED BY will drop privileges of role
-	_, err = tmpDb.Exec(fmt.Sprintf(DROP_OWNED_BY, role))
-	// Check if error exists and if different from "ROLE NOT FOUND" => 42704
-	if err != nil {
-		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "42704" {
-			// role not found, continue
-		} else {
-			return err
+		_, err = tmpDb.Exec(fmt.Sprintf(REASIGN_OBJECTS, role, newOwner))
+		// Check if error exists and if different from "ROLE NOT FOUND" => 42704
+		if err != nil {
+			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "42704" {
+				// role not found, continue
+			} else {
+				return err
+			}
+		}
+
+		// We previously assigned all objects to the operator's role so DROP OWNED BY will drop privileges of role
+		_, err = tmpDb.Exec(fmt.Sprintf(DROP_OWNED_BY, role))
+		// Check if error exists and if different from "ROLE NOT FOUND" => 42704
+		if err != nil {
+			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "42704" {
+				// role not found, continue
+			} else {
+				return err
+			}
 		}
 	}
 
