@@ -49,6 +49,10 @@ type PostgresUserStatus struct {
 	PostgresLogin string `json:"postgresLogin"`
 	PostgresGroup string `json:"postgresGroup"`
 	DatabaseName  string `json:"databaseName"`
+	// Whether the PostgreSQL role should be dropped when this CR is deleted.
+	// Copied from spec to survive potential spec field loss during concurrent updates.
+	// +optional
+	DropOnDelete bool `json:"dropOnDelete"`
 	// Reflects whether IAM authentication is enabled for this user.
 	// +optional
 	EnableIamAuth bool `json:"enableIamAuth"`

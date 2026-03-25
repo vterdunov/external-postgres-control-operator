@@ -94,6 +94,11 @@ spec:
             properties:
               databaseName:
                 type: string
+              dropOnDelete:
+                description: |-
+                  Whether the PostgreSQL role should be dropped when this CR is deleted.
+                  Copied from spec to survive potential spec field loss during concurrent updates.
+                type: boolean
               enableIamAuth:
                 description: Reflects whether IAM authentication is enabled for this
                   user.

@@ -204,6 +204,7 @@ var _ = Describe("PostgresUser Controller", func() {
 		Context("User deletion with dropOnDelete enabled", func() {
 			BeforeEach(func() {
 				postgresUser.Spec.DropOnDelete = true
+				postgresUser.Status.DropOnDelete = true
 				initClient(postgresDB, postgresUser, true)
 			})
 
@@ -239,6 +240,30 @@ var _ = Describe("PostgresUser Controller", func() {
 				err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundUser)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(foundUser.GetFinalizers()).NotTo(BeEmpty())
+			})
+		})
+
+		Context("User deletion with dropOnDelete only in status (spec lost)", func() {
+			BeforeEach(func() {
+				postgresUser.Spec.DropOnDelete = false
+				postgresUser.Status.DropOnDelete = true
+				initClient(postgresDB, postgresUser, true)
+			})
+
+			It("should drop the role using status.DropOnDelete as fallback", func() {
+				pg.EXPECT().DropRole(postgresUser.Status.PostgresRole, postgresUser.Status.PostgresGroup,
+					databaseName).Return(nil)
+
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				foundUser := &dbv1alpha1.PostgresUser{}
+				err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundUser)
+				if err != nil {
+					Expect(errors.IsNotFound(err)).To(BeTrue())
+				} else {
+					Expect(foundUser.GetFinalizers()).To(BeEmpty())
+				}
 			})
 		})
 	})

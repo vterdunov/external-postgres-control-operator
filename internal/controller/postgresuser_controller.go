@@ -87,12 +87,15 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Deletion logic
 	if instance.GetDeletionTimestamp() != nil {
+		shouldDrop := instance.Spec.DropOnDelete || instance.Status.DropOnDelete
 		reqLogger.Info("Handling deletion",
-			"dropOnDelete", instance.Spec.DropOnDelete,
+			"specDropOnDelete", instance.Spec.DropOnDelete,
+			"statusDropOnDelete", instance.Status.DropOnDelete,
+			"shouldDrop", shouldDrop,
 			"postgresRole", instance.Status.PostgresRole,
 			"postgresGroup", instance.Status.PostgresGroup,
 			"databaseName", instance.Status.DatabaseName)
-		if instance.Spec.DropOnDelete && instance.Status.PostgresRole != "" {
+		if shouldDrop && instance.Status.PostgresRole != "" {
 			db := instance.Status.DatabaseName
 			if db == "" {
 				db = r.pg.GetDefaultDatabase()
@@ -169,6 +172,7 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		instance.Status.PostgresGroup = groupRole
 		instance.Status.PostgresLogin = login
 		instance.Status.DatabaseName = database.Spec.Database
+		instance.Status.DropOnDelete = instance.Spec.DropOnDelete
 		err = r.Status().Update(ctx, instance)
 		if err != nil {
 			return r.requeue(ctx, instance, err)
@@ -255,6 +259,14 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			if err := r.Status().Update(ctx, instance); err != nil {
 				return r.requeue(ctx, instance, err)
 			}
+		}
+	}
+
+	// Keep status.DropOnDelete in sync with spec
+	if instance.Status.DropOnDelete != instance.Spec.DropOnDelete {
+		instance.Status.DropOnDelete = instance.Spec.DropOnDelete
+		if err := r.Status().Update(ctx, instance); err != nil {
+			return r.requeue(ctx, instance, err)
 		}
 	}
 
