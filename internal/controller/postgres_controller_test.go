@@ -403,6 +403,39 @@ var _ = Describe("PostgresReconciler", func() {
 				Expect(err).To(HaveOccurred())
 			})
 		})
+
+		Context("Status patch fails during deletion with DropOnDelete", func() {
+			BeforeEach(func() {
+				failingPostgres := postgresCR.DeepCopy()
+				failingPostgres.Spec.DropOnDelete = true
+				initClient(failingPostgres, true)
+
+				rp = &PostgresReconciler{
+					Client: &patchFailingClient{
+						Client:          managerClient,
+						err:             fmt.Errorf("status patch failed"),
+						failOnPatchCall: 1, // 1st patch = status patch during deletion
+					},
+					Scheme: sc,
+					pg:     pg,
+				}
+			})
+
+			It("should return an error and not remove the finalizer when status patch fails", func() {
+				pg.EXPECT().GetUser().Return("pguser").AnyTimes()
+				pg.EXPECT().DropRole(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				pg.EXPECT().DropDatabase(gomock.Any()).Return(nil).AnyTimes()
+
+				err := runReconcile(rp, ctx, req)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("status patch failed"))
+
+				// Finalizer must still be present — deletion must not proceed
+				foundPostgres := &v1alpha1.Postgres{}
+				Expect(cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundPostgres)).To(Succeed())
+				Expect(foundPostgres.GetFinalizers()).To(ConsistOf("finalizer.db.movetokube.com"))
+			})
+		})
 	})
 
 	Describe("Checking creation logic", func() {
