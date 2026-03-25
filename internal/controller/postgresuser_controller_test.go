@@ -99,11 +99,12 @@ var _ = Describe("PostgresUser Controller", func() {
 		sc.AddKnownTypes(dbv1alpha1.GroupVersion, &dbv1alpha1.PostgresUserList{})
 		// Create PostgresUserReconciler
 		rp = &PostgresUserReconciler{
-			Client:        managerClient,
-			Scheme:        sc,
-			pg:            pg,
-			pgHost:        "postgres.local",
-			cloudProvider: "AWS",
+			Client:           managerClient,
+			Scheme:           sc,
+			pg:               pg,
+			pgHost:           "postgres.local",
+			cloudProvider:    "AWS",
+			generatePassword: utils.GetSecureRandomString,
 		}
 		if k8sManager != nil {
 			rp.SetupWithManager(k8sManager)
@@ -424,6 +425,24 @@ var _ = Describe("PostgresUser Controller", func() {
 				Expect(cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundUser)).NotTo(HaveOccurred())
 				Expect(foundUser.GetFinalizers()).To(ContainElement("finalizer.db.movetokube.com"))
 			})
+
+			It("should call generatePassword exactly once during initial user creation (Issue #6)", func() {
+				passwordGenCalls := 0
+				rp.generatePassword = func(n int) (string, error) {
+					passwordGenCalls++
+					return utils.GetSecureRandomString(n)
+				}
+
+				pg.EXPECT().GetDefaultDatabase().Return("postgres").AnyTimes()
+				pg.EXPECT().CreateUserRole(gomock.Any(), gomock.Any()).Return(roleName+"-mock", nil)
+				pg.EXPECT().GrantRole(databaseName+"-writer", gomock.Any()).Return(nil)
+				pg.EXPECT().AlterDefaultLoginRole(gomock.Any(), gomock.Any()).Return(nil)
+
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(passwordGenCalls).To(Equal(1), "generatePassword should be called exactly once during initial creation (Issue #6)")
+			})
 		})
 
 		Context("New PostgresUser creation with dropOnDelete enabled", func() {
@@ -560,6 +579,130 @@ var _ = Describe("PostgresUser Controller", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(foundSecret.ResourceVersion).To(Equal(resourceVersionAfterFirstReconcile))
 				Expect(string(foundSecret.Data["PASSWORD"])).To(Equal(existingPassword))
+			})
+		})
+
+		Context("Re-reconcile with existing user and secret does not trigger password operations (Issue #6)", func() {
+			var (
+				existingPassword string
+				existingRole     string
+				existingLogin    string
+			)
+
+			BeforeEach(func() {
+				existingPassword = "existing-password-issue6"
+				existingRole = "app-issue6"
+				existingLogin = "app-issue6"
+
+				postgresUser.Status = dbv1alpha1.PostgresUserStatus{
+					Succeeded:     true,
+					PostgresGroup: databaseName + "-writer",
+					PostgresRole:  existingRole,
+					PostgresLogin: existingLogin,
+					DatabaseName:  databaseName,
+				}
+
+				initClient(postgresDB, postgresUser, false)
+
+				desiredSecret, err := rp.newSecretForCR(logr.Discard(), postgresUser, existingRole, existingPassword, existingLogin)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cl.Create(ctx, desiredSecret)).To(Succeed())
+			})
+
+			AfterEach(func() {
+				secretList := &corev1.SecretList{}
+				Expect(cl.List(ctx, secretList, client.InNamespace(namespace))).To(Succeed())
+				for _, secret := range secretList.Items {
+					Expect(cl.Delete(ctx, &secret)).To(Succeed())
+				}
+			})
+
+			It("should not call generatePassword, CreateUserRole, or UpdatePassword on steady-state re-reconcile", func() {
+				// Inject a counting password generator to prove it's never called
+				passwordGenCalls := 0
+				rp.generatePassword = func(n int) (string, error) {
+					passwordGenCalls++
+					return utils.GetSecureRandomString(n)
+				}
+
+				// Explicitly assert that password-related PG operations are NOT called
+				pg.EXPECT().CreateUserRole(gomock.Any(), gomock.Any()).Times(0)
+				pg.EXPECT().UpdatePassword(gomock.Any(), gomock.Any()).Times(0)
+
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Core assertion: password generator must not be invoked at all
+				Expect(passwordGenCalls).To(Equal(0), "generatePassword should not be called on steady-state reconcile (Issue #6)")
+
+				// Verify existing password is preserved
+				foundSecret := &corev1.Secret{}
+				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(string(foundSecret.Data["PASSWORD"])).To(Equal(existingPassword))
+			})
+		})
+
+		Context("Secret deleted but user exists triggers password regeneration (Issue #6)", func() {
+			var (
+				existingRole  string
+				existingLogin string
+			)
+
+			BeforeEach(func() {
+				existingRole = "app-regen123"
+				existingLogin = "app-regen123"
+
+				postgresUser.Status = dbv1alpha1.PostgresUserStatus{
+					Succeeded:     true,
+					PostgresGroup: databaseName + "-writer",
+					PostgresRole:  existingRole,
+					PostgresLogin: existingLogin,
+					DatabaseName:  databaseName,
+				}
+
+				initClient(postgresDB, postgresUser, false)
+			})
+
+			AfterEach(func() {
+				secretList := &corev1.SecretList{}
+				Expect(cl.List(ctx, secretList, client.InNamespace(namespace))).To(Succeed())
+				for _, secret := range secretList.Items {
+					Expect(cl.Delete(ctx, &secret)).To(Succeed())
+				}
+			})
+
+			It("should call generatePassword exactly once, update PG, and create a new secret", func() {
+				passwordGenCalls := 0
+				rp.generatePassword = func(n int) (string, error) {
+					passwordGenCalls++
+					return utils.GetSecureRandomString(n)
+				}
+
+				pg.EXPECT().CreateUserRole(gomock.Any(), gomock.Any()).Times(0)
+
+				var capturedPassword string
+				pg.EXPECT().UpdatePassword(existingRole, gomock.Any()).DoAndReturn(
+					func(role, password string) error {
+						capturedPassword = password
+						return nil
+					})
+
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(passwordGenCalls).To(Equal(1), "generatePassword should be called exactly once when secret is missing (Issue #6)")
+				Expect(capturedPassword).NotTo(BeEmpty())
+
+				foundSecret := &corev1.Secret{}
+				err = cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, foundSecret)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(string(foundSecret.Data["PASSWORD"])).To(Equal(capturedPassword))
+
+				foundUser := &dbv1alpha1.PostgresUser{}
+				err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundUser)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(foundUser.Status.Succeeded).To(BeTrue())
 			})
 		})
 
