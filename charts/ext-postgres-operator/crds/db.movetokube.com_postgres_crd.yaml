@@ -40,7 +40,7 @@ spec:
             description: PostgresSpec defines the desired state of Postgres
             properties:
               database:
-                maxLength: 63
+                maxLength: 56
                 minLength: 1
                 pattern: ^[a-zA-Z0-9_][a-zA-Z0-9_.\-$]*$
                 type: string
