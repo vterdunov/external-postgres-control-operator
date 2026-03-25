@@ -113,24 +113,22 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Creation logic
 	var (
-		role, login string
+		role, login, password string
 	)
-	password, err := utils.GetSecureRandomString(15)
-	if err != nil {
-		return r.requeue(ctx, instance, err)
-	}
 	err = r.addFinalizer(ctx, reqLogger, instance)
 	if err != nil {
 		return r.requeue(ctx, instance, err)
 	}
 
 	if instance.Status.PostgresRole == "" {
-		// We need to get the Postgres CR to get the group role name
 		database, err := r.getPostgresCR(ctx, instance, false)
 		if err != nil {
 			return r.requeue(ctx, instance, errors.NewInternalError(err))
 		}
-		// Create user role
+		password, err = utils.GetSecureRandomString(15)
+		if err != nil {
+			return r.requeue(ctx, instance, err)
+		}
 		suffix := utils.GetRandomString(6)
 		role = fmt.Sprintf("%s-%s", instance.Spec.Role, suffix)
 		login, err = r.pg.CreateUserRole(role, password)
@@ -283,7 +281,21 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	found := &corev1.Secret{}
 	err = r.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
-		// if role is already created, update password
+		if password == "" {
+			password, err = utils.GetSecureRandomString(15)
+			if err != nil {
+				return r.requeue(ctx, instance, err)
+			}
+			secret, err = r.newSecretForCR(reqLogger, instance, role, password, login)
+			if err != nil {
+				return r.requeue(ctx, instance, err)
+			}
+			if instance.Spec.DropOnDelete {
+				if err := controllerutil.SetControllerReference(instance, secret, r.Scheme); err != nil {
+					return r.requeue(ctx, instance, err)
+				}
+			}
+		}
 		if instance.Status.Succeeded {
 			err := r.pg.UpdatePassword(role, password)
 			if err != nil {
@@ -296,7 +308,6 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{}, err
 		}
 
-		// Secret created successfully - don't requeue
 		return r.finish(ctx, instance)
 	} else if err != nil {
 		return r.requeue(ctx, instance, err)
@@ -304,7 +315,10 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	existingPassword, hasStoredPassword := getStoredPassword(found)
 	if !hasStoredPassword {
-		existingPassword = password
+		existingPassword, err = utils.GetSecureRandomString(15)
+		if err != nil {
+			return r.requeue(ctx, instance, err)
+		}
 		reqLogger.Info("No stored password found in existing secret, rotating password", "Secret.Name", found.Name)
 		if err := r.pg.UpdatePassword(role, existingPassword); err != nil {
 			return r.requeue(ctx, instance, err)
