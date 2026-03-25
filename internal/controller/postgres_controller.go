@@ -87,7 +87,7 @@ func (r *PostgresReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		if shouldDrop && instance.Status.Succeeded {
+		if shouldDrop {
 			if instance.Status.Roles.Owner != "" {
 				err = r.pg.DropRole(instance.Status.Roles.Owner, r.pg.GetUser(), instance.Spec.Database)
 				if err != nil {
