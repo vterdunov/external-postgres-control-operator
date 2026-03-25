@@ -209,7 +209,6 @@ var _ = Describe("PostgresUser Controller", func() {
 
 			It("should drop the role and remove finalizer", func() {
 				// Expect DropRole to be called
-				pg.EXPECT().GetDefaultDatabase().Return("postgres")
 				pg.EXPECT().DropRole(postgresUser.Status.PostgresRole, postgresUser.Status.PostgresGroup,
 					databaseName).Return(nil)
 
@@ -229,7 +228,6 @@ var _ = Describe("PostgresUser Controller", func() {
 
 			It("should return an error if role dropping fails", func() {
 				// Expect DropRole to fail
-				pg.EXPECT().GetDefaultDatabase().Return("postgres")
 				pg.EXPECT().DropRole(postgresUser.Status.PostgresRole, postgresUser.Status.PostgresGroup,
 					databaseName).Return(fmt.Errorf("failed to drop role"))
 				// Call Reconcile
