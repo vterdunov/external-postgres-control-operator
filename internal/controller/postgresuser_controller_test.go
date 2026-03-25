@@ -99,11 +99,12 @@ var _ = Describe("PostgresUser Controller", func() {
 		sc.AddKnownTypes(dbv1alpha1.GroupVersion, &dbv1alpha1.PostgresUserList{})
 		// Create PostgresUserReconciler
 		rp = &PostgresUserReconciler{
-			Client:        managerClient,
-			Scheme:        sc,
-			pg:            pg,
-			pgHost:        "postgres.local",
-			cloudProvider: "AWS",
+			Client:           managerClient,
+			Scheme:           sc,
+			pg:               pg,
+			pgHost:           "postgres.local",
+			cloudProvider:    "AWS",
+			generatePassword: utils.GetSecureRandomString,
 		}
 		if k8sManager != nil {
 			rp.SetupWithManager(k8sManager)
@@ -424,6 +425,24 @@ var _ = Describe("PostgresUser Controller", func() {
 				Expect(cl.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, foundUser)).NotTo(HaveOccurred())
 				Expect(foundUser.GetFinalizers()).To(ContainElement("finalizer.db.movetokube.com"))
 			})
+
+			It("should call generatePassword exactly once during initial user creation (Issue #6)", func() {
+				passwordGenCalls := 0
+				rp.generatePassword = func(n int) (string, error) {
+					passwordGenCalls++
+					return utils.GetSecureRandomString(n)
+				}
+
+				pg.EXPECT().GetDefaultDatabase().Return("postgres").AnyTimes()
+				pg.EXPECT().CreateUserRole(gomock.Any(), gomock.Any()).Return(roleName+"-mock", nil)
+				pg.EXPECT().GrantRole(databaseName+"-writer", gomock.Any()).Return(nil)
+				pg.EXPECT().AlterDefaultLoginRole(gomock.Any(), gomock.Any()).Return(nil)
+
+				err := runReconcile(rp, ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(passwordGenCalls).To(Equal(1), "generatePassword should be called exactly once during initial creation (Issue #6)")
+			})
 		})
 
 		Context("New PostgresUser creation with dropOnDelete enabled", func() {
@@ -598,13 +617,23 @@ var _ = Describe("PostgresUser Controller", func() {
 				}
 			})
 
-			It("should not call CreateUserRole or UpdatePassword on steady-state re-reconcile", func() {
+			It("should not call generatePassword, CreateUserRole, or UpdatePassword on steady-state re-reconcile", func() {
+				// Inject a counting password generator to prove it's never called
+				passwordGenCalls := 0
+				rp.generatePassword = func(n int) (string, error) {
+					passwordGenCalls++
+					return utils.GetSecureRandomString(n)
+				}
+
 				// Explicitly assert that password-related PG operations are NOT called
 				pg.EXPECT().CreateUserRole(gomock.Any(), gomock.Any()).Times(0)
 				pg.EXPECT().UpdatePassword(gomock.Any(), gomock.Any()).Times(0)
 
 				err := runReconcile(rp, ctx, req)
 				Expect(err).NotTo(HaveOccurred())
+
+				// Core assertion: password generator must not be invoked at all
+				Expect(passwordGenCalls).To(Equal(0), "generatePassword should not be called on steady-state reconcile (Issue #6)")
 
 				// Verify existing password is preserved
 				foundSecret := &corev1.Secret{}
@@ -643,7 +672,13 @@ var _ = Describe("PostgresUser Controller", func() {
 				}
 			})
 
-			It("should generate a new password, update PG, and create a new secret", func() {
+			It("should call generatePassword exactly once, update PG, and create a new secret", func() {
+				passwordGenCalls := 0
+				rp.generatePassword = func(n int) (string, error) {
+					passwordGenCalls++
+					return utils.GetSecureRandomString(n)
+				}
+
 				pg.EXPECT().CreateUserRole(gomock.Any(), gomock.Any()).Times(0)
 
 				var capturedPassword string
@@ -656,6 +691,7 @@ var _ = Describe("PostgresUser Controller", func() {
 				err := runReconcile(rp, ctx, req)
 				Expect(err).NotTo(HaveOccurred())
 
+				Expect(passwordGenCalls).To(Equal(1), "generatePassword should be called exactly once when secret is missing (Issue #6)")
 				Expect(capturedPassword).NotTo(BeEmpty())
 
 				foundSecret := &corev1.Secret{}

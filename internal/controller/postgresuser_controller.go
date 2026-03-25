@@ -38,6 +38,7 @@ type PostgresUserReconciler struct {
 	instanceFilter    string
 	cloudProvider     config.CloudProvider
 	reconcileInterval time.Duration
+	generatePassword  func(int) (string, error)
 }
 
 // NewPostgresUserReconciler returns a new reconcile.Reconciler
@@ -51,6 +52,7 @@ func NewPostgresUserReconciler(mgr manager.Manager, cfg *config.Cfg, pg postgres
 		instanceFilter:    cfg.AnnotationFilter,
 		cloudProvider:     cfg.CloudProvider,
 		reconcileInterval: cfg.ReconcileInterval,
+		generatePassword:  utils.GetSecureRandomString,
 	}
 }
 
@@ -125,7 +127,7 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if err != nil {
 			return r.requeue(ctx, instance, errors.NewInternalError(err))
 		}
-		password, err = utils.GetSecureRandomString(15)
+		password, err = r.generatePassword(15)
 		if err != nil {
 			return r.requeue(ctx, instance, err)
 		}
@@ -282,7 +284,7 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	err = r.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
 		if password == "" {
-			password, err = utils.GetSecureRandomString(15)
+			password, err = r.generatePassword(15)
 			if err != nil {
 				return r.requeue(ctx, instance, err)
 			}
@@ -315,7 +317,7 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	existingPassword, hasStoredPassword := getStoredPassword(found)
 	if !hasStoredPassword {
-		existingPassword, err = utils.GetSecureRandomString(15)
+		existingPassword, err = r.generatePassword(15)
 		if err != nil {
 			return r.requeue(ctx, instance, err)
 		}
