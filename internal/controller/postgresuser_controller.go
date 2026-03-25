@@ -92,7 +92,7 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			// in case postgres cr isn't here anymore
 			db := r.pg.GetDefaultDatabase()
 			// Search Postgres CR
-			postgres, err := r.getPostgresCR(ctx, instance)
+			postgres, err := r.getPostgresCR(ctx, instance, true)
 			// Check if error exists and not a not found error
 			if err != nil && !errors.IsNotFound(err) {
 				return ctrl.Result{}, err
@@ -131,7 +131,7 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if instance.Status.PostgresRole == "" {
 		// We need to get the Postgres CR to get the group role name
-		database, err := r.getPostgresCR(ctx, instance)
+		database, err := r.getPostgresCR(ctx, instance, false)
 		if err != nil {
 			return r.requeue(ctx, instance, errors.NewInternalError(err))
 		}
@@ -215,7 +215,7 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if instance.Status.PostgresRole != "" {
 
 		// We need to get the Postgres CR to get the group role name
-		database, err := r.getPostgresCR(ctx, instance)
+		database, err := r.getPostgresCR(ctx, instance, false)
 		if err != nil {
 			return r.requeue(ctx, instance, errors.NewInternalError(err))
 		}
@@ -317,7 +317,7 @@ func (r *PostgresUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{RequeueAfter: r.reconcileInterval}, nil
 }
 
-func (r *PostgresUserReconciler) getPostgresCR(ctx context.Context, instance *dbv1alpha1.PostgresUser) (*dbv1alpha1.Postgres, error) {
+func (r *PostgresUserReconciler) getPostgresCR(ctx context.Context, instance *dbv1alpha1.PostgresUser, forDeletion bool) (*dbv1alpha1.Postgres, error) {
 	database := dbv1alpha1.Postgres{}
 	err := r.Get(ctx,
 		types.NamespacedName{Namespace: instance.Namespace, Name: instance.Spec.Database}, &database)
@@ -328,7 +328,9 @@ func (r *PostgresUserReconciler) getPostgresCR(ctx context.Context, instance *db
 		err = fmt.Errorf("database \"%s\" is not managed by this operator", database.Name)
 		return nil, err
 	}
-	if !database.Status.Succeeded {
+	// During deletion we only need connection info to drop the role;
+	// the database does not have to be fully ready.
+	if !forDeletion && !database.Status.Succeeded {
 		err = fmt.Errorf("database \"%s\" is not ready", database.Name)
 		return nil, err
 	}
@@ -416,7 +418,7 @@ func (r *PostgresUserReconciler) addFinalizer(ctx context.Context, reqLogger log
 
 func (r *PostgresUserReconciler) addOwnerRef(ctx context.Context, _ logr.Logger, instance *dbv1alpha1.PostgresUser) error {
 	// Search postgres database CR
-	pg, err := r.getPostgresCR(ctx, instance)
+	pg, err := r.getPostgresCR(ctx, instance, false)
 	if err != nil {
 		return err
 	}
