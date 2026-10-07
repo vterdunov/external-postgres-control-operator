@@ -40,7 +40,7 @@ Install [mise](https://mise.jdx.dev/) and use the pinned Go and Kubebuilder vers
 
 ```sh
 mise trust
-mise install
+mise run --skip-tools tools-install
 mise run build # Build bin/manager without changing sources
 mise run test-unit # Fast unit tests, race detection and randomization
 mise run test-envtest # CRD contracts and real manager/watch tests
@@ -51,9 +51,9 @@ mise run lint # Verify linter configuration and run the configured linters
 mise run check # Build, unit tests, lint, generated checks and manifest render
 ```
 
-Other Makefile targets can be run through `mise exec -- make <target>`.
+Run `mise tasks` to list all development, image and deployment commands. For example, `IMG=registry/epco:dev mise run docker-build` builds an image. Cluster commands require an explicit context: `KUBE_CONTEXT=my-cluster IMG=registry/epco:dev mise run deploy`. Set `IGNORE_NOT_FOUND=true` for tolerant deletion.
 
-Test commands do not generate, format, or tidy sources. The Makefile installs pinned development tools into the ignored `bin/` directory. Envtest downloads Kubernetes 1.37.0 and starts its own API/etcd; it does not run Kubernetes garbage collection or workload controllers. The reusable `test/envtest` harness exposes an uncached client, explicit scope cleanup, and an optional manager with cache synchronization and bounded shutdown. API and manual reconcile tests are separate from manager/watch tests.
+Test commands do not generate, format, or tidy sources. `mise.lock` locks tool downloads and checksums for Linux amd64 and macOS arm64; `mise run --skip-tools tools-install` installs only project tools from the lockfile, preserving unrelated global mise settings. Refresh it with `mise lock --platform linux-x64,macos-arm64` after changing tool pins. The custom logcheck linter is built into the ignored `bin/` directory. Envtest downloads Kubernetes 1.37.0 and starts its own API/etcd; it does not run Kubernetes garbage collection or workload controllers. The reusable `test/envtest` harness exposes an uncached client, explicit scope cleanup, and an optional manager with cache synchronization and bounded shutdown. API and manual reconcile tests are separate from manager/watch tests.
 
 PostgreSQL integration uses one TLS-enabled container per suite and unique restricted roles/databases per spec. `test/integration.Start` and `Server.NewFixture` can be combined with the envtest harness for future controller tests. Set `EPCO_PG_VERSION=15`, `16`, `17`, or `18` to select the pinned image; the default is 16. Unit tests need no container runtime or envtest assets.
 
@@ -61,6 +61,6 @@ E2e uses Kind 0.32.0 and a digest-pinned Kubernetes 1.36.1 node, a private kubec
 
 Each runner prints its random seed. Set `EPCO_TEST_SEED` to replay it and `EPCO_ARTIFACTS_DIR` to choose the report directory (default under ignored `artifacts/`). Failure diagnostics are retained before teardown; runners handle SIGINT/SIGTERM and clean only resources owned by that run. CI separates unit/race, envtest, generation, PostgreSQL 15/16 integration, and PostgreSQL 16 e2e. Scheduled/manual integration covers PostgreSQL 15-18 and repeated seeds. Reports and diagnostics are uploaded even on failure.
 
-Use the pinned Kubebuilder for subsequent scaffolding. For example, `mise exec -- kubebuilder create api --group postgresql --version v1alpha1 --kind PostgresCluster --resource --controller` creates the initial type and controller stubs; their fields and behavior must then follow the accepted API baseline. Regenerate derived files with `mise exec -- make manifests generate` instead of editing them manually.
+Use the pinned Kubebuilder for subsequent scaffolding. For example, `mise exec -- kubebuilder create api --group postgresql --version v1alpha1 --kind PostgresCluster --resource --controller` creates the initial type and controller stubs; their fields and behavior must then follow the accepted API baseline. Regenerate derived files by running `mise run generate` followed by `mise run manifests` instead of editing them manually.
 
 Local agent implementation plans belong in `.agent-plans/`, which is excluded from Git. Create this directory in a fresh checkout before writing a plan. Plans and all repository documentation use English and refer to the accepted API baseline.

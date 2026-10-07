@@ -4,7 +4,7 @@ cd "$(dirname "$0")/../.."
 artifacts="${EPCO_ARTIFACTS_DIR:-$PWD/artifacts/generated}"
 mkdir -p "$artifacts"
 exec > >(tee "$artifacts/check.log") 2>&1
-make controller-gen
+controller_gen="$(mise which controller-gen)"
 root="$PWD"
 target="$(mktemp -d "${TMPDIR:-/tmp}/epco-generated.XXXXXXXX")"
 trap 'rm -rf -- "$target"' EXIT
@@ -16,7 +16,7 @@ root, target = map(Path, sys.argv[1:])
 shutil.copytree(root, target, dirs_exist_ok=True,
                 ignore=shutil.ignore_patterns('.git', 'bin', 'artifacts', '.agent-plans'))
 PY
-(cd "$target" && "$root/bin/controller-gen" rbac:roleName=manager-role crd webhook paths='./...' output:crd:artifacts:config=config/crd/bases && "$root/bin/controller-gen" object paths='./...')
+(cd "$target" && "$controller_gen" rbac:roleName=manager-role crd webhook paths='./...' output:crd:artifacts:config=config/crd/bases && "$controller_gen" object paths='./...')
 python3 - "$root" "$target" <<'PY'
 from pathlib import Path
 import sys

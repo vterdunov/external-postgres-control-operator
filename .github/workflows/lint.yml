@@ -18,16 +18,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install pinned mise
-        run: |
-          curl --fail --location --retry 3 https://github.com/jdx/mise/releases/download/v2026.9.15/mise-v2026.9.15-linux-x64.tar.gz -o "$RUNNER_TEMP/mise.tar.gz"
-          tar -xzf "$RUNNER_TEMP/mise.tar.gz" -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/mise/bin" >> "$GITHUB_PATH"
-      - name: Install pinned tools
-        run: |
-          mise trust mise.toml
-          mise install
+      - name: Set up mise and pinned tools
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.9.15
       - name: Lint Go and suite runners
         run: mise run lint
       - name: Validate workflows
-        run: mise exec -- go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+        run: mise exec -- actionlint

@@ -25,9 +25,11 @@ run_bounded() {
     kill -TERM -- "-$command_pid" 2>/dev/null || true
     sleep 1
     kill -KILL -- "-$command_pid" 2>/dev/null || true
-  ) &
+  ) >/dev/null 2>&1 &
   watchdog_pid=$!
   wait "$command_pid" || result=$?
+  # The command may exit on TERM before descendants do. Always reap its group.
+  kill -KILL -- "-$command_pid" 2>/dev/null || true
   kill -KILL -- "-$watchdog_pid" 2>/dev/null || true
   wait "$watchdog_pid" 2>/dev/null || true
   return "$result"
@@ -37,9 +39,12 @@ cleanup() {
   local status=$?
   trap - EXIT INT TERM
   local containers
-  if ! containers="$(run_bounded docker ps -aq --filter "label=epco.test.run=$run_id" 2>/dev/null)"; then
+  # Command substitutions disable Bash process groups on Linux, even with
+  # monitor mode enabled. Capture through a file so watchdog groups stay usable.
+  if ! run_bounded docker ps -aq --filter "label=epco.test.run=$run_id" > "$binary_dir/containers" 2>/dev/null; then
     if [[ "$status" -eq 0 ]]; then status=1; fi
   fi
+  containers="$(cat -- "$binary_dir/containers")"
   if [[ -n "$containers" ]]; then
     while IFS= read -r container; do
       if [[ "$status" -ne 0 && -x "$binary_dir/integration.test" ]]; then
