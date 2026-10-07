@@ -32,7 +32,7 @@ Choose one microservice variant and use the shared postgres-connection example. 
 
 ## Development
 
-The project scaffold was initialized with [Kubebuilder v4.16.0](https://github.com/kubernetes-sigs/kubebuilder/releases/tag/v4.16.0) and the `go/v4` plugin. It uses Go 1.27.1 or newer, controller-runtime v0.25.0, and Kubernetes v0.37.0 Go libraries. The Go module is `github.com/vterdunov/external-postgres-control-operator`; the scaffold project name is `epco` and its API domain is `epco.io`.
+The project scaffold was initialized with [Kubebuilder v4.16.0](https://github.com/kubernetes-sigs/kubebuilder/releases/tag/v4.16.0) and the `go/v4` plugin. It uses Go 1.27.1, controller-runtime v0.25.0, and Kubernetes v0.37.0 Go libraries. The Go module is `github.com/vterdunov/external-postgres-control-operator`; the scaffold project name is `epco` and its API domain is `epco.io`.
 
 The manager registers the `PostgresCluster`, `DatabaseRole`, and `Database` API types from `api/v1alpha1`. Generated CRDs are in `config/crd/bases`, with DeepCopy methods generated alongside the types. Controllers are not implemented, so running the manager does not manage PostgreSQL objects. The examples remain API design references.
 
@@ -41,15 +41,25 @@ Install [mise](https://mise.jdx.dev/) and use the pinned Go and Kubebuilder vers
 ```sh
 mise trust
 mise install
-mise run build # Generate manifests/code, format, vet, and build bin/manager
-mise run test  # Generate manifests/code, format, vet, and run unit tests
+mise run build # Build bin/manager without changing sources
+mise run test-unit # Fast unit tests, race detection and randomization
+mise run test-envtest # CRD contracts and real manager/watch tests
+mise run test-integration # Isolated PostgreSQL fixtures (Docker)
+mise run test-e2e # Deployment smoke tests in disposable Kind
+mise run check-generated # Compare generated output in a temporary copy
 mise run lint # Verify linter configuration and run the configured linters
-mise run check # Run all checks, including rendering deployment manifests
+mise run check # Build, unit tests, lint, generated checks and manifest render
 ```
 
 Other Makefile targets can be run through `mise exec -- make <target>`.
 
-The Makefile installs pinned development tools into the ignored `bin/` directory. `make test` also downloads the matching envtest binaries; controller unit tests will use them once APIs are added. End-to-end tests require Docker, Kind, and kubectl and run with `make test-e2e` against a dedicated Kind cluster.
+Test commands do not generate, format, or tidy sources. The Makefile installs pinned development tools into the ignored `bin/` directory. Envtest downloads Kubernetes 1.37.0 and starts its own API/etcd; it does not run Kubernetes garbage collection or workload controllers. The reusable `test/envtest` harness exposes an uncached client, explicit scope cleanup, and an optional manager with cache synchronization and bounded shutdown. API and manual reconcile tests are separate from manager/watch tests.
+
+PostgreSQL integration uses one TLS-enabled container per suite and unique restricted roles/databases per spec. `test/integration.Start` and `Server.NewFixture` can be combined with the envtest harness for future controller tests. Set `EPCO_PG_VERSION=15`, `16`, `17`, or `18` to select the pinned image; the default is 16. Unit tests need no container runtime or envtest assets.
+
+E2e uses Kind 0.32.0 and a digest-pinned Kubernetes 1.36.1 node, a private kubeconfig, an explicit context, a temporary deployment overlay, and PostgreSQL in its own namespace. On macOS, use OrbStack's Docker-compatible runtime. The runner builds the project Dockerfile by default; `EPCO_E2E_BUILD_MODE=local` instead packages a locally cross-compiled manager for quicker local smoke checks. Tests currently cover deployment, health, protected metrics, SQL readiness, and CRD CRUD. Controller behavior and RDS verification remain separate work.
+
+Each runner prints its random seed. Set `EPCO_TEST_SEED` to replay it and `EPCO_ARTIFACTS_DIR` to choose the report directory (default under ignored `artifacts/`). Failure diagnostics are retained before teardown; runners handle SIGINT/SIGTERM and clean only resources owned by that run. CI separates unit/race, envtest, generation, PostgreSQL 15/16 integration, and PostgreSQL 16 e2e. Scheduled/manual integration covers PostgreSQL 15-18 and repeated seeds. Reports and diagnostics are uploaded even on failure.
 
 Use the pinned Kubebuilder for subsequent scaffolding. For example, `mise exec -- kubebuilder create api --group postgresql --version v1alpha1 --kind PostgresCluster --resource --controller` creates the initial type and controller stubs; their fields and behavior must then follow the accepted API baseline. Regenerate derived files with `mise exec -- make manifests generate` instead of editing them manually.
 

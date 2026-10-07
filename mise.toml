@@ -1,22 +1,55 @@
 [tools]
 go = "1.27.1"
 kubebuilder = "4.16.0"
+kind = "0.32.0"
+kubectl = "1.36.1"
+kustomize = "5.8.1"
+shellcheck = "0.11.0"
+
+[env]
+GOTOOLCHAIN = "go1.27.1"
 
 [tasks.build]
-description = "Generate code and manifests, vet, and build the manager"
-run = "make build"
+description = "Build the manager without modifying sources"
+run = "go build -mod=readonly -o bin/manager ./cmd"
 
 [tasks.test]
-description = "Generate code and manifests, vet, and run unit tests"
-run = "make test"
+description = "Run fast unit tests"
+depends = ["test-unit"]
+
+[tasks.test-unit]
+description = "Unit tests with race detection and randomized specs"
+run = ["bash test/unit/run.sh", "python3 test/envtest/runner_test.py", "bash test/e2e/runner_test.sh"]
+
+[tasks.test-envtest]
+description = "Real API CRD and manager/watch tests"
+run = "bash test/envtest/run.sh"
+
+[tasks.test-integration]
+description = "Isolated PostgreSQL integration tests"
+run = "bash test/integration/run.sh"
+
+[tasks.test-e2e]
+description = "Installed operator smoke tests in disposable Kind"
+run = "bash test/e2e/run.sh"
+
+[tasks.check-generated]
+description = "Regenerate in a temporary copy and compare outputs"
+run = "bash test/generated/check.sh"
 
 [tasks.lint]
 description = "Verify linter configuration and lint Go code"
-run = "make lint-config lint"
+run = [
+  "make lint-config lint",
+  "shellcheck test/unit/run.sh test/generated/check.sh test/envtest/run.sh test/integration/run.sh test/e2e/run.sh test/e2e/runner_test.sh",
+]
 
 [tasks.check]
-description = "Build, test, lint, and render deployment manifests"
+description = "Build, unit tests, lint, generated checks and render manifests"
 run = [
-  "make build test lint-config lint kustomize",
-  "bin/kustomize build config/default > /dev/null",
+  "mise run build",
+  "mise run test-unit",
+  "mise run lint",
+  "mise run check-generated",
+  "kustomize build config/default > /dev/null",
 ]

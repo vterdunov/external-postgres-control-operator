@@ -30,3 +30,6 @@ go.work
 
 # Kubeconfig might contain secrets
 *.kubeconfig
+
+# Suite reports and sanitized diagnostics
+/artifacts/
