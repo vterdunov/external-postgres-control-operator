@@ -1,6 +1,6 @@
 # Cross-namespace access
 
-Status: accepted as part of the initial [API baseline](api-proposal.md), 2026-10-07. The fields and behavior defined here are included in the initial implementation scope. API types and CRDs are generated; controllers and runtime authorization are not implemented.
+Status: accepted as part of the initial [API baseline](api-proposal.md), 2026-10-07. The fields and behavior defined here are included in the initial implementation scope. Namespace authorization for DatabaseRole/Database is not implemented. PostgresCluster connection readiness is implemented independently of this selector; see [implementation status](README.md#implementation-status).
 
 ## Use case and resource placement
 
@@ -24,7 +24,7 @@ cluster:
   namespace: infra
 ```
 
-If namespace is omitted, it resolves to the referencing CR's namespace. Existing manifests keep their meaning. The effective target namespace and name are immutable after acceptance, following CNPG. Connection settings in the referenced PostgresCluster remain mutable. Updating its endpoint or recreating the descriptor under the same namespace/name selects the current connection without a stored-UID rebind approval; dependents are reconciled again and their connection outputs are refreshed. This does not migrate data or remove objects from the former server.
+If namespace is omitted, it resolves to the referencing CR's namespace. Existing manifests keep their meaning. The stored cluster reference is immutable after acceptance, including whether namespace was omitted. A local reference cannot later be rewritten with an explicit namespace; set it at creation if needed. Connection settings in the referenced PostgresCluster remain mutable. Updating its endpoint or recreating the descriptor under the same namespace/name selects the current connection without a stored-UID rebind approval; dependents are reconciled again and their connection outputs are refreshed. This does not migrate data or remove objects from the former server.
 
 Only the cluster reference crosses namespaces in this extension. Database.connectionSecrets[].roleRef remains local to the database namespace. Application password sources remain local to their DatabaseRole. The administrative credentialsSecret and tls.caSecret are resolved in the PostgresCluster namespace.
 
@@ -73,7 +73,7 @@ Access is checked against the Namespace named by the referencing resource's meta
 
 PostgreSQL roles are global within a database cluster, and database names identify shared server objects. Kubernetes namespaces do not create separate PostgreSQL catalogs. [PostgreSQL database roles](https://www.postgresql.org/docs/current/database-roles.html).
 
-The first CR with recorded management of a canonical namespace-qualified connection, SQL object type, and SQL name wins. For a new CR, check matching CRs and their reconciliation status across namespaces, excluding the current UID. A competing CR reports OwnershipConflict and cannot change the SQL object or export generated connection credentials for it. The existing manager can resume after a restart or temporary failure. Use Lease leader election and serialize this decision and reconciliation by SQL object key inside the active process. These checks apply within one namespace as well as across namespaces. Use one canonical PostgresCluster per logical server; automatic alias discovery is outside the initial design. See [SQL object ownership](sql-object-ownership.md).
+The [SQL object ownership contract](sql-object-ownership.md#adaptation-for-external-postgresql) defines one recorded manager per canonical connection, object type, and SQL name across namespaces. A competing CR reports OwnershipConflict before SQL mutation or initial connection export. Existing SQL objects without a competing manager use create-or-update reconciliation. Namespace authorization precedes this conflict check.
 
 For example, orders/Database orders and billing/Database orders can both be created as Kubernetes objects, but only one can manage SQL database orders on infra/pg-prod. DatabaseRole collisions use the same rule independently of database names. A role and database can share the same SQL name because their object types differ.
 
@@ -83,13 +83,15 @@ Role attributes, SQL owner names, inRoles, and permission grantees retain their 
 
 Namespace authorization and collision ownership are the scope of this extension. A separate policy for stronger SQL privilege isolation can be designed if required; it is not introduced implicitly by moving the connection to another namespace. Mandatory databaseNames, roleNames, and allowedMembershipRoles are excluded.
 
+## Access removal and resumption
+
 Removing namespace authorization stops work on the affected resources. SQL objects, grants, passwords, and existing connection Secrets remain as they are. The operator reports AccessDenied but does not connect to SQL, generate passwords, refresh or remove outputs, or execute finalizer cleanup while access is denied. There is no cleanup exception for a formerly authorized owner. If an already managed CR with a finalizer is deleted, it remains pending until authorization is restored; removing finalizers manually is outside this controller contract. Restoring access triggers normal reconciliation of the current spec and current source Secrets. This does not revoke application SQL login access by itself, and this extension does not add IAM token export support.
 
 RabbitMQ Messaging Topology Operator similarly reports a condition and stops reconciliation for forbidden cross-namespace references; see [forbidden cross-namespace objects](https://www.rabbitmq.com/kubernetes/operator/using-topology-operator#important-information-about-forbidden-cross-namespace-objects). Strimzi exposes analogous pause/unmanaged behaviors, where changes are ignored or a Kafka topic remains in place; see [Strimzi pause and unmanaged-topic procedures](https://strimzi.io/docs/operators/1.2.0/deploying). These are behavior comparisons, not identical namespace authorization APIs.
 
 ## Kubernetes RBAC and Secrets
 
-Service teams can create/update/delete Database and DatabaseRole resources and consume application Secrets in their own namespace. They cannot edit the infrastructure PostgresCluster or its access policy and cannot read its administrative Secret. The controller has the scoped permissions needed to read the infrastructure connection and reconcile application resources. Kubernetes Role/RoleBinding permissions can be granted per namespace. [Kubernetes RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/).
+Service teams can create/update/delete Database and DatabaseRole resources and consume application Secrets in their own namespace. They cannot edit the infrastructure PostgresCluster or its access policy and cannot read its administrative Secret. The future consumer controllers need scoped permissions to read the infrastructure connection and reconcile application resources. The current controller reads PostgresCluster and its local Secrets; its [generated RBAC](../config/rbac/role.yaml) does not establish application-team isolation. Platform RBAC must enforce the team boundaries above. Kubernetes Role/RoleBinding permissions can be granted per namespace. [Kubernetes RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/).
 
 The shared CA can be copied into each application connection output because it is public trust material. Administrative passwords and client private keys are not copied. Cross-namespace Secret references and roleRef exports are outside the accepted API.
 

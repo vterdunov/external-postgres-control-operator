@@ -1,5 +1,7 @@
 # Installed operator e2e
 
+See the [development guide](../../docs/development.md#test-suites) for the full test workflow and [implementation status](../../docs/README.md#implementation-status) for the current controller scope.
+
 Run `mise run test-e2e` with a working Docker-compatible runtime (OrbStack on
 macOS). The runner creates a uniquely named Kind cluster, a private kubeconfig,
 and a temporary Kustomize overlay; it never edits the installation manifests.

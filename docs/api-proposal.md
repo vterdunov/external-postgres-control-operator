@@ -1,6 +1,6 @@
 # User-facing API baseline
 
-Status: accepted initial API baseline, 2026-10-07. Go API types and CRDs have been generated for `postgresql.epco.io/v1alpha1`. Controllers and the runtime behavior described here are not implemented.
+Status: accepted initial API baseline, 2026-10-07. See [implementation status](README.md#implementation-status) for schema and runtime coverage. PostgresCluster connection readiness is implemented; DatabaseRole and Database behavior below remains an implementation contract.
 
 Implementation follows the resource fields, defaults, declarative permission reconciliation, password management, and connection Secret contracts defined here and demonstrated in the examples. Changes to this baseline require agreement and corresponding documentation and example updates. Future extensions explicitly described as such are outside the initial implementation scope.
 
@@ -17,7 +17,7 @@ The following local checkouts were analyzed:
 - CloudNativePG: `63d0bd5a77dce5d86edc010e4d935defdf48e1af`, commit dated 2026-10-06.
 - movetokube postgres-operator: `68e0978969e43f2116674fb368dd187ad5146412`, commit dated 2026-09-07.
 
-This comparison applies to those checkouts. Installed operator versions and live PostgreSQL/RDS instances were not inspected.
+This comparison applies to those checkouts. The issue/PR statuses below were recorded during the 2026-10-07 API comparison and are not live status claims. Installed operator versions and live PostgreSQL/RDS instances were not inspected.
 
 Reference types: [RoleConfiguration](https://github.com/cloudnative-pg/cloudnative-pg/blob/63d0bd5a77dce5d86edc010e4d935defdf48e1af/api/v1/cluster_types.go#L2723), [DatabaseRoleSpec](https://github.com/cloudnative-pg/cloudnative-pg/blob/63d0bd5a77dce5d86edc010e4d935defdf48e1af/api/v1/databaserole_types.go#L55), [DatabaseSpec](https://github.com/cloudnative-pg/cloudnative-pg/blob/63d0bd5a77dce5d86edc010e4d935defdf48e1af/api/v1/database_types.go#L55).
 
@@ -48,7 +48,7 @@ Matching base fields does not make a complete manifest interchangeable with CNPG
 
 `DatabaseGrant` was an earlier design option: a separate resource linked a role to a database and managed its ACL independently of the role lifecycle. This can help when database ownership and access requests have separate RBAC, but it is not a required PostgreSQL or CNPG entity.
 
-Issue #10826 considers a separate database privilege CRD excessive because it splits ownership of an object's permissions from the object itself. To follow CNPG closely, this proposal uses `Database.permissions` and nested schema settings. One reconciler manages the database and its declared ACLs; SQL role attributes and memberships remain in `DatabaseRole`.
+The inspected #10826 discussion considers a separate database privilege CRD excessive because it splits ownership of an object's permissions from the object itself. To follow CNPG closely, the baseline uses `Database.permissions` and nested schema settings. One reconciler manages the database and its declared ACLs; SQL role attributes and memberships remain in `DatabaseRole`.
 
 Issue #10826 covers privileges on the database object. CONNECT allows a connection but does not grant SELECT on tables. Table grants and default privileges are separate requirements.
 
@@ -110,7 +110,7 @@ SQL operations use the supplied connection's privileges. A namespace scopes Kube
 | `PostgresCluster.reconcileInterval` | 5m, plus reactions to resource and Secret changes |
 | `PostgresCluster.connectTimeout`, `statementTimeout` | 10s, 30s |
 
-Defaulting `spec.name` from `metadata.name` needs a webhook or a documented effective-name mechanism; a static OpenAPI default cannot copy metadata. SQL names are checked against the target server's `max_identifier_length`, usually 63 bytes. Automatic truncation is prohibited.
+Omitted `spec.name` resolves to `metadata.name` through the effective-name mechanism; it is not copied into spec by OpenAPI defaulting. CRD CEL validation keeps that effective name immutable and permits making the same fallback name explicit. Reconcilers must populate `status.effectiveName` for roles/databases when implemented. The stored `cluster` reference is immutable, including whether namespace was omitted; set an explicit namespace at creation if desired. SQL names are checked against the target server's `max_identifier_length`, usually 63 bytes. Automatic truncation is prohibited.
 
 Omitted standard role attributes use CNPG defaults. Reconciling an existing role can change its attributes and authoritative memberships, so current values must be collected before preparing the manifest. Omitted optional mutable database fields remain unchanged. There is no existingObjectPolicy or separate adoption handshake; normal reconciliation follows CNPG's create-or-update behavior.
 
@@ -148,6 +148,8 @@ Use `passwordGeneration: {secretName: app-credentials}` instead of `passwordSecr
 
 Database field names follow CNPG: `name`, `cluster`, `owner`, `ensure`, `template`, `encoding`, `locale`, `localeProvider`, `localeCollate`, `localeCType`, `icuLocale`, `icuRules`, `builtinLocale`, `collationVersion`, `isTemplate`, `allowConnections`, `connectionLimit`, `tablespace`, `databaseReclaimPolicy`, `schemas`, `extensions`, `fdws`, `servers`.
 
+The [selected runtime scope](roadmap.md#scope-boundaries) includes extensions but excludes FDW/server reconciliation. Their accepted API types and CRD fields remain; runtime requests must report UnsupportedFeature with Ready=False instead of being silently ignored.
+
 Creation-only fields do not change after acceptance. They apply when a database is created; an existing database is not recreated to apply them, following CNPG. Changing the database owner does not reassign its tables. Locale, extension, FDW, and tablespace capabilities are checked on the target server. `localeProvider` is available in [PostgreSQL 15](https://www.postgresql.org/docs/15/sql-createdatabase.html), despite the inspected CNPG type's comment saying "from 16".
 
 The concise `inRoles` field follows CNPG's names-only membership reconciliation and PostgreSQL role-attribute semantics. On PG16+, changing the role's inherit attribute does not normalize the INHERIT option of existing memberships. NOINHERIT alone does not prevent SET ROLE. Undeclared ordinary memberships of an authoritative role are revoked; the operator's administrative memberships have separate ownership. The proposed `memberships` field with `adminOption`, `inheritOption`, and `setOption` is deferred because the inspected CNPG API has no equivalent. It is outside the initial CRD and controller scope.
@@ -160,7 +162,7 @@ A role password and database connection settings have different scopes. The pass
 
 ### Password source
 
-The CNPG-compatible option is a supplied `kubernetes.io/basic-auth` Secret referenced by `DatabaseRole.passwordSecret.name`. The username/password keys are required, and username must match the role's spec.name. The password is not stored in the CR. [CNPG password management](https://cloudnative-pg.io/docs/devel/declarative_role_management/).
+The CNPG-compatible option is a supplied `kubernetes.io/basic-auth` Secret referenced by `DatabaseRole.passwordSecret.name`. The username/password keys are required, and username must match the role's effective SQL name (`spec.name`, or `metadata.name` when omitted). The password is not stored in the CR. [CNPG password management](https://cloudnative-pg.io/docs/devel/declarative_role_management/).
 
 ```yaml
 apiVersion: v1
@@ -215,7 +217,7 @@ Without either source, CNPG behavior is preserved: the password is unmanaged and
 
 ### Application connection Secrets
 
-The `Database.spec.connectionSecrets` list associates this database with a ready LOGIN role and an output Secret name:
+The `Database.spec.connectionSecrets` list associates this database with a LOGIN role and an output Secret name:
 
 ```yaml
 connectionSecrets:
@@ -229,16 +231,16 @@ connectionSecrets:
 
 The service connects as orders_service; the admin UI connects as orders_admin_readonly. SQL privileges are declared separately in permissions; exporting a Secret does not grant access. A readonly name does not select a physical replica. These examples connect both users to the writable endpoint and limit the admin user to SELECT.
 
-The first version exports connections for LOGIN roles with passwordSecret or passwordGeneration. IAM and certificate authentication need a separate contract for exporting static parameters without a permanent password. IAM tokens are not stored in Secrets. PostgresCluster administrative credentials are never used as application credentials.
+Connection exports support LOGIN roles with passwordSecret or passwordGeneration. IAM and certificate authentication are unsupported for exports. The operator does not generate or store IAM tokens. PostgresCluster administrative credentials are never used as application credentials.
 
 Output Secrets have type `kubernetes.io/basic-auth`. Core keys follow [CNPG application Secrets](https://cloudnative-pg.io/docs/devel/applications/) and the inspected [CNPG generator](https://github.com/cloudnative-pg/cloudnative-pg/blob/63d0bd5a77dce5d86edc010e4d935defdf48e1af/pkg/specs/secrets.go):
 
 | Key | Source / value |
 | --- | --- |
-| username, user | DatabaseRole.spec.name; user is an alias |
+| username, user | Effective DatabaseRole SQL name; user is an alias |
 | password | Current DatabaseRole source for initial publication; rotated passwords update existing outputs after PostgreSQL accepts them |
 | host, port | PostgresCluster.spec.connection; port is a string, default "5432" |
-| dbname | Database.spec.name, not the administrative PostgresCluster.connection.database |
+| dbname | Effective Database SQL name, rather than the administrative PostgresCluster.connection.database |
 | uri | PostgreSQL URI with username/password/host/port/dbname and sslmode |
 | jdbc-uri | JDBC URI with the corresponding user/password/TLS parameters |
 | fqdn-uri, fqdn-jdbc-uri | Aliases of uri/jdbc-uri; the external hostname is used without adding a Kubernetes service domain |
@@ -300,13 +302,13 @@ schemas:
           ensure: absent
 ```
 
-Database permissions cover CONNECT/CREATE/TEMPORARY. Schema permissions cover USAGE/CREATE. WITH GRANT OPTION and GRANTED BY are excluded from the first public API. If supported, `all` is expanded into the privilege set available for that object type; conflicting entries for a grantee are rejected.
+Database permissions cover CONNECT/CREATE/TEMPORARY. Schema permissions cover USAGE/CREATE. WITH GRANT OPTION and GRANTED BY are excluded from the first public API. There is no `all` field or ALL shorthand in the initial API. Declare individual privileges: tables support select/insert/update/delete/truncate/references/trigger/maintain, sequences support usage/select/update, function defaults support execute, and type defaults support usage. Server-version support is checked during reconciliation. Conflicting entries for a grantee are rejected.
 
 Each entry declares a SQL role and the desired presence of one privilege. name is the SQL grantee name; ensure defaults to present. The controller grants the privilege when missing and maintains it while declared. The normal way to withdraw access is to remove that role from the privilege list. Removing a tablePermissions entry revokes its previously managed grants; removing an entire permission block or replacing it with an empty list does the same for that scope. These edits never drop a table or delete its data.
 
 An optional ensure=absent on the same grantee entry explicitly declares that the privilege must be absent. It also handles privileges that exist before the first reconciliation, such as default PUBLIC CONNECT. Removing an absent entry stops its absence enforcement and does not grant the privilege back. type=grant/revoke is not part of this operator's permissions API. Database.ensure and schemas[].ensure control SQL object lifecycle; ensure on a permission controls only the grant.
 
-Reason for this decision: the manifest must describe the desired permission set, and removing a declared permission must actually remove the access it gave. The user's normal workflow must not require retaining a separate revoke command. An explicit absent state is optional, not a prerequisite for list cleanup. This supersedes the earlier command-style grant/revoke and stop-managing-on-removal decision. Compatibility with CNPG is preserved where possible, but its proposed omission semantics do not satisfy this requirement.
+Reason for this decision: the manifest must describe the desired permission set, and removing a declared permission must actually remove the access it gave. The user's normal workflow must not require retaining a separate revoke command. An explicit absent state is optional, not a prerequisite for list cleanup. Compatibility with CNPG is preserved where possible, but its proposed omission semantics do not satisfy this requirement.
 
 The controller persists the managed permission set and sufficient pending-change information in the live Database CR's status before SQL mutations. Recovery within the same CR UID compares current SQL with the current spec, including removed entries; it must not forget a successfully issued grant if a subsequent status write failed, or blindly replay a grant withdrawn in a newer spec. Keep the resolved object and grantor bindings needed for cleanup after a rename or owner change, and re-resolve them against the current connection. Do not use old object identifiers blindly after an endpoint change, and do not clean up the former server. This is permission bookkeeping, not password snapshots or a separate ownership claim store. Cleanup is limited to managed grants; unrelated grantees are not purged. Ready remains false until required cleanup is confirmed.
 
@@ -437,7 +439,7 @@ Standard role attributes are updated only when they differ. For example, an alre
 
 RDS restricted password management is checked against the actual `rds.restrict_password_commands` setting and connection privileges. It is a PASSWORD/VALID UNTIL capability check and does not require a provider field on every resource. Extensions and protected service roles are also checked against server capabilities.
 
-### RDS IAM users and operator IAM authentication
+### RDS IAM role membership
 
 An SQL account for IAM is an ordinary DatabaseRole with membership:
 
@@ -461,7 +463,7 @@ This SQL configuration needs no provider field. Membership in rds_iam does not c
 
 IAM takes precedence over password authentication for an RDS user with effective rds_iam membership. An incompatible password-management request must produce a clear error. Authentication tokens are short-lived and are not stored as permanent passwords. [AWS IAM authentication](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.html).
 
-If the operator connects using IAM, its connection needs a separate authentication method, such as `authentication.awsIam` with username and region, using workload identity for AWS credentials. It is mutually exclusive with password credentialsSecret. This selects token signing explicitly rather than a backend-wide provider. Current examples use password authentication for the administrative connection.
+The operator authenticates with a password through a local basic-auth `credentialsSecret`. PostgresCluster has no `authentication` or `awsIam` field. The `rds_iam` membership above is ordinary SQL role configuration through `inRoles`; IAM authentication and IAM connection exports are outside the project scope.
 
 [aws-rds.yaml](../examples/api-proposal/aws-rds.yaml) includes an RDS connection and CA, owner, migrator, reader, password and IAM LOGIN users, and inline permissions/default privileges. No resource requests rds_superuser. Defaults cover both owner and migrator because either can create objects under its own SQL identity.
 
@@ -481,11 +483,9 @@ A DatabaseRole has one cluster reference. If a single user-facing resource must 
 
 ## SQL name collisions
 
-Use CNPG's CR/status model to resolve SQL name collisions. The ownership key is the canonical namespace-qualified PostgresCluster reference, object type (role or database), and effective SQL name; the referencing CR's namespace is not part of this key. Use one connection descriptor per logical PostgreSQL server. Before applying a new managing CR, check other CRs across namespaces for an already recorded manager of the same key. The losing CR reports OwnershipConflict and makes no SQL changes or generated connection exports for that object.
+The canonical namespace-qualified PostgresCluster reference, object type, and effective SQL name form the management key. One recorded manager owns each key across application namespaces; a competing CR reports OwnershipConflict before SQL mutation or connection export. Existing SQL objects without a competing live manager use normal create-or-update reconciliation.
 
-This means the first recorded manager, not strict ordering of kubectl apply requests. Both CRs can be accepted by the Kubernetes API. Retrying the winning CR with the same UID resumes its ownership; temporary failure does not erase its recorded management. Existing SQL objects without a competing live manager are reconciled normally, as in CNPG. SQL existence alone is not a conflict.
-
-[SQL object ownership](sql-object-ownership.md) describes the verified CNPG behavior and the selected adaptation: CR/status checks across namespaces, normal create-or-update retries, and Lease leader election with serialization by SQL object key inside the active process. No separate ownership ConfigMap, database-initialization checkpoint, SQL marker, or staging database is required. Declarative permission removal requires managed-grant and pending-change bookkeeping independently of SQL name conflicts. A live Database with ensure=absent still records management of its name.
+[SQL object ownership](sql-object-ownership.md) defines the conflict algorithm, retries, endpoint changes, and leadership requirements. It is the reference for ownership implementation. Use one canonical descriptor per logical PostgreSQL server; automatic alias discovery and independent-control-plane coordination are outside the initial design.
 
 ## Lifecycle, ownership, and status
 
@@ -494,14 +494,18 @@ This means the first recorded manager, not strict ordering of kubectl apply requ
 - DatabaseRole does not support ensure=absent; deleting its CR with databaseRoleReclaimPolicy=delete requests DROP.
 - Role deletion does not automatically run DROP OWNED or REASSIGN OWNED. Dependencies in any database block DROP. Forced session termination needs an explicit request if supported.
 - Deleting Database with retain preserves SQL objects and ACLs and ends its permission-management history. A recreated CR starts new management; historical retained grants require explicit ensure=absent for cleanup. Removing a permission within the same live CR UID revokes its managed grant. Removing a schema/extension declaration leaves the SQL object but cleans up associated managed permissions. ensure=absent on a SQL object requests DROP with RESTRICT; ensure=absent on a permission removes only that grant.
-- Observe changes neither SQL attributes nor permissions and does not generate passwords or publish connection outputs. It requires ensure=present and reclaim=retain. An observer that never managed SQL does not reserve its name; a former manager keeps its recorded management while its CR remains. Existing database ACL management uses normal manage mode with its actual owner and selected settings.
+- Observe changes neither SQL attributes nor permissions and does not generate passwords or publish connection outputs. Database requires ensure=present and databaseReclaimPolicy=retain; DatabaseRole requires databaseRoleReclaimPolicy=retain and has no ensure field. These combinations are enforced at CRD admission. An observer that never managed SQL does not reserve its name; a former manager keeps its recorded management while its CR remains. Existing database ACL management uses normal manage mode with its actual owner and selected settings.
 - A SQL role or database has one managing CR through its canonical connection, across namespaces. Automatically resolving aliases or coordinating independent control planes is outside the initial design. CNPG and this operator need explicit ownership boundaries when using the same SQL objects.
 - Each ACL tuple has one spec owner. Conflicting broad and named-table rules for the same grantee are rejected. User-declared memberships and operator administrative memberships have separate ownership.
 - Predefined PostgreSQL/service roles and the administrative connection account are protected from adoption, modification, and deletion; permitted memberships in them are considered separately.
 - Ready requires confirmed reconciliation, including declared permissions and connection exports. An initial connection Secret can exist while Ready is false. A positive grant does not prove that every other access path is absent. Effective privileges and errors are reported without promising an audit of function bodies.
 - Passwords and password-bearing DSNs never appear in logs/status. The platform team controls administrative Secrets and PostgresCluster.
 
-Keep `status.applied`, `observedGeneration`, and `message`; add `effectiveName`, `appliedGeneration`, `lastSuccessfulReconcileTime`, and conditions. Permission results should identify schema/table/grantee. Error reasons include ConnectionUnavailable, NotWritable, SecretNotFound, CredentialsMissing, ConnectionSecretConflict, DependenciesNotReady, TableNotFound, OwnershipConflict, InsufficientPrivileges, UnsupportedFeature, and DeletionBlocked.
+The generated status schema includes `applied`, `observedGeneration`, `message`, `effectiveName`, `appliedGeneration`, `lastSuccessfulReconcileTime`, and conditions. DatabaseRole adds `secretResourceVersion`; Database adds per-permission outcomes identifying schema/table/grantee/privilege. Only PostgresCluster currently populates runtime status; its exact reasons are documented in [PostgresCluster readiness](postgrescluster.md).
+
+The Database status schema does not yet contain the durable managed-grant history, pending changes, or resolved object/grantor bindings required above. Role managed-membership/parameter cleanup likewise needs persistent bookkeeping during implementation. Outcome entries alone do not fulfill those recovery contracts. Evolve the source types and regenerate schemas before implementing this behavior.
+
+Planned role/database error reasons include ConnectionUnavailable, NotWritable, SecretNotFound, CredentialsMissing, ConnectionSecretConflict, DependenciesNotReady, TableNotFound, OwnershipConflict, InsufficientPrivileges, UnsupportedFeature, and DeletionBlocked.
 
 ## Deferred features
 
@@ -511,16 +515,7 @@ The extended role memberships API with adminOption, inheritOption, and setOption
 
 ## Examples and validation
 
-- [minimal.yaml](../examples/api-proposal/minimal.yaml): connection, user, and database.
-- [full.yaml](../examples/api-proposal/full.yaml): full configuration with inline permissions.
-- [readonly.yaml](../examples/api-proposal/readonly.yaml): reader and update of Database/app.
-- [multi-cluster.yaml](../examples/api-proposal/multi-cluster.yaml): the same SQL username on two servers.
-- [aws-rds.yaml](../examples/api-proposal/aws-rds.yaml): RDS, grants/default privileges, password/IAM.
-- [llm-readonly.yaml](../examples/api-proposal/llm-readonly.yaml): SELECT on explicitly named tables.
-- [llm-readonly-after-removal.yaml](../examples/api-proposal/llm-readonly-after-removal.yaml): updating the same live CR removes orders from the declared permission set and removes its managed SELECT.
-- [llm-readonly-with-absent-grant.yaml](../examples/api-proposal/llm-readonly-with-absent-grant.yaml): explicit absent state on orders SELECT, also suitable for historical cleanup after CR recreation.
-
-Minimal/full/RDS/LLM are alternative examples with overlapping names; use different namespaces or resource names. Readonly extends minimal and updates Database/app. LLM after-removal and with-absent-grant are alternative updates of the original example rather than separate SQL objects. The primary microservice variants are described above.
+The [example guide](examples.md) lists the resource sets, alternatives, and update relationships. Choose a coherent set and satisfy its prerequisites; overlapping examples are not independent deployments.
 
 Before claiming RDS compatibility, test generic PostgreSQL and real RDS on both sides of PG16: role/database creation and update with different owners, object grants, defaults for different creators, ADMIN/SET/INHERIT, password restrictions, IAM membership, protected roles, and explicit grant/revoke dependencies. Local PostgreSQL does not reproduce all RDS privilege hooks.
 
@@ -528,4 +523,4 @@ LLM tests must cover initial named-table SELECT, denial on initially unlisted an
 
 Microservice tests must cover runtime DML, denial of admin INSERT/UPDATE/DELETE/DDL, immediate access to tables created by each declared creator, and sequence permissions. Test initial Secret publication with SQL role/database creation or named-table permissions still pending, Ready=false despite Secret existence, a migration Job using retry in the same deployment wave, and eventual ACL reconciliation after the Job creates the tables. Credential tests must cover supplied/generated sources, password persistence before SQL, retry using the latest source after partial failure, source loss without unrequested rotation, roleRef and cluster validation, source/output name conflicts, independent service/admin outputs, shared roles across databases, ordinary rotation fan-out without snapshots, TLS CA export, URI escaping, retained Secret reuse after CR recreation, and endpoint changes. Authorization and ownership conflicts must block early export. Existing outputs must not publish a rotated password before SQL accepts it, and pending grants for another role must not block that refresh. Ready must remain false when SQL accepts a new password but an output update fails, until reconciliation repairs the requested outputs. Initial CRDs expose inRoles without the deferred memberships/options fields.
 
-YAML syntax and example relationships are checked statically. CRD schema validation and SQL/e2e validation require implemented CRDs/controllers and test server connections.
+The current envtest suite checks CRD admission/defaulting and the implemented PostgresCluster manager/watch behavior. Integration and e2e suites exercise its real connection checks. The role/database scenarios above remain required future behavioral tests; schema acceptance and example syntax cannot prove SQL reconciliation. See [development and test suites](development.md#test-suites).

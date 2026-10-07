@@ -1,0 +1,52 @@
+# Development
+
+The project scaffold was initialized with [Kubebuilder v4.16.0](https://github.com/kubernetes-sigs/kubebuilder/releases/tag/v4.16.0) and the `go/v4` plugin. It uses Go 1.27.1, controller-runtime v0.25.0, and Kubernetes v0.37.0 Go libraries. The Go module is `github.com/vterdunov/external-postgres-control-operator`; the scaffold project name is `epco` and its API domain is `epco.io`.
+
+The manager registers all three API types from [api/v1alpha1](../api/v1alpha1). Generated CRDs are in [config/crd/bases](../config/crd/bases), with generated DeepCopy methods alongside the types. See [implementation status](README.md#implementation-status) and [PostgresCluster readiness](postgrescluster.md) for the runtime scope.
+
+Install [mise](https://mise.jdx.dev/) and use the pinned Go and Kubebuilder versions from `mise.toml`:
+
+```sh
+mise trust
+mise run --skip-tools tools-install
+mise run build # Build bin/manager without changing sources
+mise run test-unit # Fast unit tests, race detection and randomization
+mise run test-architecture # Verify architecture policy against isolated fixtures
+mise run test-envtest # CRD contracts and real manager/watch tests
+mise run test-integration # Isolated PostgreSQL fixtures (Docker)
+mise run test-e2e # Deployment smoke tests in disposable Kind
+mise run check-generated # Compare generated output in a temporary copy
+mise run lint # Verify linter configuration and run the configured linters
+mise run lint-architecture # Check production package dependency boundaries
+mise run check # Build, unit tests, lint, generated checks and manifest render
+```
+
+Run `mise tasks` to list all development, image and deployment commands. For example, `IMG=registry/epco:dev mise run docker-build` builds an image. Cluster commands require an explicit context: `KUBE_CONTEXT=my-cluster IMG=registry/epco:dev mise run deploy`. Set `IGNORE_NOT_FOUND=true` for tolerant deletion.
+
+Test commands do not generate, format, or tidy sources. `mise.lock` locks tool downloads and checksums for Linux amd64 and macOS arm64; `mise run --skip-tools tools-install` installs only project tools from the lockfile, preserving unrelated global mise settings. Refresh it with `mise lock --platform linux-x64,macos-arm64` after changing tool pins. The custom logcheck linter is built into the ignored `bin/` directory. Envtest downloads Kubernetes 1.37.0 and starts its own API/etcd; it does not run Kubernetes garbage collection or workload controllers. The reusable `test/envtest` harness exposes an uncached client, explicit scope cleanup, and an optional manager with cache synchronization and bounded shutdown. API and manual reconcile tests are separate from manager/watch tests.
+
+## Architecture boundaries
+
+The pinned go-arch-lint v1.19.0 enforces `.go-arch-lint.yml` during `mise run lint`, including the existing CI lint job and `mise run check`. API packages use Kubernetes apimachinery; PostgreSQL code uses API types, pgx and Kubernetes core/v1 Secret types; controllers use API types, PostgreSQL code and Kubernetes clients/runtime; `cmd` wires these components with Kubernetes runtime libraries. Standard library imports are permitted, while vendor imports require explicit allowlists. New production packages outside the configured components and imports of test helpers fail the check. Deep scanning also checks local dependency injection through interfaces.
+
+Architecture checks include generated API Go sources and exclude `_test.go` files. Root directories `test/`, `bin/`, `artifacts/`, `tools/`, `.agent-plans/` and `.git/` belong to a separate support component with unrestricted imports and no deep scanning. Production components cannot import support packages. These exact root-relative mappings avoid go-arch-lint v1.19.0 directory exclusions, which also skip unrelated packages sharing an excluded directory's prefix. `ignoreNotFoundComponents` permits declared directory globs to be absent in fresh checkouts; Go sources outside mapped components still fail, including new packages such as `testhelper/` and `toolshed/`. `mise run test-architecture` exercises allowed and forbidden imports in temporary copies using the real checker; it also runs within `mise run test-unit`.
+
+## Test suites
+
+| Task | Coverage and requirements |
+| --- | --- |
+| `test-unit` | Fast unit/race tests, randomized specs, runner tests, and architecture-policy tests; no container runtime or envtest assets |
+| `test-envtest` | CRD admission/defaults and real manager/Secret-watch tests on an isolated API server; no workload controllers or garbage collection |
+| [test-integration](../test/integration/README.md) | PostgreSQL client behavior with TLS and isolated SQL fixtures; a Docker-compatible runtime is required |
+| [test-e2e](../test/e2e/README.md) | Installed manager health, metrics, CRD CRUD, and PostgresCluster readiness recovery in disposable Kind; a Docker-compatible runtime is required |
+| `check-generated` | Regenerate in a temporary copy and compare derived files without changing the checkout |
+
+On macOS, the integration and e2e suites use OrbStack's Docker-compatible runtime. Suite-specific fixture APIs, image pins, build modes, and runtime coverage belong in their linked READMEs. Real RDS verification remains separate work.
+
+Each runner prints its random seed. Set `EPCO_TEST_SEED` to replay it and `EPCO_ARTIFACTS_DIR` to choose the report directory (default under ignored `artifacts/`). Failure diagnostics are retained before teardown; runners handle SIGINT/SIGTERM and clean only resources owned by that run. CI separates unit/race, envtest, generation, PostgreSQL 15/16 integration, and PostgreSQL 16 e2e. Scheduled/manual integration covers PostgreSQL 15-18 and repeated seeds. Reports and diagnostics are uploaded even on failure.
+
+## API changes and generation
+
+Use the pinned Kubebuilder for subsequent scaffolding; the three baseline resources already exist. Keep scaffold markers and update the Go types and accepted API documentation together. Regenerate derived files by running `mise run generate` followed by `mise run manifests` instead of editing them manually. Run `mise run check-generated` and `mise run test-envtest` to verify the resulting schemas and admission rules.
+
+Local agent implementation plans belong in `.agent-plans/`, which is excluded from Git. Create this directory in a fresh checkout before writing a plan. Plans and all repository documentation use English and refer to the accepted API baseline.
