@@ -1,210 +1,103 @@
+// Package utils provides credential-safe subprocess support for test suites.
 package utils
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strings"
 
-	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
+	"github.com/onsi/ginkgo/v2"
 )
 
-const (
-	certmanagerVersion = "v1.21.1"
-	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
+const connectionValuePattern = `(?:'[^']*'|"[^"]*"|[^\s;]+)`
+const keywordConnectionPattern = `(?i)\b(?:host|hostaddr|port|dbname|user|password|sslmode|sslrootcert)` +
+	`\s*=\s*` + connectionValuePattern + `(?:\s+[A-Za-z_]+\s*=\s*` + connectionValuePattern + `)+`
 
-	defaultKindBinary  = "kind"
-	defaultKindCluster = "kind"
-)
+var credentialName = regexp.MustCompile(`^[A-Za-z_][A-Za-z_0-9-]*$`)
 
-func warnError(err error) {
-	_, _ = fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
+var credentialPatterns = []*regexp.Regexp{
+	regexp.MustCompile(keywordConnectionPattern),
+	regexp.MustCompile(`(?i)bearer\s+[^\s"'<>]+`),
+	regexp.MustCompile(`(?i)postgres(?:ql)?://[^\s"'<>]+`),
+	regexp.MustCompile(`(?i)(?:password|passwd|pwd|token|secret|dsn|authorization)\s*[=:]\s*(?:'[^']*'|"[^"]*"|[^\s,;]+)`),
+	regexp.MustCompile(`(?i)--(?:password|token|secret|dsn)\s+[^\s]+`),
+	regexp.MustCompile(`(?i)\bpassword\s+'[^']*'`),
+	regexp.MustCompile(`(?i)https?://[^\s/:]+:[^\s/@]+@[^\s]+`),
 }
 
-// Run executes the provided command within this context
+// Redact removes connection strings and common credential formats from diagnostics.
+func Redact(value string) string {
+	for _, pattern := range credentialPatterns {
+		value = pattern.ReplaceAllString(value, "[REDACTED]")
+	}
+	return value
+}
+
+// Run preserves the command's directory and environment and sanitizes diagnostics.
+// An unset environment inherits the current process environment through os/exec.
 func Run(cmd *exec.Cmd) (string, error) {
-	dir, _ := GetProjectDir()
-	cmd.Dir = dir
-
-	if err := os.Chdir(cmd.Dir); err != nil {
-		_, _ = fmt.Fprintf(GinkgoWriter, "chdir dir: %q\n", err)
-	}
-
-	cmd.Env = append(os.Environ(), "GO111MODULE=on")
-	command := strings.Join(cmd.Args, " ")
-	_, _ = fmt.Fprintf(GinkgoWriter, "running: %q\n", command)
+	_, _ = fmt.Fprintf(ginkgo.GinkgoWriter, "running: %s\n", filepath.Base(cmd.Path))
 	output, err := cmd.CombinedOutput()
+	sanitized := sanitize(string(output), cmd)
 	if err != nil {
-		return string(output), fmt.Errorf("%q failed with error %q: %w", command, string(output), err)
+		return sanitized, fmt.Errorf("%s failed: %s: %w", filepath.Base(cmd.Path), sanitized, err)
 	}
-
-	return string(output), nil
+	return sanitized, nil
 }
 
-// UninstallCertManager uninstalls the cert manager
-func UninstallCertManager() {
-	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	cmd := exec.Command("kubectl", "delete", "-f", url)
-	if _, err := Run(cmd); err != nil {
-		warnError(err)
+func sanitize(value string, cmd *exec.Cmd) string {
+	environment := cmd.Env
+	if environment == nil {
+		environment = os.Environ()
 	}
-
-	// Delete leftover leases in kube-system (not cleaned by default)
-	kubeSystemLeases := []string{
-		"cert-manager-cainjector-leader-election",
-		"cert-manager-controller",
-	}
-	for _, lease := range kubeSystemLeases {
-		cmd = exec.Command("kubectl", "delete", "lease", lease,
-			"-n", "kube-system", "--ignore-not-found", "--force", "--grace-period=0")
-		if _, err := Run(cmd); err != nil {
-			warnError(err)
+	for _, entry := range environment {
+		key, secret, ok := strings.Cut(entry, "=")
+		if ok && secret != "" && sensitiveKey(key) {
+			value = strings.ReplaceAll(value, secret, "[REDACTED]")
 		}
 	}
-}
-
-// InstallCertManager installs the cert manager bundle.
-func InstallCertManager() error {
-	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	cmd := exec.Command("kubectl", "apply", "-f", url)
-	if _, err := Run(cmd); err != nil {
-		return err
-	}
-	// Wait for cert-manager-webhook to be ready, which can take time if cert-manager
-	// was re-installed after uninstalling on a cluster.
-	cmd = exec.Command("kubectl", "wait", "deployment.apps/cert-manager-webhook",
-		"--for", "condition=Available",
-		"--namespace", "cert-manager",
-		"--timeout", "5m",
-	)
-
-	_, err := Run(cmd)
-	return err
-}
-
-// IsCertManagerCRDsInstalled checks if any Cert Manager CRDs are installed
-// by verifying the existence of key CRDs related to Cert Manager.
-func IsCertManagerCRDsInstalled() bool {
-	// List of common Cert Manager CRDs
-	certManagerCRDs := []string{
-		"certificates.cert-manager.io",
-		"issuers.cert-manager.io",
-		"clusterissuers.cert-manager.io",
-		"certificaterequests.cert-manager.io",
-		"orders.acme.cert-manager.io",
-		"challenges.acme.cert-manager.io",
-	}
-
-	// Execute the kubectl command to get all CRDs
-	cmd := exec.Command("kubectl", "get", "crds")
-	output, err := Run(cmd)
-	if err != nil {
-		return false
-	}
-
-	// Check if any of the Cert Manager CRDs are present
-	crdList := GetNonEmptyLines(output)
-	for _, crd := range certManagerCRDs {
-		for _, line := range crdList {
-			if strings.Contains(line, crd) {
-				return true
-			}
+	for index, argument := range cmd.Args {
+		key, secret, assigned := strings.Cut(argument, "=")
+		if !assigned && !strings.HasPrefix(key, "-") {
+			continue
+		}
+		key = strings.TrimLeft(key, "-")
+		if !credentialName.MatchString(key) || !sensitiveKey(key) {
+			continue
+		}
+		if !assigned && index+1 < len(cmd.Args) {
+			secret = cmd.Args[index+1]
+		}
+		if secret != "" {
+			value = strings.ReplaceAll(value, secret, "[REDACTED]")
 		}
 	}
-
-	return false
+	return Redact(value)
 }
 
-// LoadImageToKindClusterWithName loads a local docker image to the kind cluster
-func LoadImageToKindClusterWithName(name string) error {
-	cluster := defaultKindCluster
-	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
-		cluster = v
-	}
-	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
-	kindBinary := defaultKindBinary
-	if v, ok := os.LookupEnv("KIND"); ok {
-		kindBinary = v
-	}
-	cmd := exec.Command(kindBinary, kindOptions...)
-	_, err := Run(cmd)
-	return err
+func sensitiveKey(key string) bool {
+	key = strings.ToLower(key)
+	return strings.Contains(key, "password") || strings.Contains(key, "token") ||
+		strings.Contains(key, "secret") || strings.Contains(key, "dsn") || key == "passwd" || key == "pwd"
 }
 
-// GetNonEmptyLines converts given command output string into individual objects
-// according to line breakers, and ignores the empty elements in it.
-func GetNonEmptyLines(output string) []string {
-	var res []string
-	elements := strings.SplitSeq(output, "\n")
-	for element := range elements {
-		if element != "" {
-			res = append(res, element)
-		}
-	}
-
-	return res
-}
-
-// GetProjectDir will return the directory where the project is
+// GetProjectDir finds the module root without changing the process directory.
 func GetProjectDir() (string, error) {
-	wd, err := os.Getwd()
+	dir, err := os.Getwd()
 	if err != nil {
-		return wd, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	wd = strings.ReplaceAll(wd, "/test/e2e", "")
-	return wd, nil
-}
-
-// UncommentCode searches for target in the file and remove the comment prefix
-// of the target content. The target content may span multiple lines.
-func UncommentCode(filename, target, prefix string) error {
-	// false positive
-	// nolint:gosec
-	content, err := os.ReadFile(filename)
-	if err != nil {
-		return fmt.Errorf("failed to read file %q: %w", filename, err)
-	}
-	strContent := string(content)
-
-	idx := strings.Index(strContent, target)
-	if idx < 0 {
-		return fmt.Errorf("unable to find the code %q to be uncommented", target)
-	}
-
-	out := new(bytes.Buffer)
-	_, err = out.Write(content[:idx])
-	if err != nil {
-		return fmt.Errorf("failed to write to output: %w", err)
-	}
-
-	scanner := bufio.NewScanner(bytes.NewBufferString(target))
-	if !scanner.Scan() {
-		return nil
+		return "", fmt.Errorf("get current directory: %w", err)
 	}
 	for {
-		if _, err = out.WriteString(strings.TrimPrefix(scanner.Text(), prefix)); err != nil {
-			return fmt.Errorf("failed to write to output: %w", err)
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
 		}
-		// Avoid writing a newline in case the previous line was the last in target.
-		if !scanner.Scan() {
-			break
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("module root not found")
 		}
-		if _, err = out.WriteString("\n"); err != nil {
-			return fmt.Errorf("failed to write to output: %w", err)
-		}
+		dir = parent
 	}
-
-	if _, err = out.Write(content[idx+len(target):]); err != nil {
-		return fmt.Errorf("failed to write to output: %w", err)
-	}
-
-	// false positive
-	// nolint:gosec
-	if err = os.WriteFile(filename, out.Bytes(), 0644); err != nil {
-		return fmt.Errorf("failed to write file %q: %w", filename, err)
-	}
-
-	return nil
 }

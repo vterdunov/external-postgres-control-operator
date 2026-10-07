@@ -3,27 +3,86 @@ name: Tests
 on:
   push:
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
-  test:
-    permissions:
-      contents: read
-    name: Run on Ubuntu
-    runs-on: ubuntu-latest
+  fast:
+    name: ${{ matrix.suite }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [test-unit, test-envtest, check-generated]
     steps:
-      - name: Clone the code
+      - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-
-      - name: Setup Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - name: Set up mise and pinned tools
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          go-version-file: go.mod
-
-      - name: Running Tests
+          version: 2026.9.15
+      - name: Run suite and repeated random seeds
+        env:
+          SUITE: ${{ matrix.suite }}
+          EXTENDED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         run: |
-          go mod tidy
-          make test
+          runs=1
+          if [ "$EXTENDED" = true ] && [ "$SUITE" != check-generated ]; then runs=3; fi
+          for run in $(seq 1 "$runs"); do
+            EPCO_TEST_SEED="$(( $(date +%s) + run ))" EPCO_ARTIFACTS_DIR="$PWD/artifacts/$SUITE/$run" mise run "$SUITE"
+          done
+      - name: Verify tests did not modify tracked sources
+        if: always()
+        run: git diff --exit-code
+      - name: Upload reports and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ matrix.suite }}
+          path: artifacts/
+          if-no-files-found: warn
+  postgres:
+    name: PostgreSQL ${{ matrix.pg }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["15", "16", "17", "18"]' || '["15", "16"]') }}
+    env:
+      EPCO_PG_VERSION: ${{ matrix.pg }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Set up mise and pinned tools
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.9.15
+      - name: PostgreSQL integration
+        env:
+          EXTENDED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        run: |
+          runs=1
+          if [ "$EXTENDED" = true ]; then runs=3; fi
+          for run in $(seq 1 "$runs"); do
+            EPCO_TEST_SEED="$(( $(date +%s) + run ))" EPCO_ARTIFACTS_DIR="$PWD/artifacts/integration/$run" mise run test-integration
+          done
+      - name: Verify tests did not modify tracked sources
+        if: always()
+        run: git diff --exit-code
+      - name: Upload reports and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: postgres-${{ matrix.pg }}
+          path: artifacts/
+          if-no-files-found: warn

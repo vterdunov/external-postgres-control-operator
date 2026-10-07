@@ -1,22 +1,159 @@
 [tools]
 go = "1.27.1"
 kubebuilder = "4.16.0"
+kind = "0.32.0"
+kubectl = "1.36.1"
+kustomize = "5.8.1"
+shellcheck = "0.11.0"
+kube-controller-tools = "0.22.0"
+setup-envtest = "0.25.0"
+golangci-lint = "2.13.1"
+actionlint = "1.7.12"
+
+[settings]
+lockfile_platforms = ["linux-x64", "macos-arm64"]
+
+[env]
+GOTOOLCHAIN = "go1.27.1"
+
+[tasks.all]
+description = "Build the manager"
+depends = ["build"]
+
+[tasks.help]
+description = "List available tasks"
+run = "mise tasks"
+
+[tasks.tools-install]
+description = "Install only this project's tools from the lockfile"
+run = "python3 tools/install.py"
+
+[tasks.manifests]
+description = "Generate RBAC, CRD and webhook manifests"
+run = "controller-gen rbac:roleName=manager-role crd webhook paths='./...' output:crd:artifacts:config=config/crd/bases"
+
+[tasks.generate]
+description = "Generate DeepCopy methods"
+run = "controller-gen object paths='./...'"
+
+[tasks.fmt]
+description = "Format Go sources"
+run = "go fmt ./..."
+
+[tasks.vet]
+description = "Vet Go code"
+run = "go vet -mod=readonly ./..."
 
 [tasks.build]
-description = "Generate code and manifests, vet, and build the manager"
-run = "make build"
+description = "Build the manager without modifying sources"
+run = "go build -mod=readonly -o bin/manager ./cmd"
+
+[tasks.run]
+description = "Run the controller locally"
+run = "go run -mod=readonly ./cmd/main.go"
 
 [tasks.test]
-description = "Generate code and manifests, vet, and run unit tests"
-run = "make test"
+description = "Run fast unit tests"
+depends = ["test-unit"]
+
+[tasks.test-unit]
+description = "Unit tests with race detection and randomized specs"
+run = ["bash test/unit/run.sh", "python3 test/envtest/runner_test.py", "bash test/e2e/runner_test.sh"]
+
+[tasks.test-envtest]
+description = "Real API CRD and manager/watch tests"
+run = "bash test/envtest/run.sh"
+
+[tasks.test-integration]
+description = "Isolated PostgreSQL integration tests"
+run = "bash test/integration/run.sh"
+
+[tasks.test-e2e]
+description = "Installed operator smoke tests in disposable Kind"
+run = "bash test/e2e/run.sh"
+
+[tasks.check-generated]
+description = "Regenerate in a temporary copy and compare outputs"
+run = "bash test/generated/check.sh"
+
+[tasks.golangci-lint]
+description = "Build the custom linter with the pinned logcheck plugin"
+run = "bash tools/linter.sh build"
+
+[tasks.lint-config]
+description = "Verify custom linter configuration"
+run = "bash tools/linter.sh config verify"
+
+[tasks.lint-fix]
+description = "Lint and automatically fix Go code"
+run = "bash tools/linter.sh run --fix --build-tags envtest,integration,e2e"
 
 [tasks.lint]
-description = "Verify linter configuration and lint Go code"
-run = "make lint-config lint"
+description = "Verify linter configuration and lint Go and shell code"
+run = [
+  "bash tools/linter.sh config verify",
+  "bash tools/linter.sh run",
+  "bash tools/linter.sh run --build-tags envtest,integration,e2e",
+  "shellcheck tools/*.sh test/unit/run.sh test/generated/check.sh test/envtest/run.sh test/integration/run.sh test/e2e/run.sh test/e2e/runner_test.sh",
+]
 
 [tasks.check]
-description = "Build, test, lint, and render deployment manifests"
+description = "Build, unit tests, lint, generated checks and render manifests"
 run = [
-  "make build test lint-config lint kustomize",
-  "bin/kustomize build config/default > /dev/null",
+  "mise run build",
+  "mise run test-unit",
+  "mise run lint",
+  "mise run check-generated",
+  "kustomize build config/default > /dev/null",
 ]
+
+[tasks.docker-build]
+description = "Build the manager container image"
+run = "bash tools/image.sh build"
+
+[tasks.docker-push]
+description = "Push the manager container image"
+run = "bash tools/image.sh push"
+
+[tasks.docker-buildx]
+description = "Build and push a multi-platform manager image"
+run = "bash tools/image.sh buildx"
+
+[tasks.build-installer]
+description = "Generate CRDs and a consolidated deployment installer"
+run = ["mise run generate", "mise run manifests", "bash tools/deploy.sh build-installer"]
+
+[tasks.install]
+description = "Install CRDs using explicit KUBE_CONTEXT"
+depends = ["manifests"]
+run = "bash tools/deploy.sh install"
+
+[tasks.uninstall]
+description = "Delete CRDs using explicit KUBE_CONTEXT"
+depends = ["manifests"]
+run = "bash tools/deploy.sh uninstall"
+
+[tasks.deploy]
+description = "Deploy the controller using explicit KUBE_CONTEXT"
+depends = ["manifests"]
+run = "bash tools/deploy.sh deploy"
+
+[tasks.undeploy]
+description = "Delete the controller using explicit KUBE_CONTEXT"
+run = "bash tools/deploy.sh undeploy"
+
+[tasks.kustomize]
+description = "Install pinned kustomize"
+run = "mise install --locked kustomize"
+
+[tasks.controller-gen]
+description = "Install pinned controller-gen"
+run = "mise install --locked kube-controller-tools"
+
+[tasks.envtest]
+description = "Install pinned setup-envtest"
+run = "mise install --locked setup-envtest"
+
+[tasks.setup-envtest]
+description = "Download the pinned Kubernetes control plane"
+run = "setup-envtest use 1.37.0 --bin-dir bin -p path"
