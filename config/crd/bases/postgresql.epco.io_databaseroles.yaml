@@ -1,0 +1,318 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: databaseroles.postgresql.epco.io
+spec:
+  group: postgresql.epco.io
+  names:
+    kind: DatabaseRole
+    listKind: DatabaseRoleList
+    plural: databaseroles
+    shortNames:
+    - pgr
+    singular: databaserole
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.cluster.name
+      name: Cluster
+      type: string
+    - jsonPath: .status.effectiveName
+      name: SQL Name
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: DatabaseRole is the API for a PostgreSQL role on an external
+          server.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: DatabaseRoleSpec defines PostgreSQL role attributes and password
+              sources.
+            properties:
+              bypassrls:
+                default: false
+                description: BypassRLS bypasses row-level security.
+                type: boolean
+              cluster:
+                description: Cluster identifies the PostgreSQL connection descriptor.
+                properties:
+                  name:
+                    description: Name is the PostgresCluster resource name.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  namespace:
+                    description: Namespace defaults to the referring resource's namespace.
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: cluster reference is immutable
+                  rule: self == oldSelf
+              comment:
+                description: Comment is the SQL role description.
+                type: string
+              connectionLimit:
+                default: -1
+                description: ConnectionLimit is the role's connection limit; -1 means
+                  unlimited.
+                format: int64
+                minimum: -1
+                type: integer
+              createdb:
+                default: false
+                description: CreateDB allows database creation.
+                type: boolean
+              createrole:
+                default: false
+                description: CreateRole allows role administration subject to server
+                  authorization.
+                type: boolean
+              databaseRoleReclaimPolicy:
+                default: retain
+                description: ReclaimPolicy controls role deletion when this CR is
+                  deleted.
+                enum:
+                - retain
+                - delete
+                type: string
+              disablePassword:
+                default: false
+                description: DisablePassword sets PASSWORD NULL.
+                type: boolean
+              inRoles:
+                description: InRoles contains SQL parent role names, using CNPG membership
+                  semantics.
+                items:
+                  description: |-
+                    SQLName is a nonempty PostgreSQL identifier. Server-specific byte limits are
+                    checked by the reconciler; identifiers are never truncated.
+                  minLength: 1
+                  pattern: "^[^\0]+$"
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+              inherit:
+                default: true
+                description: Inherit controls the role attribute, not existing PG16+
+                  membership options.
+                type: boolean
+              login:
+                default: false
+                description: Login allows the role to log in. It is never enabled
+                  implicitly.
+                type: boolean
+              managementPolicy:
+                default: manage
+                description: ManagementPolicy chooses reconciliation or observation.
+                enum:
+                - manage
+                - observe
+                type: string
+              membershipPolicy:
+                default: authoritative
+                description: MembershipPolicy controls authoritative or operator-managed
+                  memberships.
+                enum:
+                - authoritative
+                - managed
+                type: string
+              name:
+                description: Name is the SQL role name; omission resolves to metadata.name.
+                minLength: 1
+                pattern: "^[^\0]+$"
+                type: string
+              parameters:
+                additionalProperties:
+                  type: string
+                description: Parameters contains the ALTER ROLE SET parameters managed
+                  by this resource.
+                type: object
+              passwordGeneration:
+                description: PasswordGeneration requests a persisted, reusable generated
+                  password.
+                properties:
+                  secretName:
+                    description: SecretName is the immutable local name of the generated
+                      password source.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - secretName
+                type: object
+              passwordSecret:
+                description: PasswordSecret selects a supplied local basic-auth Secret.
+                properties:
+                  name:
+                    description: Name is the Kubernetes resource name.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              replication:
+                default: false
+                description: Replication allows replication connections.
+                type: boolean
+              superuser:
+                default: false
+                description: Superuser grants PostgreSQL superuser status when the
+                  server permits it.
+                type: boolean
+              validUntil:
+                description: ValidUntil is the password expiration timestamp. Omission
+                  means no expiration.
+                format: date-time
+                type: string
+            required:
+            - cluster
+            type: object
+            x-kubernetes-validations:
+            - message: passwordSecret and passwordGeneration are mutually exclusive
+              rule: '!(has(self.passwordSecret) && has(self.passwordGeneration))'
+            - message: disablePassword cannot be combined with a password source
+              rule: '!self.disablePassword || (!has(self.passwordSecret) && !has(self.passwordGeneration))'
+            - message: observe requires retain reclaim policy
+              rule: self.managementPolicy != 'observe' || self.databaseRoleReclaimPolicy
+                == 'retain'
+            - message: generated password source is immutable once configured
+              rule: '!has(oldSelf.passwordGeneration) || (has(self.passwordGeneration)
+                && self.passwordGeneration.secretName == oldSelf.passwordGeneration.secretName)'
+          status:
+            description: DatabaseRoleStatus reports role reconciliation and the applied
+              password version.
+            properties:
+              applied:
+                description: Applied reports whether reconciliation succeeded.
+                type: boolean
+              appliedGeneration:
+                description: AppliedGeneration is the latest successfully reconciled
+                  generation.
+                format: int64
+                type: integer
+              conditions:
+                description: Conditions report readiness and failures, keyed by condition
+                  type.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              effectiveName:
+                description: EffectiveName is the resolved SQL name, including metadata.name
+                  fallback.
+                type: string
+              lastSuccessfulReconcileTime:
+                description: LastSuccessfulReconcileTime records the most recent successful
+                  reconciliation.
+                format: date-time
+                type: string
+              message:
+                description: Message describes the most recent reconciliation result.
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the latest generation inspected
+                  by the reconciler.
+                format: int64
+                type: integer
+              secretResourceVersion:
+                description: SecretResourceVersion identifies the password source
+                  version applied to SQL.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: effective SQL name is immutable
+          rule: '(has(self.spec.name) ? self.spec.name : self.metadata.name) == (has(oldSelf.spec.name)
+            ? oldSelf.spec.name : oldSelf.metadata.name)'
+    served: true
+    storage: true
+    subresources:
+      status: {}

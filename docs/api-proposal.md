@@ -1,6 +1,6 @@
 # User-facing API baseline
 
-Status: accepted initial API baseline, 2026-10-07. The CRDs and controllers described here are not implemented. The example API group `postgresql.epco.io/v1alpha1` remains a placeholder.
+Status: accepted initial API baseline, 2026-10-07. Go API types and CRDs have been generated for `postgresql.epco.io/v1alpha1`. Controllers and the runtime behavior described here are not implemented.
 
 Implementation follows the resource fields, defaults, declarative permission reconciliation, password management, and connection Secret contracts defined here and demonstrated in the examples. Changes to this baseline require agreement and corresponding documentation and example updates. Future extensions explicitly described as such are outside the initial implementation scope.
 

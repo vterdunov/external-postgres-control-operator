@@ -1,0 +1,13 @@
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  labels:
+    app.kubernetes.io/name: epco
+    app.kubernetes.io/managed-by: kustomize
+  name: databaserole-sample
+spec:
+  cluster:
+    name: postgrescluster-sample
+  login: true
+  passwordGeneration:
+    secretName: databaserole-sample-credentials

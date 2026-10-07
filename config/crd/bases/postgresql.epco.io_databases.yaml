@@ -1,0 +1,2115 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: databases.postgresql.epco.io
+spec:
+  group: postgresql.epco.io
+  names:
+    kind: Database
+    listKind: DatabaseList
+    plural: databases
+    shortNames:
+    - pgdb
+    singular: database
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.cluster.name
+      name: Cluster
+      type: string
+    - jsonPath: .status.effectiveName
+      name: SQL Name
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Database is the API for a PostgreSQL database, SQL objects, and
+          permissions.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: DatabaseSpec defines a PostgreSQL database and its managed
+              SQL objects and ACLs.
+            properties:
+              allowConnections:
+                description: AllowConnections changes connection admission only when
+                  explicitly specified.
+                type: boolean
+              builtinLocale:
+                description: BuiltinLocale is a creation-only PostgreSQL database
+                  option.
+                minLength: 1
+                type: string
+              cluster:
+                description: Cluster identifies the connection descriptor.
+                properties:
+                  name:
+                    description: Name is the PostgresCluster resource name.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  namespace:
+                    description: Namespace defaults to the referring resource's namespace.
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: cluster reference is immutable
+                  rule: self == oldSelf
+              collationVersion:
+                description: CollationVersion is a creation-only PostgreSQL database
+                  option.
+                minLength: 1
+                type: string
+              connectionLimit:
+                description: ConnectionLimit changes the database limit only when
+                  explicitly specified.
+                format: int64
+                minimum: -1
+                type: integer
+              connectionSecrets:
+                description: ConnectionSecrets declares application connection exports
+                  in this namespace.
+                items:
+                  description: ConnectionSecret declares one derived application basic-auth
+                    Secret.
+                  properties:
+                    name:
+                      description: Name is the output Secret name in the Database
+                        namespace.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    roleRef:
+                      description: RoleRef identifies a local DatabaseRole with a
+                        password source.
+                      properties:
+                        name:
+                          description: Name is the Kubernetes resource name.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    sslRootCertPath:
+                      description: |-
+                        SSLRootCertPath is the application's mounted CA path. When omitted and a
+                        cluster CA is configured, the reconciler uses /etc/postgresql/ca.crt.
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  - roleRef
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              databaseReclaimPolicy:
+                default: retain
+                description: ReclaimPolicy controls SQL cleanup when this CR is deleted.
+                enum:
+                - retain
+                - delete
+                type: string
+              defaultPrivileges:
+                description: DefaultPrivileges contains global defaults for actual
+                  object creator roles.
+                items:
+                  description: DefaultPrivileges declares future-object privileges
+                    for the actual SQL creator.
+                  properties:
+                    forRole:
+                      description: ForRole is the SQL role creating the future objects.
+                      minLength: 1
+                      pattern: "^[^\0]+$"
+                      type: string
+                    functions:
+                      description: Functions declares defaults for future functions.
+                      properties:
+                        execute:
+                          description: Execute declares EXECUTE grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                      type: object
+                    sequences:
+                      description: Sequences declares defaults for future sequences.
+                      properties:
+                        select:
+                          description: Select declares SELECT grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        update:
+                          description: Update declares UPDATE grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        usage:
+                          description: Usage declares USAGE grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                      type: object
+                    tables:
+                      description: Tables declares defaults for future tables.
+                      properties:
+                        delete:
+                          description: Delete declares DELETE grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        insert:
+                          description: Insert declares INSERT grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        maintain:
+                          description: Maintain declares MAINTAIN grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        references:
+                          description: References declares REFERENCES grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        select:
+                          description: Select declares SELECT grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        trigger:
+                          description: Trigger declares TRIGGER grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        truncate:
+                          description: Truncate declares TRUNCATE grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        update:
+                          description: Update declares UPDATE grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                      type: object
+                    types:
+                      description: Types declares defaults for future types.
+                      properties:
+                        usage:
+                          description: Usage declares USAGE grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                      type: object
+                  required:
+                  - forRole
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - forRole
+                x-kubernetes-list-type: map
+              encoding:
+                description: Encoding is a creation-only PostgreSQL database option.
+                minLength: 1
+                type: string
+              ensure:
+                default: present
+                description: Ensure requests database presence or explicit removal
+                  regardless of reclaim policy.
+                enum:
+                - present
+                - absent
+                type: string
+              extensions:
+                description: Extensions contains managed extensions.
+                items:
+                  description: ExtensionSpec declares a PostgreSQL extension.
+                  properties:
+                    ensure:
+                      default: present
+                      description: Ensure requests presence or DROP with RESTRICT;
+                        omission means present.
+                      enum:
+                      - present
+                      - absent
+                      type: string
+                    name:
+                      description: Name is the SQL object name.
+                      minLength: 1
+                      pattern: "^[^\0]+$"
+                      type: string
+                    schema:
+                      description: Schema selects the extension object schema when
+                        relocation is supported.
+                      minLength: 1
+                      pattern: "^[^\0]+$"
+                      type: string
+                    version:
+                      description: Version selects the extension version; omission
+                        uses the server default.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              fdws:
+                description: FDWs contains foreign data wrappers in CNPG format.
+                items:
+                  description: FDWSpec declares a foreign data wrapper in CNPG format.
+                  properties:
+                    ensure:
+                      default: present
+                      description: Ensure requests presence or DROP with RESTRICT;
+                        omission means present.
+                      enum:
+                      - present
+                      - absent
+                      type: string
+                    handler:
+                      description: Handler is the SQL handler function name.
+                      minLength: 1
+                      pattern: "^[^\0]+$"
+                      type: string
+                    name:
+                      description: Name is the SQL object name.
+                      minLength: 1
+                      pattern: "^[^\0]+$"
+                      type: string
+                    options:
+                      description: Options declares managed FDW options.
+                      items:
+                        description: OptionSpec declares a foreign wrapper/server
+                          option.
+                        properties:
+                          ensure:
+                            default: present
+                            description: Ensure selects presence or removal.
+                            enum:
+                            - present
+                            - absent
+                            type: string
+                          name:
+                            description: Name is the SQL option name.
+                            minLength: 1
+                            pattern: "^[^\0]+$"
+                            type: string
+                          value:
+                            description: Value is the option value, including an explicitly
+                              empty value.
+                            type: string
+                        required:
+                        - name
+                        - value
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - name
+                      x-kubernetes-list-type: map
+                    owner:
+                      description: Owner is the SQL owner role.
+                      minLength: 1
+                      pattern: "^[^\0]+$"
+                      type: string
+                    usage:
+                      description: Usage uses CNPG's grant/revoke format rather than
+                        permission ensure entries.
+                      items:
+                        description: UsageSpec declares a CNPG-compatible FDW/server
+                          usage operation.
+                        properties:
+                          name:
+                            description: Name is the SQL grantee name.
+                            minLength: 1
+                            pattern: "^[^\0]+$"
+                            type: string
+                          type:
+                            default: grant
+                            description: Type selects the CNPG grant/revoke operation.
+                            enum:
+                            - grant
+                            - revoke
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - name
+                      x-kubernetes-list-type: map
+                    validator:
+                      description: Validator is the SQL validator function name.
+                      minLength: 1
+                      pattern: "^[^\0]+$"
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              icuLocale:
+                description: ICULocale is a creation-only PostgreSQL database option.
+                minLength: 1
+                type: string
+              icuRules:
+                description: ICURules is a creation-only PostgreSQL database option.
+                minLength: 1
+                type: string
+              isTemplate:
+                description: IsTemplate changes template status only when explicitly
+                  specified.
+                type: boolean
+              locale:
+                description: Locale is a creation-only PostgreSQL database option.
+                minLength: 1
+                type: string
+              localeCType:
+                description: LocaleCType is a creation-only PostgreSQL database option.
+                minLength: 1
+                type: string
+              localeCollate:
+                description: LocaleCollate is a creation-only PostgreSQL database
+                  option.
+                minLength: 1
+                type: string
+              localeProvider:
+                description: LocaleProvider is a creation-only PostgreSQL database
+                  option.
+                enum:
+                - libc
+                - icu
+                - builtin
+                minLength: 1
+                type: string
+              managementPolicy:
+                default: manage
+                description: ManagementPolicy selects reconciliation or read-only
+                  observation.
+                enum:
+                - manage
+                - observe
+                type: string
+              name:
+                description: Name is the SQL database name; omission resolves to metadata.name.
+                minLength: 1
+                pattern: "^[^\0]+$"
+                type: string
+              owner:
+                description: Owner is the SQL owner role, required in manage mode.
+                minLength: 1
+                pattern: "^[^\0]+$"
+                type: string
+              permissions:
+                description: Permissions declares database CONNECT, CREATE, and TEMPORARY
+                  grants.
+                properties:
+                  connect:
+                    description: Connect declares CONNECT grants.
+                    items:
+                      description: Permission declares a SQL grantee's desired privilege
+                        state.
+                      properties:
+                        ensure:
+                          default: present
+                          description: Ensure selects presence or explicit removal
+                            of this grant only.
+                          enum:
+                          - present
+                          - absent
+                          type: string
+                        name:
+                          description: Name is the SQL grantee; public represents
+                            PostgreSQL PUBLIC.
+                          minLength: 1
+                          pattern: "^[^\0]+$"
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  create:
+                    description: Create declares CREATE grants.
+                    items:
+                      description: Permission declares a SQL grantee's desired privilege
+                        state.
+                      properties:
+                        ensure:
+                          default: present
+                          description: Ensure selects presence or explicit removal
+                            of this grant only.
+                          enum:
+                          - present
+                          - absent
+                          type: string
+                        name:
+                          description: Name is the SQL grantee; public represents
+                            PostgreSQL PUBLIC.
+                          minLength: 1
+                          pattern: "^[^\0]+$"
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  temporary:
+                    description: Temporary declares TEMPORARY grants.
+                    items:
+                      description: Permission declares a SQL grantee's desired privilege
+                        state.
+                      properties:
+                        ensure:
+                          default: present
+                          description: Ensure selects presence or explicit removal
+                            of this grant only.
+                          enum:
+                          - present
+                          - absent
+                          type: string
+                        name:
+                          description: Name is the SQL grantee; public represents
+                            PostgreSQL PUBLIC.
+                          minLength: 1
+                          pattern: "^[^\0]+$"
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                type: object
+              schemas:
+                description: Schemas contains schemas and their permissions.
+                items:
+                  description: SchemaSpec declares a schema and its managed ACL scopes.
+                  properties:
+                    defaultPrivileges:
+                      description: DefaultPrivileges contains schema-local defaults
+                        for actual creator roles.
+                      items:
+                        description: DefaultPrivileges declares future-object privileges
+                          for the actual SQL creator.
+                        properties:
+                          forRole:
+                            description: ForRole is the SQL role creating the future
+                              objects.
+                            minLength: 1
+                            pattern: "^[^\0]+$"
+                            type: string
+                          functions:
+                            description: Functions declares defaults for future functions.
+                            properties:
+                              execute:
+                                description: Execute declares EXECUTE grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                            type: object
+                          sequences:
+                            description: Sequences declares defaults for future sequences.
+                            properties:
+                              select:
+                                description: Select declares SELECT grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              update:
+                                description: Update declares UPDATE grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              usage:
+                                description: Usage declares USAGE grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                            type: object
+                          tables:
+                            description: Tables declares defaults for future tables.
+                            properties:
+                              delete:
+                                description: Delete declares DELETE grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              insert:
+                                description: Insert declares INSERT grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              maintain:
+                                description: Maintain declares MAINTAIN grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              references:
+                                description: References declares REFERENCES grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              select:
+                                description: Select declares SELECT grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              trigger:
+                                description: Trigger declares TRIGGER grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              truncate:
+                                description: Truncate declares TRUNCATE grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              update:
+                                description: Update declares UPDATE grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                            type: object
+                          types:
+                            description: Types declares defaults for future types.
+                            properties:
+                              usage:
+                                description: Usage declares USAGE grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                            type: object
+                        required:
+                        - forRole
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - forRole
+                      x-kubernetes-list-type: map
+                    ensure:
+                      default: present
+                      description: Ensure requests presence or DROP with RESTRICT;
+                        omission means present.
+                      enum:
+                      - present
+                      - absent
+                      type: string
+                    name:
+                      description: Name is the SQL object name.
+                      minLength: 1
+                      pattern: "^[^\0]+$"
+                      type: string
+                    owner:
+                      description: Owner is applied explicitly; new schemas otherwise
+                        use the database owner.
+                      minLength: 1
+                      pattern: "^[^\0]+$"
+                      type: string
+                    permissions:
+                      description: Permissions manages schema, all-table, and all-sequence
+                        grants.
+                      properties:
+                        create:
+                          description: Create declares schema CREATE grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        sequences:
+                          description: Sequences manages grants on all existing sequences
+                            in this schema.
+                          properties:
+                            select:
+                              description: Select declares SELECT grants.
+                              items:
+                                description: Permission declares a SQL grantee's desired
+                                  privilege state.
+                                properties:
+                                  ensure:
+                                    default: present
+                                    description: Ensure selects presence or explicit
+                                      removal of this grant only.
+                                    enum:
+                                    - present
+                                    - absent
+                                    type: string
+                                  name:
+                                    description: Name is the SQL grantee; public represents
+                                      PostgreSQL PUBLIC.
+                                    minLength: 1
+                                    pattern: "^[^\0]+$"
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
+                            update:
+                              description: Update declares UPDATE grants.
+                              items:
+                                description: Permission declares a SQL grantee's desired
+                                  privilege state.
+                                properties:
+                                  ensure:
+                                    default: present
+                                    description: Ensure selects presence or explicit
+                                      removal of this grant only.
+                                    enum:
+                                    - present
+                                    - absent
+                                    type: string
+                                  name:
+                                    description: Name is the SQL grantee; public represents
+                                      PostgreSQL PUBLIC.
+                                    minLength: 1
+                                    pattern: "^[^\0]+$"
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
+                            usage:
+                              description: Usage declares USAGE grants.
+                              items:
+                                description: Permission declares a SQL grantee's desired
+                                  privilege state.
+                                properties:
+                                  ensure:
+                                    default: present
+                                    description: Ensure selects presence or explicit
+                                      removal of this grant only.
+                                    enum:
+                                    - present
+                                    - absent
+                                    type: string
+                                  name:
+                                    description: Name is the SQL grantee; public represents
+                                      PostgreSQL PUBLIC.
+                                    minLength: 1
+                                    pattern: "^[^\0]+$"
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
+                          type: object
+                        tables:
+                          description: Tables manages grants on all existing tables
+                            in this schema.
+                          properties:
+                            delete:
+                              description: Delete declares DELETE grants.
+                              items:
+                                description: Permission declares a SQL grantee's desired
+                                  privilege state.
+                                properties:
+                                  ensure:
+                                    default: present
+                                    description: Ensure selects presence or explicit
+                                      removal of this grant only.
+                                    enum:
+                                    - present
+                                    - absent
+                                    type: string
+                                  name:
+                                    description: Name is the SQL grantee; public represents
+                                      PostgreSQL PUBLIC.
+                                    minLength: 1
+                                    pattern: "^[^\0]+$"
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
+                            insert:
+                              description: Insert declares INSERT grants.
+                              items:
+                                description: Permission declares a SQL grantee's desired
+                                  privilege state.
+                                properties:
+                                  ensure:
+                                    default: present
+                                    description: Ensure selects presence or explicit
+                                      removal of this grant only.
+                                    enum:
+                                    - present
+                                    - absent
+                                    type: string
+                                  name:
+                                    description: Name is the SQL grantee; public represents
+                                      PostgreSQL PUBLIC.
+                                    minLength: 1
+                                    pattern: "^[^\0]+$"
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
+                            maintain:
+                              description: Maintain declares MAINTAIN grants.
+                              items:
+                                description: Permission declares a SQL grantee's desired
+                                  privilege state.
+                                properties:
+                                  ensure:
+                                    default: present
+                                    description: Ensure selects presence or explicit
+                                      removal of this grant only.
+                                    enum:
+                                    - present
+                                    - absent
+                                    type: string
+                                  name:
+                                    description: Name is the SQL grantee; public represents
+                                      PostgreSQL PUBLIC.
+                                    minLength: 1
+                                    pattern: "^[^\0]+$"
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
+                            references:
+                              description: References declares REFERENCES grants.
+                              items:
+                                description: Permission declares a SQL grantee's desired
+                                  privilege state.
+                                properties:
+                                  ensure:
+                                    default: present
+                                    description: Ensure selects presence or explicit
+                                      removal of this grant only.
+                                    enum:
+                                    - present
+                                    - absent
+                                    type: string
+                                  name:
+                                    description: Name is the SQL grantee; public represents
+                                      PostgreSQL PUBLIC.
+                                    minLength: 1
+                                    pattern: "^[^\0]+$"
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
+                            select:
+                              description: Select declares SELECT grants.
+                              items:
+                                description: Permission declares a SQL grantee's desired
+                                  privilege state.
+                                properties:
+                                  ensure:
+                                    default: present
+                                    description: Ensure selects presence or explicit
+                                      removal of this grant only.
+                                    enum:
+                                    - present
+                                    - absent
+                                    type: string
+                                  name:
+                                    description: Name is the SQL grantee; public represents
+                                      PostgreSQL PUBLIC.
+                                    minLength: 1
+                                    pattern: "^[^\0]+$"
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
+                            trigger:
+                              description: Trigger declares TRIGGER grants.
+                              items:
+                                description: Permission declares a SQL grantee's desired
+                                  privilege state.
+                                properties:
+                                  ensure:
+                                    default: present
+                                    description: Ensure selects presence or explicit
+                                      removal of this grant only.
+                                    enum:
+                                    - present
+                                    - absent
+                                    type: string
+                                  name:
+                                    description: Name is the SQL grantee; public represents
+                                      PostgreSQL PUBLIC.
+                                    minLength: 1
+                                    pattern: "^[^\0]+$"
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
+                            truncate:
+                              description: Truncate declares TRUNCATE grants.
+                              items:
+                                description: Permission declares a SQL grantee's desired
+                                  privilege state.
+                                properties:
+                                  ensure:
+                                    default: present
+                                    description: Ensure selects presence or explicit
+                                      removal of this grant only.
+                                    enum:
+                                    - present
+                                    - absent
+                                    type: string
+                                  name:
+                                    description: Name is the SQL grantee; public represents
+                                      PostgreSQL PUBLIC.
+                                    minLength: 1
+                                    pattern: "^[^\0]+$"
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
+                            update:
+                              description: Update declares UPDATE grants.
+                              items:
+                                description: Permission declares a SQL grantee's desired
+                                  privilege state.
+                                properties:
+                                  ensure:
+                                    default: present
+                                    description: Ensure selects presence or explicit
+                                      removal of this grant only.
+                                    enum:
+                                    - present
+                                    - absent
+                                    type: string
+                                  name:
+                                    description: Name is the SQL grantee; public represents
+                                      PostgreSQL PUBLIC.
+                                    minLength: 1
+                                    pattern: "^[^\0]+$"
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
+                          type: object
+                        usage:
+                          description: Usage declares schema USAGE grants.
+                          items:
+                            description: Permission declares a SQL grantee's desired
+                              privilege state.
+                            properties:
+                              ensure:
+                                default: present
+                                description: Ensure selects presence or explicit removal
+                                  of this grant only.
+                                enum:
+                                - present
+                                - absent
+                                type: string
+                              name:
+                                description: Name is the SQL grantee; public represents
+                                  PostgreSQL PUBLIC.
+                                minLength: 1
+                                pattern: "^[^\0]+$"
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                      type: object
+                    tablePermissions:
+                      description: TablePermissions targets existing named tables
+                        without managing their DDL.
+                      items:
+                        description: NamedTablePermissions declares privileges on
+                          one existing table.
+                        properties:
+                          name:
+                            description: Name is the existing SQL table name, without
+                              schema qualification.
+                            minLength: 1
+                            pattern: "^[^\0]+$"
+                            type: string
+                          permissions:
+                            description: Permissions declares grants without creating
+                              or dropping the table.
+                            properties:
+                              delete:
+                                description: Delete declares DELETE grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              insert:
+                                description: Insert declares INSERT grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              maintain:
+                                description: Maintain declares MAINTAIN grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              references:
+                                description: References declares REFERENCES grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              select:
+                                description: Select declares SELECT grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              trigger:
+                                description: Trigger declares TRIGGER grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              truncate:
+                                description: Truncate declares TRUNCATE grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              update:
+                                description: Update declares UPDATE grants.
+                                items:
+                                  description: Permission declares a SQL grantee's
+                                    desired privilege state.
+                                  properties:
+                                    ensure:
+                                      default: present
+                                      description: Ensure selects presence or explicit
+                                        removal of this grant only.
+                                      enum:
+                                      - present
+                                      - absent
+                                      type: string
+                                    name:
+                                      description: Name is the SQL grantee; public
+                                        represents PostgreSQL PUBLIC.
+                                      minLength: 1
+                                      pattern: "^[^\0]+$"
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                            type: object
+                        required:
+                        - name
+                        - permissions
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - name
+                      x-kubernetes-list-type: map
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              servers:
+                description: Servers contains foreign servers in CNPG format.
+                items:
+                  description: ServerSpec declares a foreign server in CNPG format.
+                  properties:
+                    ensure:
+                      default: present
+                      description: Ensure requests presence or DROP with RESTRICT;
+                        omission means present.
+                      enum:
+                      - present
+                      - absent
+                      type: string
+                    fdw:
+                      description: FDW is the SQL foreign data wrapper name.
+                      minLength: 1
+                      pattern: "^[^\0]+$"
+                      type: string
+                    name:
+                      description: Name is the SQL object name.
+                      minLength: 1
+                      pattern: "^[^\0]+$"
+                      type: string
+                    options:
+                      description: Options declares managed server options.
+                      items:
+                        description: OptionSpec declares a foreign wrapper/server
+                          option.
+                        properties:
+                          ensure:
+                            default: present
+                            description: Ensure selects presence or removal.
+                            enum:
+                            - present
+                            - absent
+                            type: string
+                          name:
+                            description: Name is the SQL option name.
+                            minLength: 1
+                            pattern: "^[^\0]+$"
+                            type: string
+                          value:
+                            description: Value is the option value, including an explicitly
+                              empty value.
+                            type: string
+                        required:
+                        - name
+                        - value
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - name
+                      x-kubernetes-list-type: map
+                    usage:
+                      description: Usage uses CNPG's grant/revoke format.
+                      items:
+                        description: UsageSpec declares a CNPG-compatible FDW/server
+                          usage operation.
+                        properties:
+                          name:
+                            description: Name is the SQL grantee name.
+                            minLength: 1
+                            pattern: "^[^\0]+$"
+                            type: string
+                          type:
+                            default: grant
+                            description: Type selects the CNPG grant/revoke operation.
+                            enum:
+                            - grant
+                            - revoke
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - name
+                      x-kubernetes-list-type: map
+                  required:
+                  - fdw
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              tablespace:
+                description: Tablespace is the SQL tablespace used by the database.
+                minLength: 1
+                pattern: "^[^\0]+$"
+                type: string
+              template:
+                description: Template is a creation-only PostgreSQL database option.
+                minLength: 1
+                pattern: "^[^\0]+$"
+                type: string
+            required:
+            - cluster
+            type: object
+            x-kubernetes-validations:
+            - message: owner is required in manage mode
+              rule: self.managementPolicy != 'manage' || has(self.owner)
+            - message: observe requires ensure=present and retain reclaim policy
+              rule: self.managementPolicy != 'observe' || (self.ensure == 'present'
+                && self.databaseReclaimPolicy == 'retain')
+            - message: icuLocale requires localeProvider=icu
+              rule: '!has(self.icuLocale) || (has(self.localeProvider) && self.localeProvider
+                == ''icu'')'
+            - message: icuRules requires localeProvider=icu
+              rule: '!has(self.icuRules) || (has(self.localeProvider) && self.localeProvider
+                == ''icu'')'
+            - message: builtinLocale requires localeProvider=builtin
+              rule: '!has(self.builtinLocale) || (has(self.localeProvider) && self.localeProvider
+                == ''builtin'')'
+            - message: template is immutable
+              rule: has(self.template) == has(oldSelf.template) && (!has(self.template)
+                || self.template == oldSelf.template)
+            - message: encoding is immutable
+              rule: has(self.encoding) == has(oldSelf.encoding) && (!has(self.encoding)
+                || self.encoding == oldSelf.encoding)
+            - message: locale is immutable
+              rule: has(self.locale) == has(oldSelf.locale) && (!has(self.locale)
+                || self.locale == oldSelf.locale)
+            - message: localeProvider is immutable
+              rule: has(self.localeProvider) == has(oldSelf.localeProvider) && (!has(self.localeProvider)
+                || self.localeProvider == oldSelf.localeProvider)
+            - message: localeCollate is immutable
+              rule: has(self.localeCollate) == has(oldSelf.localeCollate) && (!has(self.localeCollate)
+                || self.localeCollate == oldSelf.localeCollate)
+            - message: localeCType is immutable
+              rule: has(self.localeCType) == has(oldSelf.localeCType) && (!has(self.localeCType)
+                || self.localeCType == oldSelf.localeCType)
+            - message: icuLocale is immutable
+              rule: has(self.icuLocale) == has(oldSelf.icuLocale) && (!has(self.icuLocale)
+                || self.icuLocale == oldSelf.icuLocale)
+            - message: icuRules is immutable
+              rule: has(self.icuRules) == has(oldSelf.icuRules) && (!has(self.icuRules)
+                || self.icuRules == oldSelf.icuRules)
+            - message: builtinLocale is immutable
+              rule: has(self.builtinLocale) == has(oldSelf.builtinLocale) && (!has(self.builtinLocale)
+                || self.builtinLocale == oldSelf.builtinLocale)
+            - message: collationVersion is immutable
+              rule: has(self.collationVersion) == has(oldSelf.collationVersion) &&
+                (!has(self.collationVersion) || self.collationVersion == oldSelf.collationVersion)
+          status:
+            description: DatabaseStatus reports database reconciliation and per-grant
+              results.
+            properties:
+              applied:
+                description: Applied reports whether reconciliation succeeded.
+                type: boolean
+              appliedGeneration:
+                description: AppliedGeneration is the latest successfully reconciled
+                  generation.
+                format: int64
+                type: integer
+              conditions:
+                description: Conditions report readiness and failures, keyed by condition
+                  type.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              effectiveName:
+                description: EffectiveName is the resolved SQL name, including metadata.name
+                  fallback.
+                type: string
+              lastSuccessfulReconcileTime:
+                description: LastSuccessfulReconcileTime records the most recent successful
+                  reconciliation.
+                format: date-time
+                type: string
+              message:
+                description: Message describes the most recent reconciliation result.
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the latest generation inspected
+                  by the reconciler.
+                format: int64
+                type: integer
+              permissions:
+                description: Permissions identifies observed outcomes for schema/table/grantee
+                  tuples.
+                items:
+                  description: PermissionStatus identifies the result of one permission
+                    reconciliation.
+                  properties:
+                    applied:
+                      description: Applied indicates whether the desired permission
+                        state was confirmed.
+                      type: boolean
+                    grantee:
+                      description: Grantee identifies the SQL role or PUBLIC grantee.
+                      type: string
+                    message:
+                      description: Message describes the observed outcome without
+                        credentials.
+                      type: string
+                    privilege:
+                      description: Privilege identifies the reconciled SQL privilege.
+                      type: string
+                    schema:
+                      description: Schema identifies the SQL schema when applicable.
+                      type: string
+                    table:
+                      description: Table identifies an explicitly named SQL table
+                        when applicable.
+                      type: string
+                  required:
+                  - grantee
+                  - privilege
+                  type: object
+                type: array
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: effective SQL name is immutable
+          rule: '(has(self.spec.name) ? self.spec.name : self.metadata.name) == (has(oldSelf.spec.name)
+            ? oldSelf.spec.name : oldSelf.metadata.name)'
+    served: true
+    storage: true
+    subresources:
+      status: {}

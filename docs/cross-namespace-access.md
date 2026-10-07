@@ -1,6 +1,6 @@
 # Cross-namespace access
 
-Status: accepted as part of the initial [API baseline](api-proposal.md), 2026-10-07. The fields and behavior defined here are included in the initial implementation scope. CRDs and controllers are not implemented.
+Status: accepted as part of the initial [API baseline](api-proposal.md), 2026-10-07. The fields and behavior defined here are included in the initial implementation scope. API types and CRDs are generated; controllers and runtime authorization are not implemented.
 
 ## Use case and resource placement
 

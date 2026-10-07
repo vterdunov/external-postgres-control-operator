@@ -1,0 +1,12 @@
+apiVersion: postgresql.epco.io/v1alpha1
+kind: PostgresCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: epco
+    app.kubernetes.io/managed-by: kustomize
+  name: postgrescluster-sample
+spec:
+  connection:
+    host: pg-primary.example.com
+  credentialsSecret:
+    name: pg-admin

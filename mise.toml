@@ -1,0 +1,22 @@
+[tools]
+go = "1.27.1"
+kubebuilder = "4.16.0"
+
+[tasks.build]
+description = "Generate code and manifests, vet, and build the manager"
+run = "make build"
+
+[tasks.test]
+description = "Generate code and manifests, vet, and run unit tests"
+run = "make test"
+
+[tasks.lint]
+description = "Verify linter configuration and lint Go code"
+run = "make lint-config lint"
+
+[tasks.check]
+description = "Build, test, lint, and render deployment manifests"
+run = [
+  "make build test lint-config lint kustomize",
+  "bin/kustomize build config/default > /dev/null",
+]
