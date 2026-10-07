@@ -1,0 +1,73 @@
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: billing-service
+  namespace: billing
+spec:
+  cluster:
+    name: pg-prod
+    namespace: infra
+  name: billing_service
+  login: true
+  passwordGeneration:
+    secretName: billing-service-credentials
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: billing-admin-readonly
+  namespace: billing
+spec:
+  cluster:
+    name: pg-prod
+    namespace: infra
+  name: billing_admin_readonly
+  login: true
+  passwordGeneration:
+    secretName: billing-admin-readonly-credentials
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: Database
+metadata:
+  name: billing
+  namespace: billing
+spec:
+  cluster:
+    name: pg-prod
+    namespace: infra
+  name: billing
+  owner: billing_service
+  connectionSecrets:
+    - name: billing-service-db
+      roleRef:
+        name: billing-service
+    - name: billing-admin-readonly-db
+      roleRef:
+        name: billing-admin-readonly
+  permissions:
+    connect:
+      - name: public
+        ensure: absent
+      - name: billing_service
+      - name: billing_admin_readonly
+    temporary:
+      - name: public
+        ensure: absent
+  schemas:
+    - name: public
+      owner: billing_service
+      permissions:
+        usage:
+          - name: billing_service
+          - name: billing_admin_readonly
+        create:
+          - name: public
+            ensure: absent
+        tables:
+          select:
+            - name: billing_admin_readonly
+      defaultPrivileges:
+        - forRole: billing_service
+          tables:
+            select:
+              - name: billing_admin_readonly

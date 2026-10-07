@@ -1,0 +1,51 @@
+apiVersion: postgresql.epco.io/v1alpha1
+kind: PostgresCluster
+metadata:
+  name: pg-prod
+spec:
+  connection:
+    host: pg-primary.example.com
+  credentialsSecret:
+    name: pg-admin
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: llm-agent
+spec:
+  cluster:
+    name: pg-prod
+  name: llm_agent
+  login: true
+  passwordSecret:
+    name: llm-agent-credentials
+  inRoles: []
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: Database
+metadata:
+  name: orders
+spec:
+  cluster:
+    name: pg-prod
+  name: orders
+  owner: orders_owner
+  permissions:
+    connect:
+      - name: llm_agent
+  schemas:
+    - name: app
+      permissions:
+        usage:
+          - name: llm_agent
+      tablePermissions:
+        - name: orders
+          permissions:
+            select:
+              - name: llm_agent
+        - name: invoices
+          permissions:
+            select:
+              - name: llm_agent
+  databaseReclaimPolicy: retain

@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders-service
+  template:
+    metadata:
+      labels:
+        app: orders-service
+    spec:
+      containers:
+        - name: orders-service
+          image: ghcr.io/example/orders-service:1.0.0
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: orders-service-db
+                  key: uri
+          volumeMounts:
+            - name: postgres-ca
+              mountPath: /etc/postgresql
+              readOnly: true
+      volumes:
+        - name: postgres-ca
+          secret:
+            secretName: orders-service-db
+            items:
+              - key: ca.crt
+                path: ca.crt

@@ -1,0 +1,23 @@
+apiVersion: postgresql.epco.io/v1alpha1
+kind: PostgresCluster
+metadata:
+  name: pg-prod
+  namespace: infra
+spec:
+  connection:
+    host: pg-primary.example.com
+  credentialsSecret:
+    name: pg-admin
+  tls:
+    mode: verify-full
+    caSecret:
+      name: pg-ca
+      key: ca.crt
+  access:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - orders
+            - billing

@@ -1,0 +1,135 @@
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: orders-owner
+spec:
+  cluster:
+    name: pg-prod
+  name: orders_owner
+  disablePassword: true
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: orders-migrator
+spec:
+  cluster:
+    name: pg-prod
+  name: orders_migrator
+  login: true
+  passwordGeneration:
+    secretName: orders-migrator-credentials
+  inRoles:
+    - orders_owner
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: orders-service
+spec:
+  cluster:
+    name: pg-prod
+  name: orders_service
+  login: true
+  passwordGeneration:
+    secretName: orders-service-credentials
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: orders-admin-readonly
+spec:
+  cluster:
+    name: pg-prod
+  name: orders_admin_readonly
+  login: true
+  passwordGeneration:
+    secretName: orders-admin-readonly-credentials
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: Database
+metadata:
+  name: orders
+spec:
+  cluster:
+    name: pg-prod
+  name: orders
+  owner: orders_owner
+  connectionSecrets:
+    - name: orders-service-db
+      roleRef:
+        name: orders-service
+    - name: orders-admin-readonly-db
+      roleRef:
+        name: orders-admin-readonly
+    - name: orders-migrator-db
+      roleRef:
+        name: orders-migrator
+  permissions:
+    connect:
+      - name: public
+        ensure: absent
+      - name: orders_migrator
+      - name: orders_service
+      - name: orders_admin_readonly
+    temporary:
+      - name: public
+        ensure: absent
+  schemas:
+    - name: public
+      owner: orders_owner
+      permissions:
+        usage:
+          - name: orders_service
+          - name: orders_admin_readonly
+        create:
+          - name: public
+            ensure: absent
+        tables:
+          select:
+            - name: orders_service
+            - name: orders_admin_readonly
+          insert:
+            - name: orders_service
+          update:
+            - name: orders_service
+          delete:
+            - name: orders_service
+        sequences:
+          usage:
+            - name: orders_service
+          select:
+            - name: orders_service
+      defaultPrivileges:
+        - forRole: orders_owner
+          tables:
+            select:
+              - name: orders_service
+              - name: orders_admin_readonly
+            insert:
+              - name: orders_service
+            update:
+              - name: orders_service
+            delete:
+              - name: orders_service
+          sequences:
+            usage:
+              - name: orders_service
+            select:
+              - name: orders_service
+        - forRole: orders_migrator
+          tables:
+            select:
+              - name: orders_service
+              - name: orders_admin_readonly
+            insert:
+              - name: orders_service
+            update:
+              - name: orders_service
+            delete:
+              - name: orders_service
+          sequences:
+            usage:
+              - name: orders_service
+            select:
+              - name: orders_service

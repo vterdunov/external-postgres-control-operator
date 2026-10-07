@@ -1,0 +1,27 @@
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: analyst-prod
+spec:
+  cluster:
+    name: pg-prod
+  name: analyst
+  login: true
+  passwordSecret:
+    name: analyst-prod-credentials
+  inRoles:
+    - orders_reader
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: analyst-dwh
+spec:
+  cluster:
+    name: pg-dwh
+  name: analyst
+  login: true
+  passwordSecret:
+    name: analyst-dwh-credentials
+  inRoles:
+    - warehouse_reader

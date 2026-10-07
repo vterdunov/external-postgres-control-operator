@@ -1,0 +1,170 @@
+apiVersion: postgresql.epco.io/v1alpha1
+kind: PostgresCluster
+metadata:
+  name: pg-prod
+spec:
+  connection:
+    host: pg-primary.example.com
+    port: 5432
+    database: postgres
+  credentialsSecret:
+    name: pg-admin
+  tls:
+    mode: verify-full
+    caSecret:
+      name: pg-ca
+      key: ca.crt
+    clientCertificateSecret:
+      name: pg-operator-client
+  reconcileInterval: 5m
+  connectTimeout: 10s
+  statementTimeout: 30s
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: orders-owner
+spec:
+  cluster:
+    name: pg-prod
+  name: orders_owner
+  login: false
+  disablePassword: true
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: orders-reader
+spec:
+  cluster:
+    name: pg-prod
+  name: orders_reader
+  login: false
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: orders-writer
+spec:
+  cluster:
+    name: pg-prod
+  name: orders_writer
+  login: false
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: reporting
+spec:
+  cluster:
+    name: pg-prod
+  name: reporting
+  comment: Reporting application
+  login: true
+  inherit: true
+  superuser: false
+  createdb: false
+  createrole: false
+  replication: false
+  bypassrls: false
+  connectionLimit: 20
+  validUntil: "2027-10-07T00:00:00Z"
+  disablePassword: false
+  passwordSecret:
+    name: reporting-credentials
+  inRoles:
+    - orders_reader
+  parameters:
+    statement_timeout: 30s
+  membershipPolicy: authoritative
+  managementPolicy: manage
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: Database
+metadata:
+  name: orders
+spec:
+  cluster:
+    name: pg-prod
+  name: orders
+  owner: orders_owner
+  ensure: present
+  template: template0
+  encoding: UTF8
+  locale: C
+  localeProvider: libc
+  localeCollate: C
+  localeCType: C
+  isTemplate: false
+  allowConnections: true
+  connectionLimit: 100
+  tablespace: pg_default
+  permissions:
+    connect:
+      - name: public
+        ensure: absent
+      - name: orders_reader
+      - name: orders_writer
+    temporary:
+      - name: public
+        ensure: absent
+  schemas:
+    - name: app
+      owner: orders_owner
+      ensure: present
+      permissions:
+        usage:
+          - name: orders_reader
+          - name: orders_writer
+        tables:
+          select:
+            - name: orders_reader
+            - name: orders_writer
+          insert:
+            - name: orders_writer
+          update:
+            - name: orders_writer
+          delete:
+            - name: orders_writer
+        sequences:
+          select:
+            - name: orders_reader
+            - name: orders_writer
+          usage:
+            - name: orders_writer
+      defaultPrivileges:
+        - forRole: orders_owner
+          tables:
+            select:
+              - name: orders_reader
+              - name: orders_writer
+            insert:
+              - name: orders_writer
+            update:
+              - name: orders_writer
+            delete:
+              - name: orders_writer
+          sequences:
+            select:
+              - name: orders_reader
+              - name: orders_writer
+            usage:
+              - name: orders_writer
+    - name: public
+      owner: orders_owner
+      ensure: present
+      permissions:
+        create:
+          - name: public
+            ensure: absent
+  extensions:
+    - name: pgcrypto
+      version: "1.3"
+      schema: app
+      ensure: present
+  managementPolicy: manage
+  databaseReclaimPolicy: retain

@@ -1,0 +1,14 @@
+apiVersion: postgresql.epco.io/v1alpha1
+kind: PostgresCluster
+metadata:
+  name: pg-prod
+spec:
+  connection:
+    host: pg-primary.example.com
+  credentialsSecret:
+    name: pg-admin
+  tls:
+    mode: verify-full
+    caSecret:
+      name: pg-ca
+      key: ca.crt

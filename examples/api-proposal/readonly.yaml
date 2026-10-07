@@ -1,0 +1,52 @@
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: app-reader
+spec:
+  cluster:
+    name: pg-prod
+  name: app_reader
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: reporting
+spec:
+  cluster:
+    name: pg-prod
+  login: true
+  passwordSecret:
+    name: reporting-credentials
+  inRoles:
+    - app_reader
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: Database
+metadata:
+  name: app
+spec:
+  cluster:
+    name: pg-prod
+  owner: app
+  permissions:
+    connect:
+      - name: app_reader
+  schemas:
+    - name: public
+      permissions:
+        usage:
+          - name: app_reader
+        tables:
+          select:
+            - name: app_reader
+        sequences:
+          select:
+            - name: app_reader
+      defaultPrivileges:
+        - forRole: app
+          tables:
+            select:
+              - name: app_reader
+          sequences:
+            select:
+              - name: app_reader

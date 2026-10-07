@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-admin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders-admin
+  template:
+    metadata:
+      labels:
+        app: orders-admin
+    spec:
+      containers:
+        - name: orders-admin
+          image: ghcr.io/example/orders-admin:1.0.0
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: orders-admin-readonly-db
+                  key: uri
+          volumeMounts:
+            - name: postgres-ca
+              mountPath: /etc/postgresql
+              readOnly: true
+      volumes:
+        - name: postgres-ca
+          secret:
+            secretName: orders-admin-readonly-db
+            items:
+              - key: ca.crt
+                path: ca.crt

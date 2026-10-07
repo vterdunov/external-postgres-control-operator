@@ -1,0 +1,129 @@
+apiVersion: postgresql.epco.io/v1alpha1
+kind: PostgresCluster
+metadata:
+  name: rds-prod
+spec:
+  connection:
+    host: orders-db.abcdefghijkl.us-east-1.rds.amazonaws.com
+    port: 5432
+    database: postgres
+  credentialsSecret:
+    name: rds-operator
+  tls:
+    mode: verify-full
+    caSecret:
+      name: aws-rds-ca
+      key: ca.crt
+  reconcileInterval: 5m
+  connectTimeout: 10s
+  statementTimeout: 30s
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: orders-owner
+spec:
+  cluster:
+    name: rds-prod
+  name: orders_owner
+  login: false
+  disablePassword: true
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: orders-reader
+spec:
+  cluster:
+    name: rds-prod
+  name: orders_reader
+  login: false
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: orders-migrator
+spec:
+  cluster:
+    name: rds-prod
+  name: orders_migrator
+  login: true
+  passwordSecret:
+    name: orders-migrator-credentials
+  inRoles:
+    - orders_owner
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: reporting
+spec:
+  cluster:
+    name: rds-prod
+  name: reporting
+  login: true
+  passwordSecret:
+    name: reporting-rds-credentials
+  inRoles:
+    - orders_reader
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: reporting-iam
+spec:
+  cluster:
+    name: rds-prod
+  name: reporting_iam
+  login: true
+  disablePassword: true
+  inRoles:
+    - rds_iam
+    - orders_reader
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: Database
+metadata:
+  name: orders
+spec:
+  cluster:
+    name: rds-prod
+  name: orders
+  owner: orders_owner
+  permissions:
+    connect:
+      - name: orders_reader
+      - name: orders_migrator
+  schemas:
+    - name: app
+      owner: orders_owner
+      permissions:
+        usage:
+          - name: orders_reader
+        tables:
+          select:
+            - name: orders_reader
+        sequences:
+          select:
+            - name: orders_reader
+      defaultPrivileges:
+        - forRole: orders_owner
+          tables:
+            select:
+              - name: orders_reader
+          sequences:
+            select:
+              - name: orders_reader
+        - forRole: orders_migrator
+          tables:
+            select:
+              - name: orders_reader
+          sequences:
+            select:
+              - name: orders_reader
+  databaseReclaimPolicy: retain

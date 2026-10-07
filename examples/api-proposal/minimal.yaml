@@ -1,0 +1,29 @@
+apiVersion: postgresql.epco.io/v1alpha1
+kind: PostgresCluster
+metadata:
+  name: pg-prod
+spec:
+  connection:
+    host: pg-primary.example.com
+  credentialsSecret:
+    name: pg-admin
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: DatabaseRole
+metadata:
+  name: app
+spec:
+  cluster:
+    name: pg-prod
+  login: true
+  passwordSecret:
+    name: app-credentials
+---
+apiVersion: postgresql.epco.io/v1alpha1
+kind: Database
+metadata:
+  name: app
+spec:
+  cluster:
+    name: pg-prod
+  owner: app
