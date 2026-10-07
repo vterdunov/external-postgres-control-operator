@@ -16,14 +16,17 @@ import (
 	"time"
 )
 
+const certificatePEM = "CERTIFICATE"
+
 // TLSFixture is generated per suite. No private keys are committed to the repository.
-type TLSFixture struct{ CA, Certificate, Key, Service string }
+type TLSFixture struct{ CA, Certificate, Key, Service, ClientCertificate, ClientKey string }
 
 // NewTLSFixture issues a server certificate for the fixture's loopback endpoint.
 func NewTLSFixture(dir string) (TLSFixture, error) {
 	f := TLSFixture{
 		CA: filepath.Join(dir, "ca.crt"), Certificate: filepath.Join(dir, "server.crt"),
 		Key: filepath.Join(dir, "server.key"), Service: filepath.Join(dir, "pgservice.conf"),
+		ClientCertificate: filepath.Join(dir, "client.crt"), ClientKey: filepath.Join(dir, "client.key"),
 	}
 	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -46,7 +49,7 @@ func NewTLSFixture(dir string) (TLSFixture, error) {
 	server := &x509.Certificate{
 		SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "localhost"},
 		NotBefore: now.Add(-time.Minute), NotAfter: now.Add(24 * time.Hour),
-		DNSNames: []string{"localhost"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
+		DNSNames: []string{"localhost"}, IPAddresses: []net.IP{net.ParseIP(loopbackHost)},
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, KeyUsage: x509.KeyUsageDigitalSignature,
 	}
 	certDER, err := x509.CreateCertificate(rand.Reader, server, ca, &key.PublicKey, caKey)
@@ -57,10 +60,45 @@ func NewTLSFixture(dir string) (TLSFixture, error) {
 	if err != nil {
 		return f, err
 	}
+	clientKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return f, err
+	}
+	clientCert := &x509.Certificate{
+		SerialNumber: big.NewInt(3),
+		Subject:      pkix.Name{CommonName: "epco-client"},
+		NotBefore:    now.Add(-time.Minute),
+		NotAfter:     now.Add(24 * time.Hour),
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+
+		KeyUsage: x509.KeyUsageDigitalSignature,
+	}
+	clientDER, err := x509.CreateCertificate(rand.Reader, clientCert, ca, &clientKey.PublicKey, caKey)
+	if err != nil {
+		return f, err
+	}
+	clientKeyDER, err := x509.MarshalPKCS8PrivateKey(clientKey)
+	if err != nil {
+		return f, err
+	}
 	for _, file := range []struct {
 		path, kind string
 		der        []byte
-	}{{f.CA, "CERTIFICATE", caDER}, {f.Certificate, "CERTIFICATE", certDER}, {f.Key, "PRIVATE KEY", keyDER}} {
+	}{{f.CA,
+		certificatePEM,
+		caDER},
+		{f.Certificate,
+			certificatePEM,
+			certDER},
+		{f.Key,
+			"PRIVATE KEY",
+			keyDER},
+		{f.ClientCertificate,
+			certificatePEM,
+			clientDER},
+		{f.ClientKey,
+			"PRIVATE KEY",
+			clientKeyDER}} {
 		if err = os.WriteFile(file.path, pem.EncodeToMemory(&pem.Block{Type: file.kind, Bytes: file.der}), 0600); err != nil {
 			return f, err
 		}
@@ -80,5 +118,5 @@ func tlsConfig(caPath string) (*tls.Config, error) {
 	if !roots.AppendCertsFromPEM(ca) {
 		return nil, fmt.Errorf("fixture CA contains no certificate")
 	}
-	return &tls.Config{RootCAs: roots, ServerName: "127.0.0.1", MinVersion: tls.VersionTLS12}, nil
+	return &tls.Config{RootCAs: roots, ServerName: loopbackHost, MinVersion: tls.VersionTLS12}, nil
 }
