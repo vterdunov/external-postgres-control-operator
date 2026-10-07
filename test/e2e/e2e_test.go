@@ -24,6 +24,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -94,7 +95,8 @@ var _ = Describe("Installed operator", func() {
 		ctx, cancel := boundedContext()
 		defer cancel()
 		secret := &corev1.Secret{Name: "crud-admin", Namespace: operatorNamespace, Type: corev1.SecretTypeBasicAuth,
-			StringData: map[string]string{"username": "postgres", "password": "fixture-only-no-controller"}}
+			StringData: map[string]string{corev1.BasicAuthUsernameKey: "postgres",
+				corev1.BasicAuthPasswordKey: "fixture-only-no-controller"}}
 		Expect(apiClient.Create(ctx, secret)).To(Succeed())
 		DeferCleanup(func() { deleteObject(secret) })
 		cluster := &epco.PostgresCluster{Name: "crud-cluster", Namespace: operatorNamespace,
@@ -112,8 +114,19 @@ var _ = Describe("Installed operator", func() {
 			read := object.DeepCopyObject().(client.Object)
 			Expect(apiClient.Get(ctx, client.ObjectKeyFromObject(object), read)).To(Succeed())
 			Expect(read.GetUID()).To(Equal(object.GetUID()))
-			read.SetAnnotations(map[string]string{"epco.io/e2e": "updated"})
-			Expect(apiClient.Update(ctx, read)).To(Succeed())
+			Expect(retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				fresh := object.DeepCopyObject().(client.Object)
+				if err := apiClient.Get(ctx, client.ObjectKeyFromObject(object), fresh); err != nil {
+					return err
+				}
+				annotations := fresh.GetAnnotations()
+				if annotations == nil {
+					annotations = map[string]string{}
+				}
+				annotations["epco.io/e2e"] = "updated"
+				fresh.SetAnnotations(annotations)
+				return apiClient.Update(ctx, fresh)
+			})).To(Succeed())
 			Expect(apiClient.Get(ctx, client.ObjectKeyFromObject(object), object)).To(Succeed())
 			Expect(object.GetAnnotations()).To(HaveKeyWithValue("epco.io/e2e", "updated"))
 			deleteObject(object)

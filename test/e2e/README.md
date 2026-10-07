@@ -7,9 +7,10 @@ Kind 0.32.0, Kubernetes 1.36.1 by digest, and PostgreSQL 16.15 are pinned.
 
 The suite verifies one healthy manager, HTTP health/readiness, HTTPS metrics
 with authorized, missing and unauthorized tokens, an authenticated
-PostgreSQL TCP connection, and CRUD for all existing CRDs. PostgreSQL runs in
-`epco-postgres`, separately from `epco-system`. It tests the installed scaffold;
-controller behavior will be added alongside controllers.
+PostgreSQL TCP connection, and CRUD for all existing CRDs. The installed
+PostgresCluster controller authenticates real fixture credentials and recovers
+readiness after its Secret is corrupted, repaired, deleted and replaced.
+PostgreSQL runs in `epco-postgres`, separately from `epco-system`.
 
 - `EPCO_TEST_SEED=123` replays randomized spec ordering.
 - `EPCO_ARTIFACTS_DIR=/path/to/artifacts` selects the persistent output directory.

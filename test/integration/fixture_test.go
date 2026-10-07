@@ -73,7 +73,7 @@ var _ = Describe("PostgreSQL fixture support", func() {
 		Expect(err).NotTo(HaveOccurred())
 		roots := x509.NewCertPool()
 		Expect(roots.AppendCertsFromPEM(ca)).To(BeTrue())
-		_, err = cert.Verify(x509.VerifyOptions{Roots: roots, DNSName: "127.0.0.1"})
+		_, err = cert.Verify(x509.VerifyOptions{Roots: roots, DNSName: loopbackHost})
 		Expect(err).NotTo(HaveOccurred())
 		info, err := os.Stat(fixture.Key)
 		Expect(err).NotTo(HaveOccurred())

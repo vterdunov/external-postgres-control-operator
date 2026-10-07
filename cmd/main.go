@@ -20,6 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	postgresqlv1alpha1 "github.com/vterdunov/external-postgres-control-operator/api/v1alpha1"
+	"github.com/vterdunov/external-postgres-control-operator/internal/controller"
+	"github.com/vterdunov/external-postgres-control-operator/internal/postgres"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -141,6 +143,12 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
+	configBuilder, err := postgres.NewConfigBuilder()
+	if err != nil {
+		setupLog.Error(err, "Failed to initialize PostgreSQL configuration")
+		os.Exit(1)
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
@@ -162,6 +170,14 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "Failed to start manager")
+		os.Exit(1)
+	}
+
+	if err := (&controller.PostgresClusterReconciler{
+		Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(),
+		Builder: configBuilder, Checker: postgres.NewChecker(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to register PostgresCluster controller")
 		os.Exit(1)
 	}
 

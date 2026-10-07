@@ -23,6 +23,11 @@ import (
 	"github.com/vterdunov/external-postgres-control-operator/test/utils"
 )
 
+const (
+	loopbackHost = "127.0.0.1"
+	tlsPrefer    = "prefer"
+)
+
 // ImageForVersion pins every supported PostgreSQL major to an explicit patch tag.
 func ImageForVersion(major string) (string, error) {
 	images := map[string]string{
@@ -37,7 +42,10 @@ func ImageForVersion(major string) (string, error) {
 }
 
 // Options configures an isolated PostgreSQL suite. RunID is the runner's ownership label.
-type Options struct{ Version, RunID, ArtifactsDir string }
+type Options struct {
+	Version, RunID, ArtifactsDir string
+	DisableTLS                   bool
+}
 
 // Server owns exactly one container, a verified TLS endpoint and an administrative SQL client.
 type Server struct {
@@ -46,6 +54,7 @@ type Server struct {
 	Container, RunID                string
 	port                            uint16
 	password, tempDir, artifactsDir string
+	disableTLS                      bool
 }
 
 func randomName(prefix string) (string, error) {
@@ -68,7 +77,7 @@ func Start(ctx context.Context, options Options) (_ *Server, resultErr error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{RunID: options.RunID, artifactsDir: options.ArtifactsDir}
+	s := &Server{RunID: options.RunID, artifactsDir: options.ArtifactsDir, disableTLS: options.DisableTLS}
 	s.Container, err = randomName("epco-pg-")
 	if err != nil {
 		return nil, err
@@ -106,6 +115,9 @@ func Start(ctx context.Context, options Options) (_ *Server, resultErr error) {
 		"chown postgres:postgres /tmp/server.key /tmp/server.crt /tmp/ca.crt; chmod 600 /tmp/server.key; " +
 		"exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/tmp/server.crt " +
 		"-c ssl_key_file=/tmp/server.key -c ssl_ca_file=/tmp/ca.crt -c log_statement=none"
+	if options.DisableTLS {
+		stageKeys = strings.Replace(stageKeys, "ssl=on", "ssl=off", 1)
+	}
 	_, err = s.docker(ctx, "run", "--detach", "--name", s.Container, "--label", "epco.test.run="+s.RunID,
 		"--publish", "127.0.0.1::5432", "--env-file", envFile,
 		"--mount", "type=bind,source="+s.tempDir+",target=/fixtures,readonly",
@@ -161,7 +173,7 @@ func (s *Server) Open(database, role, password string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	config.Host = "127.0.0.1"
+	config.Host = loopbackHost
 	config.Port = s.port
 	config.Database = database
 	config.User = role
@@ -172,6 +184,9 @@ func (s *Server) Open(database, role, password string) (*sql.DB, error) {
 		return nil, err
 	}
 	config.TLSConfig = tlsConfig
+	if s.disableTLS {
+		config.TLSConfig = nil
+	}
 	config.Fallbacks = nil
 	config.RuntimeParams = map[string]string{"application_name": "epco-tests", "statement_timeout": "5000"}
 	db := stdlib.OpenDB(*config)

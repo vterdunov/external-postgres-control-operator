@@ -17,6 +17,7 @@ import (
 	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	controllerconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	controlplane "sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -115,6 +116,8 @@ func (e *Environment) StartManager(ctx context.Context, options ManagerOptions) 
 	managerOptions := manager.Options{
 		Scheme: e.Scheme, Metrics: metricsserver.Options{BindAddress: "0"},
 		HealthProbeBindAddress: "0", LeaderElection: false, GracefulShutdownTimeout: &e.timeout,
+		// Each isolated manager intentionally registers the same production controller.
+		Controller: controllerconfig.Controller{SkipNameValidation: new(true)},
 	}
 	if options.Namespace != "" {
 		managerOptions.Cache.DefaultNamespaces = map[string]cache.Config{options.Namespace: {}}

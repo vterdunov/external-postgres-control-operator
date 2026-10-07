@@ -11,6 +11,12 @@ suite CA. Fixture clients expose a database administrator and a restricted login
 catalog assertions and SQL execution both check grant/revoke behavior. SQL
 readiness uses an authenticated `SELECT 1` over the same TLS connection as tests.
 
+Production PostgresCluster client tests cover all six TLS modes, transport order
+and fallback, hostname and CA verification, required client certificates,
+incorrect credentials, read-only sessions, recovery after repaired inputs, and
+connection cleanup after cancellation. Fixture certificate keys are generated
+per run. TLS policy changes use suite-owned isolated PostgreSQL resources.
+
 `Start(ctx, Options{...})` and `Server.NewFixture(ctx)` are untagged Go helpers, so
 future controller integration tests can combine them with `test/envtest` directly.
 Call `Fixture.Close` after assertions, and on failure save `Server.Diagnostics`
