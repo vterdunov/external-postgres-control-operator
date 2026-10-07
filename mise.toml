@@ -9,6 +9,7 @@ kube-controller-tools = "0.22.0"
 setup-envtest = "0.25.0"
 golangci-lint = "2.13.1"
 actionlint = "1.7.12"
+"github:fe3dback/go-arch-lint" = "1.19.0"
 
 [settings]
 lockfile_platforms = ["linux-x64", "macos-arm64"]
@@ -58,7 +59,11 @@ depends = ["test-unit"]
 
 [tasks.test-unit]
 description = "Unit tests with race detection and randomized specs"
-run = ["bash test/unit/run.sh", "python3 test/envtest/runner_test.py", "bash test/e2e/runner_test.sh"]
+run = ["bash test/unit/run.sh", "python3 test/envtest/runner_test.py", "bash test/e2e/runner_test.sh", "mise run test-architecture"]
+
+[tasks.test-architecture]
+description = "Test production architecture boundaries with isolated fixtures"
+run = "python3 test/architecture/policy_test.py"
 
 [tasks.test-envtest]
 description = "Real API CRD and manager/watch tests"
@@ -89,13 +94,18 @@ description = "Lint and automatically fix Go code"
 run = "bash tools/linter.sh run --fix --build-tags envtest,integration,e2e"
 
 [tasks.lint]
-description = "Verify linter configuration and lint Go and shell code"
+description = "Verify linter configuration, architecture and lint Go and shell code"
 run = [
+  "mise run lint-architecture",
   "bash tools/linter.sh config verify",
   "bash tools/linter.sh run",
   "bash tools/linter.sh run --build-tags envtest,integration,e2e",
   "shellcheck tools/*.sh test/unit/run.sh test/generated/check.sh test/envtest/run.sh test/integration/run.sh test/e2e/run.sh test/e2e/runner_test.sh",
 ]
+
+[tasks.lint-architecture]
+description = "Check production package and vendor dependency boundaries"
+run = "go-arch-lint check"
 
 [tasks.check]
 description = "Build, unit tests, lint, generated checks and render manifests"

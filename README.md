@@ -55,17 +55,23 @@ mise trust
 mise run --skip-tools tools-install
 mise run build # Build bin/manager without changing sources
 mise run test-unit # Fast unit tests, race detection and randomization
+mise run test-architecture # Verify architecture policy against isolated fixtures
 mise run test-envtest # CRD contracts and real manager/watch tests
 mise run test-integration # Isolated PostgreSQL fixtures (Docker)
 mise run test-e2e # Deployment smoke tests in disposable Kind
 mise run check-generated # Compare generated output in a temporary copy
 mise run lint # Verify linter configuration and run the configured linters
+mise run lint-architecture # Check production package dependency boundaries
 mise run check # Build, unit tests, lint, generated checks and manifest render
 ```
 
 Run `mise tasks` to list all development, image and deployment commands. For example, `IMG=registry/epco:dev mise run docker-build` builds an image. Cluster commands require an explicit context: `KUBE_CONTEXT=my-cluster IMG=registry/epco:dev mise run deploy`. Set `IGNORE_NOT_FOUND=true` for tolerant deletion.
 
 Test commands do not generate, format, or tidy sources. `mise.lock` locks tool downloads and checksums for Linux amd64 and macOS arm64; `mise run --skip-tools tools-install` installs only project tools from the lockfile, preserving unrelated global mise settings. Refresh it with `mise lock --platform linux-x64,macos-arm64` after changing tool pins. The custom logcheck linter is built into the ignored `bin/` directory. Envtest downloads Kubernetes 1.37.0 and starts its own API/etcd; it does not run Kubernetes garbage collection or workload controllers. The reusable `test/envtest` harness exposes an uncached client, explicit scope cleanup, and an optional manager with cache synchronization and bounded shutdown. API and manual reconcile tests are separate from manager/watch tests.
+
+The pinned go-arch-lint v1.19.0 enforces `.go-arch-lint.yml` during `mise run lint`, including the existing CI lint job and `mise run check`. API packages use Kubernetes apimachinery; PostgreSQL code uses API types, pgx and Kubernetes core/v1 Secret types; controllers use API types, PostgreSQL code and Kubernetes clients/runtime; `cmd` wires these components with Kubernetes runtime libraries. Standard library imports are permitted, while vendor imports require explicit allowlists. New production packages outside the configured components and imports of test helpers fail the check. Deep scanning also checks local dependency injection through interfaces.
+
+Architecture checks include generated API Go sources and exclude `_test.go` files. Root directories `test/`, `bin/`, `artifacts/`, `tools/`, `.agent-plans/` and `.git/` belong to a separate support component with unrestricted imports and no deep scanning. Production components cannot import support packages. These exact root-relative mappings avoid go-arch-lint v1.19.0 directory exclusions, which also skip unrelated packages sharing an excluded directory's prefix. `ignoreNotFoundComponents` permits declared directory globs to be absent in fresh checkouts; Go sources outside mapped components still fail, including new packages such as `testhelper/` and `toolshed/`. `mise run test-architecture` exercises allowed and forbidden imports in temporary copies using the real checker; it also runs within `mise run test-unit`.
 
 PostgreSQL integration uses one TLS-enabled container per suite and unique restricted roles/databases per spec. `test/integration.Start` and `Server.NewFixture` can be combined with the envtest harness for future controller tests. Set `EPCO_PG_VERSION=15`, `16`, `17`, or `18` to select the pinned image; the default is 16. Unit tests need no container runtime or envtest assets.
 
