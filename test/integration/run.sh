@@ -77,6 +77,14 @@ trap 'interrupt 130' INT
 trap 'interrupt 143' TERM
 
 cd -- "$project_dir"
+if [[ -z "${KUBEBUILDER_ASSETS:-}" ]]; then
+  mise exec -- setup-envtest use 1.37.0 -p path --bin-dir "$project_dir/bin" > "$binary_dir/envtest-assets" &
+  child_pid=$!
+  wait "$child_pid"
+  child_pid=""
+  KUBEBUILDER_ASSETS="$(cat -- "$binary_dir/envtest-assets")"
+  export KUBEBUILDER_ASSETS
+fi
 # Compile separately so runtime signals reach the test process directly.
 mise exec -- go test -c -race -mod=readonly -tags=integration -o "$binary_dir/integration.test" ./test/integration &
 child_pid=$!

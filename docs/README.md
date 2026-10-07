@@ -8,14 +8,14 @@ The [API baseline](api-proposal.md) was accepted on 2026-10-07. Its filename is 
 | --- | --- |
 | PostgresCluster, DatabaseRole, Database | Go types, generated CRDs, defaults, and admission rules; CRD admission tests are in [test/envtest/crd_test.go](../test/envtest/crd_test.go) |
 | PostgresCluster runtime | Implemented authentication/writable-state check, TLS, local Secret watches, bounded retries, and Ready status |
-| DatabaseRole runtime | Not implemented: role attributes/memberships, password application/generation, observation, and reclaim cleanup |
+| DatabaseRole runtime | Implemented role attributes, both membership policies, targeted parameter cleanup, supplied/generated password application, observation, and retain/delete reclaim |
 | Database runtime | Not implemented: SQL database/child objects, ACL reconciliation, connection exports, observation, and reclaim cleanup |
 | FDW/server runtime | API fields retained; runtime excluded by the [roadmap scope](roadmap.md#scope-boundaries). Requests must report UnsupportedFeature/Ready=False |
-| Cross-namespace consumers and SQL ownership | Accepted contracts and schema fields; authorization watches, conflict detection, and SQL-object serialization await the role/database controllers |
-| Managed-state recovery | Current status exposes common results, role password Secret resourceVersion, and per-permission outcomes. Durable managed-grant/pending-change/object-grantor bookkeeping is required by the contract but is not yet represented in the Database status schema or implemented |
+| Cross-namespace consumers and SQL ownership | DatabaseRole implements Namespace selectors, dependency watches, recorded-manager conflicts with UID exclusion, and cancelable per-key serialization; Database integration remains pending |
+| Managed-state recovery | DatabaseRole persists sticky management, generated-source initialization, and endpoint-scoped membership/grantor and parameter cleanup intent before SQL. Database managed-grant/pending-change/object-grantor bookkeeping remains pending |
 | RDS | Accepted SQL capability requirements and examples; compatibility with a real RDS instance has not been established by the local PostgreSQL suites |
 
-PostgresCluster Ready confirms only its administrative connection check. DatabaseRole/Database manifests can be admitted without triggering reconciliation. Application Secret existence and overall SQL readiness have separate meanings under the accepted export contract.
+PostgresCluster Ready confirms only its administrative connection check. DatabaseRole Ready confirms role reconciliation; observation reports Observed with applied unset. Database manifests can be admitted without triggering SQL reconciliation. Application connection exports remain pending; a generated role password source does not imply SQL readiness.
 
 ## Reading guide
 

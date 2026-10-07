@@ -22,13 +22,14 @@ vendors:
   client: {in: k8s.io/client-go/**}
   runtime: {in: [sigs.k8s.io/controller-runtime, sigs.k8s.io/controller-runtime/**]}
   pgx: {in: [github.com/jackc/pgx/v5, github.com/jackc/pgx/v5/**]}
+  stringprep: {in: github.com/xdg-go/stringprep}
 
 deps:
   api:
     canUse: [apimachinery]
   postgres:
     mayDependOn: [api]
-    canUse: [pgx, core]
+    canUse: [pgx, core, stringprep]
   controller:
     mayDependOn: [api, postgres]
     canUse: [core, apimachinery, client, runtime]

@@ -23,6 +23,8 @@ import (
 
 const secretReferenceIndex = "spec.connectionSecretReferences"
 
+const readyCondition = "Ready"
+
 // PostgresClusterReconciler reports authentication and writable server state.
 type PostgresClusterReconciler struct {
 	Client    client.Client
@@ -178,7 +180,7 @@ func writeStatus(cluster *epco.PostgresCluster, err error, now time.Time) {
 	status.EffectiveName = ""
 	reason, message := safeResult(err)
 	status.Message = message
-	condition := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: message,
+	condition := metav1.Condition{Type: readyCondition, Status: metav1.ConditionFalse, Reason: reason, Message: message,
 		ObservedGeneration: cluster.Generation, LastTransitionTime: metav1.NewTime(now)}
 	if applied {
 		status.AppliedGeneration = cluster.Generation

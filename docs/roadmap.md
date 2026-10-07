@@ -37,7 +37,7 @@ Table statuses are authoritative. Keep IDs stable. Update status (`TODO`, `IN_PR
 | ID | Status | Detailed plan | PR | Evidence | Blocker | Next step |
 | --- | --- | --- | --- | --- | --- | --- |
 | F0 | DONE | n/a: established | [#1 tests](https://github.com/vterdunov/external-postgres-control-operator/pull/1), [#2 PostgresCluster](https://github.com/vterdunov/external-postgres-control-operator/pull/2), [#3 architecture](https://github.com/vterdunov/external-postgres-control-operator/pull/3) | Linked guides/suites | None | Maintain coverage |
-| R1 | TODO | Pending | Pending | Pending | None recorded | Draft detailed plan |
+| R1 | DONE | Reviewed local R1 plan and independent acceptance | Current PR: pending review | check; envtest 41/41; PG15 49 + 2 expected skips, PG16-18 51/51 each; Kind 7/7 | None | Plan R2 databases and schemas |
 | R2 | TODO | Pending | Pending | Pending | None recorded | Plan after R1 |
 | R3 | TODO | Pending | Pending | Pending | None recorded | Plan after R2 |
 | R4 | TODO | Pending | Pending | Pending | None recorded | Plan after R3 |
@@ -45,4 +45,4 @@ Table statuses are authoritative. Keep IDs stable. Update status (`TODO`, `IN_PR
 | R6 | TODO | Pending | Pending | Pending | None recorded | Plan after R5 |
 | R7 | TODO | Pending | Pending | Pending | None recorded | Plan after R6 |
 
-Feature plans assign separate test-author, implementation, and independent-validation agents. Test authors demonstrate failing behavioral tests before handoff. Implementation/review inspect CNPG and cite paths, approaches, and justified departures; write EPCO independently. Run scoped mise checks, fix failures/flakiness, keep suite support together, and never hand-edit generated files. Next: draft the R1 detailed plan.
+Feature plans assign separate test-author, implementation, and independent-validation agents. Test authors demonstrate failing behavioral tests before handoff. Implementation/review inspect CNPG and cite paths, approaches, and justified departures; write EPCO independently. Run scoped mise checks, fix failures/flakiness, keep suite support together, and never hand-edit generated files. R1 is independently accepted for this change; merge status follows the associated PR. Next: plan R2 databases and schemas.

@@ -1,4 +1,4 @@
-// Package postgres provides isolated administrative connection checks.
+// Package postgres provides isolated administrative sessions and connection checks.
 package postgres
 
 import (

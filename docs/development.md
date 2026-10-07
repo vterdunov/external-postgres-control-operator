@@ -27,7 +27,7 @@ Test commands do not generate, format, or tidy sources. `mise.lock` locks tool d
 
 ## Architecture boundaries
 
-The pinned go-arch-lint v1.19.0 enforces `.go-arch-lint.yml` during `mise run lint`, including the existing CI lint job and `mise run check`. API packages use Kubernetes apimachinery; PostgreSQL code uses API types, pgx and Kubernetes core/v1 Secret types; controllers use API types, PostgreSQL code and Kubernetes clients/runtime; `cmd` wires these components with Kubernetes runtime libraries. Standard library imports are permitted, while vendor imports require explicit allowlists. New production packages outside the configured components and imports of test helpers fail the check. Deep scanning also checks local dependency injection through interfaces.
+The pinned go-arch-lint v1.19.0 enforces `.go-arch-lint.yml` during `mise run lint`, including the existing CI lint job and `mise run check`. API packages use Kubernetes apimachinery; PostgreSQL code uses API types, pgx, Kubernetes core/v1 Secret types, and stringprep for server-compatible password normalization; controllers use API types, PostgreSQL code and Kubernetes clients/runtime; `cmd` wires these components with Kubernetes runtime libraries. Standard library imports are permitted, while vendor imports require explicit allowlists. New production packages outside the configured components and imports of test helpers fail the check. Deep scanning also checks local dependency injection through interfaces.
 
 Architecture checks include generated API Go sources and exclude `_test.go` files. Root directories `test/`, `bin/`, `artifacts/`, `tools/`, `.agent-plans/` and `.git/` belong to a separate support component with unrestricted imports and no deep scanning. Production components cannot import support packages. These exact root-relative mappings avoid go-arch-lint v1.19.0 directory exclusions, which also skip unrelated packages sharing an excluded directory's prefix. `ignoreNotFoundComponents` permits declared directory globs to be absent in fresh checkouts; Go sources outside mapped components still fail, including new packages such as `testhelper/` and `toolshed/`. `mise run test-architecture` exercises allowed and forbidden imports in temporary copies using the real checker; it also runs within `mise run test-unit`.
 
@@ -36,9 +36,9 @@ Architecture checks include generated API Go sources and exclude `_test.go` file
 | Task | Coverage and requirements |
 | --- | --- |
 | `test-unit` | Fast unit/race tests, randomized specs, runner tests, and architecture-policy tests; no container runtime or envtest assets |
-| `test-envtest` | CRD admission/defaults and real manager/Secret-watch tests on an isolated API server; no workload controllers or garbage collection |
-| [test-integration](../test/integration/README.md) | PostgreSQL client behavior with TLS and isolated SQL fixtures; a Docker-compatible runtime is required |
-| [test-e2e](../test/e2e/README.md) | Installed manager health, metrics, CRD CRUD, and PostgresCluster readiness recovery in disposable Kind; a Docker-compatible runtime is required |
+| `test-envtest` | CRD admission/defaults, real manager/dependency-watch tests, and optimistic generated-source conflicts on an isolated API server; no workload controllers or garbage collection |
+| [test-integration](../test/integration/README.md) | PostgreSQL client/role behavior with TLS, isolated SQL fixtures, and composed envtest recovery; a Docker-compatible runtime is required |
+| [test-e2e](../test/e2e/README.md) | Installed manager health, metrics, CRD CRUD, connection/role recovery, credential lifecycle, authorization, and leader takeover in disposable Kind; a Docker-compatible runtime is required |
 | `check-generated` | Regenerate in a temporary copy and compare derived files without changing the checkout |
 
 On macOS, the integration and e2e suites use OrbStack's Docker-compatible runtime. Suite-specific fixture APIs, image pins, build modes, and runtime coverage belong in their linked READMEs. Real RDS verification remains separate work.

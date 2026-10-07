@@ -106,9 +106,48 @@ type PasswordGeneration struct {
 // DatabaseRoleStatus reports role reconciliation and the applied password version.
 type DatabaseRoleStatus struct {
 	ResourceStatus `json:",inline"`
+	// HasManagedSQL records successful SQL management and remains true during observation or temporary failure.
+	// +optional
+	HasManagedSQL bool `json:"hasManagedSQL,omitzero"`
+	// GeneratedPasswordInitialized records that a persisted generated source was accepted. Source loss must not regenerate it.
+	// +optional
+	GeneratedPasswordInitialized bool `json:"generatedPasswordInitialized,omitzero"`
+	// ManagedEndpoints preserves cleanup intent for each configured endpoint within this resource UID.
+	// +optional
+	ManagedEndpoints []RoleEndpointState `json:"managedEndpoints,omitempty"`
 	// SecretResourceVersion identifies the password source version applied to SQL.
 	// +optional
 	SecretResourceVersion string `json:"secretResourceVersion,omitempty"`
+}
+
+// RoleEndpointState stores managed or possibly applied changes for one configured endpoint, not a physical server identity.
+type RoleEndpointState struct {
+	// Host is the normalized configured hostname.
+	Host string `json:"host"`
+	// Port is the effective configured TCP port.
+	Port int32 `json:"port"`
+	// Memberships records grantor-specific application and administrative bindings for retry cleanup.
+	// +optional
+	Memberships []RoleMembershipBinding `json:"memberships,omitempty"`
+	// Parameters records role-wide setting names managed or possibly applied by this resource.
+	// +optional
+	Parameters []string `json:"parameters,omitempty"`
+}
+
+// RoleMembershipBinding identifies one SQL membership without storing transient role OIDs.
+type RoleMembershipBinding struct {
+	// Role is the parent SQL role.
+	Role string `json:"role"`
+	// Member is the SQL grantee.
+	Member string `json:"member"`
+	// Grantor is the SQL role that granted this binding.
+	Grantor string `json:"grantor"`
+	// AdminOption records administrative authority on this binding.
+	// +optional
+	AdminOption bool `json:"adminOption,omitzero"`
+	// Administrative distinguishes operator administration from application membership ownership.
+	// +optional
+	Administrative bool `json:"administrative,omitzero"`
 }
 
 // +kubebuilder:object:root=true
