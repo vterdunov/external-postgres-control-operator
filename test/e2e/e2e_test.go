@@ -34,21 +34,26 @@ var _ = Describe("Installed operator", func() {
 	It("has one available manager and no restarting containers", func() {
 		ctx, cancel := boundedContext()
 		defer cancel()
-		deployment, err := kubeClient.AppsV1().Deployments(operatorNamespace).Get(
-			ctx, "epco-controller-manager", metav1.GetOptions{})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(deployment.Status.ObservedGeneration).To(Equal(deployment.Generation))
-		Expect(deployment.Status.AvailableReplicas).To(Equal(int32(1)))
-		Expect(deployment.Status.ReadyReplicas).To(Equal(int32(1)))
-		pods, err := kubeClient.CoreV1().Pods(operatorNamespace).List(
-			ctx, metav1.ListOptions{LabelSelector: "control-plane=controller-manager"})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(pods.Items).To(HaveLen(1))
-		Expect(pods.Items[0].Status.ContainerStatuses).NotTo(BeEmpty())
-		for _, status := range pods.Items[0].Status.ContainerStatuses {
-			Expect(status.Ready).To(BeTrue())
-			Expect(status.RestartCount).To(BeZero())
-		}
+		Eventually(func(g Gomega) {
+			deployment, err := kubeClient.AppsV1().Deployments(operatorNamespace).Get(
+				ctx, "epco-controller-manager", metav1.GetOptions{})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(deployment.Status.ObservedGeneration).To(Equal(deployment.Generation))
+			g.Expect(deployment.Status.AvailableReplicas).To(Equal(int32(1)))
+			g.Expect(deployment.Status.ReadyReplicas).To(Equal(int32(1)))
+			pods, err := kubeClient.CoreV1().Pods(operatorNamespace).List(
+				ctx, metav1.ListOptions{LabelSelector: "control-plane=controller-manager"})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(pods.Items).To(HaveLen(1))
+			g.Expect(pods.Items[0].DeletionTimestamp).To(BeNil())
+			g.Expect(pods.Items[0].Status.Phase).To(Equal(corev1.PodRunning))
+			g.Expect(pods.Items[0].Status.ContainerStatuses).NotTo(BeEmpty())
+			for _, status := range pods.Items[0].Status.ContainerStatuses {
+				g.Expect(status.State.Running).NotTo(BeNil())
+				g.Expect(status.Ready).To(BeTrue())
+				g.Expect(status.RestartCount).To(BeZero())
+			}
+		}).WithContext(ctx).WithTimeout(30 * time.Second).WithPolling(time.Second).Should(Succeed())
 	})
 
 	It("serves health probes and permits only authorized HTTPS metrics requests", func() {
