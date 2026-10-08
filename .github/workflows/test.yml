@@ -18,7 +18,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [test-unit, test-envtest, check-generated]
+        include:
+          - suite: test-unit
+            cache-runner: test/unit/run.sh
+          - suite: test-envtest
+            cache-runner: test/envtest/run.py
+          - suite: check-generated
+            cache-runner: test/generated/check.sh
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -29,9 +35,15 @@ jobs:
         with:
           version: 2026.9.15
       - name: Restore and save Go caches
-        uses: ./.github/actions/go-cache
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          scope: ${{ matrix.suite }}
+          cache: true
+          cache-dependency-path: |
+            go.mod
+            go.sum
+            mise.toml
+            mise.lock
+            ${{ matrix.cache-runner }}
       - name: Run suite and repeated random seeds
         env:
           SUITE: ${{ matrix.suite }}
@@ -72,9 +84,15 @@ jobs:
         with:
           version: 2026.9.15
       - name: Restore and save Go caches
-        uses: ./.github/actions/go-cache
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          scope: integration
+          cache: true
+          cache-dependency-path: |
+            go.mod
+            go.sum
+            mise.toml
+            mise.lock
+            test/integration/run.sh
       - name: PostgreSQL integration
         env:
           EXTENDED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}

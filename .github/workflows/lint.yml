@@ -23,9 +23,16 @@ jobs:
         with:
           version: 2026.9.15
       - name: Restore and save Go caches
-        uses: ./.github/actions/go-cache
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          scope: lint
+          cache: true
+          cache-dependency-path: |
+            go.mod
+            go.sum
+            mise.toml
+            mise.lock
+            .custom-gcl.yml
+            tools/linter.sh
       - name: Lint Go and suite runners
         run: mise run lint
       - name: Validate workflows
