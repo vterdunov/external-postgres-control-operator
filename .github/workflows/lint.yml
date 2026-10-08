@@ -29,10 +29,7 @@ jobs:
           cache-dependency-path: |
             go.mod
             go.sum
-            mise.toml
-            mise.lock
             .custom-gcl.yml
-            tools/linter.sh
       - name: Lint Go and suite runners
         run: mise run lint
       - name: Validate workflows

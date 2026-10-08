@@ -29,9 +29,6 @@ jobs:
           cache-dependency-path: |
             go.mod
             go.sum
-            mise.toml
-            mise.lock
-            test/e2e/run.sh
       - name: Run tests
         run: mise run test-e2e
       - name: Check sources
