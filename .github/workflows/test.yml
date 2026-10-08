@@ -28,6 +28,10 @@ jobs:
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: 2026.9.15
+      - name: Restore and save Go caches
+        uses: ./.github/actions/go-cache
+        with:
+          scope: ${{ matrix.suite }}
       - name: Run suite and repeated random seeds
         env:
           SUITE: ${{ matrix.suite }}
@@ -67,6 +71,10 @@ jobs:
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: 2026.9.15
+      - name: Restore and save Go caches
+        uses: ./.github/actions/go-cache
+        with:
+          scope: integration
       - name: PostgreSQL integration
         env:
           EXTENDED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
