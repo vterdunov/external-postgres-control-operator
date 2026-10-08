@@ -12,7 +12,7 @@ with authorized, missing and unauthorized tokens, an authenticated
 PostgreSQL TCP connection, and CRUD for all existing CRDs. The installed
 PostgresCluster controller authenticates real fixture credentials and recovers
 readiness after its Secret is corrupted, repaired, deleted and replaced.
-PostgreSQL runs in `epco-postgres`, separately from `epco-system`.
+DatabaseRole scenarios verify generated-source rotation, retain/GC safety, conditional reuse after recreation, delete finalizers paused by authorization removal, and ordinary Lease takeover after leader termination. PostgreSQL runs in `epco-postgres`, separately from `epco-system`.
 
 - `EPCO_TEST_SEED=123` replays randomized spec ordering.
 - `EPCO_ARTIFACTS_DIR=/path/to/artifacts` selects the persistent output directory.

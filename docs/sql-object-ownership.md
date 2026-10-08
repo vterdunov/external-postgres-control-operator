@@ -1,6 +1,6 @@
 # SQL object ownership and reconciliation
 
-Status: selected design for the [accepted API baseline](api-proposal.md), updated 2026-10-07. Follow inspected CNPG behavior for retries, existing SQL objects, CR conflicts, and reclaim policies. This document specifies future DatabaseRole/Database reconciliation. See [implementation status](README.md#implementation-status) and the implemented [PostgresCluster connection check](postgrescluster.md).
+Status: selected design for the [accepted API baseline](api-proposal.md), updated 2026-10-08. Follow inspected CNPG behavior for retries, existing SQL objects, CR conflicts, and reclaim policies. DatabaseRole implements this ownership/lifecycle contract; Database reconciliation remains pending. See [implementation status](README.md#implementation-status) and the implemented [PostgresCluster connection check](postgrescluster.md).
 
 ## Verified CNPG behavior
 

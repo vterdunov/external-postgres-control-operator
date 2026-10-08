@@ -20,12 +20,12 @@ connection cleanup after cancellation. Fixture certificate keys are generated
 per run. TLS policy changes use suite-owned isolated PostgreSQL resources.
 
 `Start(ctx, Options{...})` and `Server.NewFixture(ctx)` are untagged Go helpers, so
-future controller integration tests can combine them with `test/envtest` directly.
+controller integration tests combine them with `test/envtest` directly. The runner prepares pinned envtest assets; an explicit `KUBEBUILDER_ASSETS` is honored.
 Call `Fixture.Close` after assertions, and on failure save `Server.Diagnostics`
 before `Server.Close`. Clients can be closed repeatedly. Cleanup deletes the exact
 labelled container and fixture database/role names. It leaves unrelated Docker
 resources untouched. The runner also handles failed startup, SIGINT and SIGTERM.
 
 Unit fixture tests do not start Docker. Runtime specs require the `integration`
-build tag. Controllers are not simulated here. PostgreSQL 15-18 is a test matrix;
+build tag. Production DatabaseRole SQL tests cover attributes, memberships/grantors, parameters, passwords, restricted administration, and dependency-blocked deletion. Composed tests use a real API and SQL server to cover status/checkpoint failures, restart cleanup, rotation during Apply, and endpoint A -> B -> A recovery. PostgreSQL 15-18 is a test matrix;
 Amazon RDS requires testing against a real RDS instance separately.

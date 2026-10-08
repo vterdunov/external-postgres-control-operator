@@ -1,6 +1,6 @@
 # Cross-namespace access
 
-Status: accepted as part of the initial [API baseline](api-proposal.md), 2026-10-07. The fields and behavior defined here are included in the initial implementation scope. Namespace authorization for DatabaseRole/Database is not implemented. PostgresCluster connection readiness is implemented independently of this selector; see [implementation status](README.md#implementation-status).
+Status: accepted as part of the initial [API baseline](api-proposal.md), 2026-10-07. DatabaseRole implements namespace authorization and removal/resumption; Database integration remains pending. PostgresCluster connection readiness is implemented independently of this selector; see [implementation status](README.md#implementation-status).
 
 ## Use case and resource placement
 
@@ -91,7 +91,7 @@ RabbitMQ Messaging Topology Operator similarly reports a condition and stops rec
 
 ## Kubernetes RBAC and Secrets
 
-Service teams can create/update/delete Database and DatabaseRole resources and consume application Secrets in their own namespace. They cannot edit the infrastructure PostgresCluster or its access policy and cannot read its administrative Secret. The future consumer controllers need scoped permissions to read the infrastructure connection and reconcile application resources. The current controller reads PostgresCluster and its local Secrets; its [generated RBAC](../config/rbac/role.yaml) does not establish application-team isolation. Platform RBAC must enforce the team boundaries above. Kubernetes Role/RoleBinding permissions can be granted per namespace. [Kubernetes RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/).
+Service teams can create/update/delete Database and DatabaseRole resources and consume application Secrets in their own namespace. They cannot edit the infrastructure PostgresCluster or its access policy and cannot read its administrative Secret. The manager reads connection descriptors, Namespace labels, and role dependencies, and reconciles namespace-local password sources; its [generated RBAC](../config/rbac/role.yaml) does not establish application-team isolation. Platform RBAC must enforce the team boundaries above. Kubernetes Role/RoleBinding permissions can be granted per namespace. [Kubernetes RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/).
 
 The shared CA can be copied into each application connection output because it is public trust material. Administrative passwords and client private keys are not copied. Cross-namespace Secret references and roleRef exports are outside the accepted API.
 

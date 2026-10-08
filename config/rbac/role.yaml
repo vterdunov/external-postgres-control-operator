@@ -7,11 +7,47 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - secrets
+  - namespaces
   verbs:
   - get
   - list
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - postgresql.epco.io
+  resources:
+  - databaseroles
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - postgresql.epco.io
+  resources:
+  - databaseroles/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - postgresql.epco.io
+  resources:
+  - databaseroles/status
+  - postgresclusters/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - postgresql.epco.io
   resources:
@@ -20,11 +56,3 @@ rules:
   - get
   - list
   - watch
-- apiGroups:
-  - postgresql.epco.io
-  resources:
-  - postgresclusters/status
-  verbs:
-  - get
-  - patch
-  - update

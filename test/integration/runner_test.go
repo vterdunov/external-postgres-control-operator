@@ -28,6 +28,18 @@ var _ = Describe("Integration runner lifecycle", func() {
 		Expect(err).NotTo(HaveOccurred())
 		mise := `#!/bin/bash
 echo $$ >> "$FAKE_PIDS"
+if [[ "$*" == *setup-envtest* ]]; then
+  if [[ "$*" != *'use 1.37.0 -p path'* ]]; then exit 12; fi
+  echo assets >> "$FAKE_LOG"
+  if [[ "$FAKE_MODE" == assets-failure ]]; then exit 11; fi
+  if [[ "$FAKE_MODE" == assets-signal ]]; then
+    echo ready >> "$FAKE_LOG"
+    trap 'exit 143' TERM
+    while :; do sleep .05; done
+  fi
+  echo "$FAKE_ASSETS"
+  exit 0
+fi
 if [[ "$FAKE_MODE" == compile-failure ]]; then echo 'compiler failed with status 9' >&2; exit 9; fi
 if [[ "$FAKE_MODE" == compile-signal ]]; then
   sleep 300 &
@@ -44,6 +56,7 @@ cat > "$binary" <<'BINARY'
 #!/bin/bash
 echo $$ >> "$FAKE_PIDS"
 if [[ -n "${EPCO_TEST_DIAGNOSTICS_ID:-}" ]]; then echo diagnostics >> "$FAKE_LOG"; exit 0; fi
+if [[ "$FAKE_MODE" == assets && "$KUBEBUILDER_ASSETS" != "$FAKE_ASSETS" ]]; then exit 12; fi
 if [[ "$FAKE_MODE" == signal ]]; then
   sleep 300 &
   while [[ ! -s "$FAKE_DESCENDANT" ]]; do "$FAKE_REAL_SLEEP" .01; done
@@ -84,7 +97,13 @@ exec "$FAKE_REAL_SLEEP" "$@"
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "FAKE_MODE="+mode, "FAKE_LOG="+logPath,
 			"FAKE_PIDS="+pidPath, "FAKE_REAL_SLEEP="+realSleep, "FAKE_DESCENDANT="+filepath.Join(dir, "descendant"),
-			"EPCO_ARTIFACTS_DIR="+filepath.Join(dir, "artifacts"), "TMPDIR="+dir)
+			"EPCO_ARTIFACTS_DIR="+filepath.Join(dir, "artifacts"), "TMPDIR="+dir,
+			"FAKE_ASSETS="+filepath.Join(dir, "pinned-assets"))
+		assets := dir
+		if strings.HasPrefix(mode, "assets") {
+			assets = ""
+		}
+		cmd.Env = append(cmd.Env, "KUBEBUILDER_ASSETS="+assets)
 		// Ensure a failing regression does not leave its runner or recorded descendants behind.
 		defer func() {
 			if cmd.Process != nil {
@@ -123,8 +142,13 @@ exec "$FAKE_REAL_SLEEP" "$@"
 		}
 		Expect(readErr).NotTo(HaveOccurred(), diagnostic)
 		Expect(string(calls)).To(HaveSuffix("cleanup\n"))
-		if want != 0 && mode != "compile-failure" && mode != "compile-signal" {
+		if want != 0 && mode != "compile-failure" && mode != "compile-signal" && !strings.HasPrefix(mode, "assets") {
 			Expect(string(calls)).To(ContainSubstring("diagnostics\ncleanup"))
+		}
+		if strings.HasPrefix(mode, "assets") {
+			Expect(string(calls)).To(HavePrefix("assets\n"))
+		} else {
+			Expect(string(calls)).NotTo(ContainSubstring("assets\n"))
 		}
 		files, err := filepath.Glob(filepath.Join(dir, "epco-integration-bin.*"))
 		Expect(err).NotTo(HaveOccurred())
@@ -146,6 +170,9 @@ exec "$FAKE_REAL_SLEEP" "$@"
 		Entry("SIGINT", "signal", syscall.SIGINT, 130),
 		Entry("SIGTERM", "signal", syscall.SIGTERM, 143),
 		Entry("SIGTERM while compiling", "compile-signal", syscall.SIGTERM, 143),
+		Entry("pinned envtest assets", "assets", syscall.Signal(0), 0),
+		Entry("envtest assets failure", "assets-failure", syscall.Signal(0), 11),
+		Entry("SIGTERM during envtest setup", "assets-signal", syscall.SIGTERM, 143),
 	)
 })
 

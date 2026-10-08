@@ -287,11 +287,75 @@ spec:
                 description: EffectiveName is the resolved SQL name, including metadata.name
                   fallback.
                 type: string
+              generatedPasswordInitialized:
+                description: GeneratedPasswordInitialized records that a persisted
+                  generated source was accepted. Source loss must not regenerate it.
+                type: boolean
+              hasManagedSQL:
+                description: HasManagedSQL records successful SQL management and remains
+                  true during observation or temporary failure.
+                type: boolean
               lastSuccessfulReconcileTime:
                 description: LastSuccessfulReconcileTime records the most recent successful
                   reconciliation.
                 format: date-time
                 type: string
+              managedEndpoints:
+                description: ManagedEndpoints preserves cleanup intent for each configured
+                  endpoint within this resource UID.
+                items:
+                  description: RoleEndpointState stores managed or possibly applied
+                    changes for one configured endpoint, not a physical server identity.
+                  properties:
+                    host:
+                      description: Host is the normalized configured hostname.
+                      type: string
+                    memberships:
+                      description: Memberships records grantor-specific application
+                        and administrative bindings for retry cleanup.
+                      items:
+                        description: RoleMembershipBinding identifies one SQL membership
+                          without storing transient role OIDs.
+                        properties:
+                          adminOption:
+                            description: AdminOption records administrative authority
+                              on this binding.
+                            type: boolean
+                          administrative:
+                            description: Administrative distinguishes operator administration
+                              from application membership ownership.
+                            type: boolean
+                          grantor:
+                            description: Grantor is the SQL role that granted this
+                              binding.
+                            type: string
+                          member:
+                            description: Member is the SQL grantee.
+                            type: string
+                          role:
+                            description: Role is the parent SQL role.
+                            type: string
+                        required:
+                        - grantor
+                        - member
+                        - role
+                        type: object
+                      type: array
+                    parameters:
+                      description: Parameters records role-wide setting names managed
+                        or possibly applied by this resource.
+                      items:
+                        type: string
+                      type: array
+                    port:
+                      description: Port is the effective configured TCP port.
+                      format: int32
+                      type: integer
+                  required:
+                  - host
+                  - port
+                  type: object
+                type: array
               message:
                 description: Message describes the most recent reconciliation result.
                 type: string

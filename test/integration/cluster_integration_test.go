@@ -56,7 +56,7 @@ func productionConfigUsingCA(f *Fixture, mode string, clientCert bool, caPath st
 		CredentialsSecret: epco.LocalReference{Name: clusterAuthenticationName},
 		TLS: &epco.PostgresTLS{Mode: mode,
 			CASecret: &epco.SecretKeyReference{Name: "ca",
-				Key: "ca.crt"}},
+				Key: roleCAKey}},
 		ConnectTimeout:   "2s",
 		StatementTimeout: "2s"}}
 	ca, err := os.ReadFile(caPath)
@@ -65,11 +65,11 @@ func productionConfigUsingCA(f *Fixture, mode string, clientCert bool, caPath st
 		clusterAuthenticationName: {ObjectMeta: metav1.ObjectMeta{Name: clusterAuthenticationName,
 			Namespace: c.Namespace},
 			Type: corev1.SecretTypeBasicAuth,
-			Data: map[string][]byte{"username": []byte(f.Role),
-				"password": []byte(f.Password)}},
+			Data: map[string][]byte{corev1.BasicAuthUsernameKey: []byte(f.Role),
+				corev1.BasicAuthPasswordKey: []byte(f.Password)}},
 		"ca": {ObjectMeta: metav1.ObjectMeta{Name: "ca",
 			Namespace: c.Namespace},
-			Data: map[string][]byte{"ca.crt": ca}}}
+			Data: map[string][]byte{roleCAKey: ca}}}
 	if clientCert {
 		crt, err := os.ReadFile(f.Server.TLS.ClientCertificate)
 		ExpectWithOffset(1, err).NotTo(HaveOccurred())
@@ -180,7 +180,7 @@ var _ = Describe("Production PostgreSQL connection checker", func() {
 	}, NodeTimeout(20*time.Second))
 	It("authenticates a restricted login through every TLS mode and closes each connection", func(ctx SpecContext) {
 		checker := pgcheck.NewChecker()
-		for _, mode := range []string{"disable", "allow", tlsPrefer, "require", tlsVerifyCA, "verify-full"} {
+		for _, mode := range []string{"disable", "allow", tlsPrefer, "require", tlsVerifyCA, roleTLSMode} {
 			Expect(checker.Check(ctx, productionConfig(fixture, mode, false))).To(Succeed(), "mode %s", mode)
 		}
 		var connections int
@@ -236,7 +236,7 @@ var _ = Describe("Production PostgreSQL connection checker", func() {
 	}, NodeTimeout(90*time.Second))
 
 	It("closes an authenticated production connection when its parent is cancelled", func(ctx SpecContext) {
-		config := productionConfig(fixture, "verify-full", false)
+		config := productionConfig(fixture, roleTLSMode, false)
 		cancelled, cancel := context.WithCancel(ctx)
 		defer cancel()
 		config.Connection.AfterConnect = func(context.Context, *pgconn.PgConn) error { cancel(); return nil }
@@ -251,7 +251,7 @@ var _ = Describe("Production PostgreSQL connection checker", func() {
 			}
 			return connections
 		}).WithContext(ctx).Should(BeNumerically("<=", 1))
-		Expect(pgcheck.NewChecker().Check(ctx, productionConfig(fixture, "verify-full", false))).To(Succeed())
+		Expect(pgcheck.NewChecker().Check(ctx, productionConfig(fixture, roleTLSMode, false))).To(Succeed())
 	}, NodeTimeout(20*time.Second))
 	It("cancels a blocked production SQL probe and disposes its connection", func(ctx SpecContext) {
 		checkctx, cancel := context.WithCancel(ctx)
@@ -295,12 +295,12 @@ var _ = Describe("Production PostgreSQL connection checker", func() {
 			return connections
 		}).WithContext(ctx).WithTimeout(3 * time.Second).Should(BeNumerically("<=",
 			1))
-		Expect(pgcheck.NewChecker().Check(ctx, productionConfig(fixture, "verify-full", false))).To(Succeed())
+		Expect(pgcheck.NewChecker().Check(ctx, productionConfig(fixture, roleTLSMode, false))).To(Succeed())
 	}, NodeTimeout(20*time.Second))
 
 	It("rejects incorrect credentials and recovers with repaired input", func(ctx SpecContext) {
 		checker := pgcheck.NewChecker()
-		config := productionConfig(fixture, "verify-full", false)
+		config := productionConfig(fixture, roleTLSMode, false)
 		password := config.Connection.Password
 		config.Connection.Password = "incorrect"
 		Expect(failureReason(checker.Check(ctx, config))).To(Equal("ConnectionUnavailable"))
@@ -309,7 +309,7 @@ var _ = Describe("Production PostgreSQL connection checker", func() {
 	}, NodeTimeout(20*time.Second))
 	It("rejects a read-only session and recovers after restoring writability", func(ctx SpecContext) {
 		checker := pgcheck.NewChecker()
-		config := productionConfig(fixture, "verify-full", false)
+		config := productionConfig(fixture, roleTLSMode, false)
 		_,
 			err := postgres.Admin.ExecContext(ctx,
 			"ALTER ROLE "+quoteIdentifier(fixture.Role)+" SET default_transaction_read_only=on")
@@ -325,9 +325,9 @@ var _ = Describe("Production PostgreSQL connection checker", func() {
 		setFixtureAuthentication(ctx, fixture, "client-cert")
 		checker := pgcheck.NewChecker()
 		Eventually(func() string {
-			return failureReason(checker.Check(ctx, productionConfig(fixture, "verify-full", false)))
+			return failureReason(checker.Check(ctx, productionConfig(fixture, roleTLSMode, false)))
 		}).WithContext(ctx).Should(Equal("ConnectionUnavailable"))
-		Expect(checker.Check(ctx, productionConfig(fixture, "verify-full", true))).To(Succeed())
+		Expect(checker.Check(ctx, productionConfig(fixture, roleTLSMode, true))).To(Succeed())
 	}, NodeTimeout(25*time.Second))
 	It("uses allow plaintext first and prefer TLS first with real transport policies", func(ctx SpecContext) {
 		setFixtureAuthentication(ctx, fixture, "plaintext")
@@ -350,7 +350,7 @@ var _ = Describe("Production PostgreSQL connection checker", func() {
 	}, NodeTimeout(25*time.Second))
 	It("accepts a trusted hostname mismatch only for verify-ca", func(ctx SpecContext) {
 		checker := pgcheck.NewChecker()
-		for _, mode := range []string{tlsVerifyCA, "verify-full"} {
+		for _, mode := range []string{tlsVerifyCA, roleTLSMode} {
 			config := productionConfig(fixture, mode, false)
 			config.Connection.Host = "mismatched.example.test"
 			if config.Connection.TLSConfig != nil {

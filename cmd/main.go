@@ -181,6 +181,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.DatabaseRoleReconciler{
+		Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Builder: configBuilder,
+		Roles: postgres.NewRoleFactory(), Locks: &controller.ManagementLocks{},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to register DatabaseRole controller")
+		os.Exit(1)
+	}
+
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
