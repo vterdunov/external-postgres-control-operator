@@ -45,9 +45,11 @@ class ArchitecturePolicyTests(unittest.TestCase):
         target.write_text(f'package {package}\n\nimport _ "{imported}"\n')
 
     def check(self):
+        # Deep scans load Go types and build dependency export data on cold CI runners.
+        # Keep a finite budget with room for that first build; later checks reuse the cache.
         result = subprocess.run(
             [self.checker, "check", "--project-path", str(self.project), "--json"],
-            cwd=self.project, capture_output=True, text=True, timeout=120,
+            cwd=self.project, capture_output=True, text=True, timeout=300,
         )
         diagnostic = result.stdout + result.stderr
         try:
