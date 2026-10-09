@@ -126,7 +126,7 @@ func inspectRole(ctx context.Context, q roleQuerier, name string) (*RoleState, e
 
 // IsProtectedRole protects predefined service roles and the administrative account.
 func IsProtectedRole(name, admin string) bool {
-	return name == admin || name == "postgres" || strings.HasPrefix(name, "pg_") ||
+	return name == admin || name == defaultAdministrativeDatabase || strings.HasPrefix(name, "pg_") ||
 		strings.HasPrefix(name, "rds_") || name == "rdsadmin" || name == "azure_pg_admin" ||
 		name == "azure_superuser" || strings.HasPrefix(name, "cloudsql")
 }
@@ -154,7 +154,7 @@ func roleFailure(err error) error {
 		case "2BP01":
 			return &Failure{DeletionBlocked, "SQL dependencies prevent role or membership deletion"}
 		case "25006":
-			return &Failure{NotWritable, "PostgreSQL is read-only"}
+			return &Failure{NotWritable, readOnlyMessage}
 		case "22023", "42601", "22007", "22008", "42703":
 			return &Failure{InvalidConfiguration, "The requested SQL role configuration is invalid"}
 		}

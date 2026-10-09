@@ -17,6 +17,8 @@ import (
 // SQLObjectType distinguishes role and database catalogs.
 type SQLObjectType string
 
+const namespaceAccessDeniedMessage = "The resource namespace is not authorized by PostgresCluster"
+
 const (
 	SQLObjectRole     SQLObjectType = "role"
 	SQLObjectDatabase SQLObjectType = "database"
@@ -47,7 +49,7 @@ func EffectiveRoleName(role *epco.DatabaseRole) string {
 
 // AuthorizeNamespace evaluates ordinary cached Namespace labels before mutations.
 func AuthorizeNamespace(ctx context.Context, reader client.Reader, cluster *epco.PostgresCluster, namespace string) error {
-	denied := &postgres.Failure{Reason: postgres.AccessDenied, Message: "The resource namespace is not authorized by PostgresCluster"}
+	denied := &postgres.Failure{Reason: postgres.AccessDenied, Message: namespaceAccessDeniedMessage}
 	if cluster.Spec.Access == nil {
 		if namespace == cluster.Namespace {
 			return nil
@@ -146,4 +148,31 @@ func (l *ManagementLocks) Acquire(ctx context.Context, key ManagementKey) (func(
 		}
 		return sync.OnceFunc(func() { entry.token <- struct{}{}; done() }), nil
 	}
+}
+
+// EffectiveDatabaseName resolves the immutable metadata-name fallback.
+func EffectiveDatabaseName(database *epco.Database) string {
+	if database.Spec.Name != "" {
+		return string(database.Spec.Name)
+	}
+	return database.Name
+}
+
+// FindDatabaseOwnershipConflict checks recorded managers across namespaces.
+func FindDatabaseOwnershipConflict(ctx context.Context, reader client.Reader, current *epco.Database) (*epco.Database, error) {
+	databases := &epco.DatabaseList{}
+	if err := reader.List(ctx, databases); err != nil {
+		return nil, err
+	}
+	key := CanonicalManagementKey(current.Namespace, current.Spec.Cluster, SQLObjectDatabase, EffectiveDatabaseName(current))
+	for i := range databases.Items {
+		other := &databases.Items[i]
+		if other.UID == current.UID || !other.Status.HasManagedSQL {
+			continue
+		}
+		if CanonicalManagementKey(other.Namespace, other.Spec.Cluster, SQLObjectDatabase, EffectiveDatabaseName(other)) == key {
+			return other, nil
+		}
+	}
+	return nil, nil
 }

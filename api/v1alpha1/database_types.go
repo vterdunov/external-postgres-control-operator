@@ -253,6 +253,10 @@ type UsageSpec struct {
 
 // DatabaseStatus reports database reconciliation and per-grant results.
 type DatabaseStatus struct {
+	// HasManagedSQL records a complete successful management reconciliation.
+	// It remains true through observation and subsequent failures.
+	// +optional
+	HasManagedSQL  bool `json:"hasManagedSQL,omitzero"`
 	ResourceStatus `json:",inline"`
 	// Permissions identifies observed outcomes for schema/table/grantee tuples.
 	// +optional

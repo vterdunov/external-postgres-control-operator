@@ -189,6 +189,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.DatabaseReconciler{
+		Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Builder: configBuilder,
+		Databases: postgres.NewDatabaseFactory(), Locks: &controller.ManagementLocks{},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to register Database controller")
+		os.Exit(1)
+	}
+
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

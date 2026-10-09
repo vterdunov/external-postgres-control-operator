@@ -22,17 +22,19 @@ import (
 )
 
 const (
-	SecretNotFound        = "SecretNotFound"
-	InvalidSecret         = "InvalidSecret"
-	InvalidConfiguration  = "InvalidConfiguration"
-	ConnectionUnavailable = "ConnectionUnavailable"
-	NotWritable           = "NotWritable"
-	tlsDisable            = "disable"
-	tlsAllow              = "allow"
-	tlsPrefer             = "prefer"
-	tlsRequire            = "require"
-	tlsVerifyCA           = "verify-ca"
-	tlsVerifyFull         = "verify-full"
+	SecretNotFound                = "SecretNotFound"
+	InvalidSecret                 = "InvalidSecret"
+	InvalidConfiguration          = "InvalidConfiguration"
+	ConnectionUnavailable         = "ConnectionUnavailable"
+	NotWritable                   = "NotWritable"
+	tlsDisable                    = "disable"
+	tlsAllow                      = "allow"
+	tlsPrefer                     = "prefer"
+	tlsRequire                    = "require"
+	tlsVerifyCA                   = "verify-ca"
+	tlsVerifyFull                 = "verify-full"
+	defaultAdministrativeDatabase = "postgres"
+	readOnlyMessage               = "PostgreSQL is read-only"
 )
 
 // Config contains one isolated connection and the exact client-side limits.
@@ -133,7 +135,7 @@ func (b *ConfigBuilder) Build(cluster *epco.PostgresCluster, secrets map[string]
 	}
 	conn.Database = string(spec.Connection.Database)
 	if conn.Database == "" {
-		conn.Database = "postgres"
+		conn.Database = defaultAdministrativeDatabase
 	}
 	if strings.ContainsRune(conn.Database, 0) {
 		return nil, &Failure{InvalidConfiguration, "PostgreSQL database is invalid"}

@@ -2055,6 +2055,11 @@ spec:
                 description: EffectiveName is the resolved SQL name, including metadata.name
                   fallback.
                 type: string
+              hasManagedSQL:
+                description: |-
+                  HasManagedSQL records a complete successful management reconciliation.
+                  It remains true through observation and subsequent failures.
+                type: boolean
               lastSuccessfulReconcileTime:
                 description: LastSuccessfulReconcileTime records the most recent successful
                   reconciliation.

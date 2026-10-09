@@ -35,10 +35,11 @@ func TestFixtures(t *testing.T) {
 
 var _ = Describe("PostgreSQL fixture support", func() {
 	It("pins supported images and rejects accidental untested versions", func() {
+		patches := map[string]string{"15": "15.19", "16": "16.15", "17": "17.11", "18": "18.6"}
 		for _, major := range []string{"15", "16", "17", "18"} {
 			image, err := ImageForVersion(major)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(image).To(HavePrefix("postgres:" + major + "."))
+			Expect(image).To(Equal("public.ecr.aws/docker/library/postgres:" + patches[major] + "-bookworm"))
 			Expect(image).NotTo(ContainSubstring("latest"))
 		}
 		_, err := ImageForVersion("14")

@@ -48,7 +48,7 @@ func (s *roleSession) Apply(ctx context.Context, desired RoleDesired) (*RoleAppl
 		return nil, roleFailure(err)
 	}
 	if recovery || readOnly {
-		return nil, &Failure{NotWritable, "PostgreSQL is read-only"}
+		return nil, &Failure{NotWritable, readOnlyMessage}
 	}
 	if err = applyAttributes(bounded, tx, state, desired); err != nil {
 		return nil, roleFailure(err)

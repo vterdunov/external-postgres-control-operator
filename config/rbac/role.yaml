@@ -27,6 +27,7 @@ rules:
   - postgresql.epco.io
   resources:
   - databaseroles
+  - databases
   verbs:
   - get
   - list
@@ -37,12 +38,14 @@ rules:
   - postgresql.epco.io
   resources:
   - databaseroles/finalizers
+  - databases/finalizers
   verbs:
   - update
 - apiGroups:
   - postgresql.epco.io
   resources:
   - databaseroles/status
+  - databases/status
   - postgresclusters/status
   verbs:
   - get

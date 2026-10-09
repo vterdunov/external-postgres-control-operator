@@ -1,6 +1,6 @@
 # SQL object ownership and reconciliation
 
-Status: selected design for the [accepted API baseline](api-proposal.md), updated 2026-10-08. Follow inspected CNPG behavior for retries, existing SQL objects, CR conflicts, and reclaim policies. DatabaseRole implements this ownership/lifecycle contract; Database reconciliation remains pending. See [implementation status](README.md#implementation-status) and the implemented [PostgresCluster connection check](postgrescluster.md).
+Status: selected design for the [accepted API baseline](api-proposal.md), updated 2026-10-08. Follow inspected CNPG behavior for retries, existing SQL objects, CR conflicts, and reclaim policies. DatabaseRole and Database implement this ownership/lifecycle contract. Database ACL bookkeeping remains pending. See [implementation status](README.md#implementation-status) and the implemented [PostgresCluster connection check](postgrescluster.md).
 
 ## Verified CNPG behavior
 
@@ -34,6 +34,8 @@ For a new managing CR:
 6. Otherwise, create a missing SQL object or reconcile an existing one, then record the successful generation.
 
 Temporary failure does not erase a manager's recorded reconciliation. Same-UID retries continue managing the same SQL object. A pure observer is not a manager merely because it recorded an observed generation; a former manager retains its management record while its CR remains.
+
+Both SQL controllers record sticky `status.hasManagedSQL` only after confirmed successful managed reconciliation. Database rechecks the authoritative CR UID and current inputs after acquiring its lock and before SQL/status publication. A deleted/replaced or changed snapshot cannot publish success for a new resource. Database deletion checks actual SQL ownership and does not wait for the desired owner role to become Ready. Unsupported desired child declarations do not block an authorized reclaim-delete finalizer for a previously managed database.
 
 A live Database with ensure=absent still records management of its SQL name. A competing CR cannot recreate that database while its recorded manager remains.
 

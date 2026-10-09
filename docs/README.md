@@ -9,13 +9,13 @@ The [API baseline](api-proposal.md) was accepted on 2026-10-07. Its filename is 
 | PostgresCluster, DatabaseRole, Database | Go types, generated CRDs, defaults, and admission rules; CRD admission tests are in [test/envtest/crd_test.go](../test/envtest/crd_test.go) |
 | PostgresCluster runtime | Implemented authentication/writable-state check, TLS, local Secret watches, bounded retries, and Ready status |
 | DatabaseRole runtime | Implemented role attributes, both membership policies, targeted parameter cleanup, supplied/generated password application, observation, and retain/delete reclaim |
-| Database runtime | Not implemented: SQL database/child objects, ACL reconciliation, connection exports, observation, and reclaim cleanup |
+| Database runtime | Implemented create-or-update, database properties/owners, target connections, schema lifecycle, observation, explicit absence, and retain/delete finalizers; ACLs, connection exports and extensions remain pending |
 | FDW/server runtime | API fields retained; runtime excluded by the [roadmap scope](roadmap.md#scope-boundaries). Requests must report UnsupportedFeature/Ready=False |
-| Cross-namespace consumers and SQL ownership | DatabaseRole implements Namespace selectors, dependency watches, recorded-manager conflicts with UID exclusion, and cancelable per-key serialization; Database integration remains pending |
-| Managed-state recovery | DatabaseRole persists sticky management, generated-source initialization, and endpoint-scoped membership/grantor and parameter cleanup intent before SQL. Database managed-grant/pending-change/object-grantor bookkeeping remains pending |
+| Cross-namespace consumers and SQL ownership | DatabaseRole and Database implement Namespace selectors, dependency watches, recorded-manager conflicts with UID exclusion, and cancelable per-key serialization |
+| Managed-state recovery | Both SQL controllers persist sticky management after confirmed success. DatabaseRole additionally persists generated-source initialization and endpoint-scoped membership/grantor and parameter cleanup intent before SQL. Database ACL bookkeeping remains pending |
 | RDS | Accepted SQL capability requirements and examples; compatibility with a real RDS instance has not been established by the local PostgreSQL suites |
 
-PostgresCluster Ready confirms only its administrative connection check. DatabaseRole Ready confirms role reconciliation; observation reports Observed with applied unset. Database manifests can be admitted without triggering SQL reconciliation. Application connection exports remain pending; a generated role password source does not imply SQL readiness.
+PostgresCluster Ready confirms only its administrative connection check. DatabaseRole Ready confirms role reconciliation; Database Ready confirms the database and listed schemas on the current connection. Observation reports Observed with applied unset. Requests for unimplemented permissions, defaults, connection outputs, extensions or FDW/server behavior report UnsupportedFeature/Ready=False, including explicit database absence. Application connection exports remain pending; a generated role password source does not imply SQL readiness.
 
 ## Reading guide
 

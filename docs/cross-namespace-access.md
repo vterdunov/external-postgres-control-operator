@@ -1,6 +1,6 @@
 # Cross-namespace access
 
-Status: accepted as part of the initial [API baseline](api-proposal.md), 2026-10-07. DatabaseRole implements namespace authorization and removal/resumption; Database integration remains pending. PostgresCluster connection readiness is implemented independently of this selector; see [implementation status](README.md#implementation-status).
+Status: accepted as part of the initial [API baseline](api-proposal.md), 2026-10-07. DatabaseRole and Database implement namespace authorization and removal/resumption, including paused finalizers. PostgresCluster connection readiness is implemented independently of this selector; see [implementation status](README.md#implementation-status).
 
 ## Use case and resource placement
 
