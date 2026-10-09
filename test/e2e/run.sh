@@ -20,7 +20,7 @@ kind_owned=false
 image_owned=false
 child=''
 node_image='kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5'
-postgres_image='postgres:16.15-bookworm'
+postgres_image='public.ecr.aws/docker/library/postgres:16.15-bookworm'
 seed=${EPCO_TEST_SEED:-$(date +%s)}
 export KUBECONFIG="$kubeconfig" KUBECTL_KUBERC=false
 export EPCO_E2E_CONTEXT="$context" EPCO_E2E_ARTIFACTS="$artifacts"
@@ -136,7 +136,7 @@ run 240 kind create cluster --name "$cluster" --image "$node_image" --kubeconfig
 chmod 600 "$kubeconfig"
 image_owned=true
 case ${EPCO_E2E_BUILD_MODE:-docker} in
-  docker) run 900 docker build -t "$image" . ;;
+  docker) run 900 docker build --build-arg BASE_IMAGE=public.ecr.aws/docker/library/golang:1.27.1 -t "$image" . ;;
   local)
     arch=$(go env GOARCH)
     run 300 env CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o "$run_dir/manager" ./cmd/main.go

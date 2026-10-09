@@ -28,10 +28,34 @@ case "$name $*" in
     for diagnostic_dir; do :; done
     mkdir -p "$diagnostic_dir"
     printf 'password=e2e-secret postgresql://user:e2e-secret@localhost/test Authorization: Bearer aaa.bbb.ccc\n' > "$diagnostic_dir/fixture.log" ;;
+  'docker build'*)
+    mirror_arg=false
+    previous=''
+    for argument in "$@"; do
+      if [[ $previous == --build-arg && $argument == BASE_IMAGE=public.ecr.aws/docker/library/golang:1.27.1 ||
+        $argument == --build-arg=BASE_IMAGE=public.ecr.aws/docker/library/golang:1.27.1 ]]; then
+        mirror_arg=true
+      fi
+      previous=$argument
+    done
+    if [[ ${!#} == . && $mirror_arg != true ]]; then
+      printf 'FAIL Docker fixture build requires the mirrored Go BASE_IMAGE argument\n' >&2
+      exit 95
+    fi ;;
   'kubectl '*)
     [[ " $* " == *' --context kind-epco-e2e-'* ]] || exit 99
     [[ " $* " == *' --kubeconfig '* ]] || exit 98
-    if [[ ${E2E_FAKE_FAIL:-} == apply && " $* " == *' apply '* ]]; then exit 19; fi ;;
+    if [[ ${E2E_FAKE_FAIL:-} == apply && " $* " == *' apply '* ]]; then exit 19; fi
+    while [[ $# -gt 0 ]]; do
+      if [[ $1 == -f && $2 == */postgres.yaml ]]; then
+        postgres_image=$(awk '/^[[:space:]]*image:/ { print $2 }' "$2")
+        if [[ $postgres_image != public.ecr.aws/docker/library/postgres:16.15-bookworm ]]; then
+          printf 'FAIL PostgreSQL fixture image: %s\n' "$postgres_image" >&2
+          exit 95
+        fi
+      fi
+      shift
+    done ;;
   'kustomize build'*)
     while [[ $# -gt 0 ]]; do
       if [[ $1 == -o ]]; then printf 'apiVersion: v1\nkind: Namespace\nmetadata:\n  name: epco-system\n' > "$2"; break; fi
