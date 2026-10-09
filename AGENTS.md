@@ -1,9 +1,8 @@
 # EPCO agent workflow
 
 - A senior coordinator maintains the plan and assigns stages with explicit ownership.
-- Before planning, testing, implementing, or reviewing operator behavior, run `mise run agent-skills-setup` to provision this repository's private project skills. Surface provisioning conflicts and resolve them before continuing; never replace existing local skills.
-- When installed, explicitly invoke `$operator-reference` and read `.agents/skills/operator-reference/SKILL.md` before the work. If no private skill is installed, continue under these public instructions.
-- The coordinator must include provisioning and installed `$operator-reference` loading in every applicable subagent assignment, and require confirmation of the exact SKILL.md path read or that no private skill is installed before work begins.
+- Before planning, testing, implementing, or reviewing operator behavior, explicitly invoke the installed `$operator-reference` skill and read its SKILL.md (`~/.agents/skills/operator-reference/SKILL.md` for the standard personal installation). If the skill is unavailable, continue under these public instructions.
+- The coordinator must include explicit `$operator-reference` loading in every applicable subagent assignment, and require confirmation of the exact SKILL.md path read or that the skill is unavailable before work begins.
 - The coordinator chooses each subagent's model and effort by task complexity and risk.
 - Do not use Astra for subagents or max/ultra effort.
 - All agents planning, testing, implementing, or reviewing operator behavior must understand Kubebuilder and controller-runtime principles and best practices. Architect assignments must explicitly require this expertise; a role title alone is not evidence of it.
