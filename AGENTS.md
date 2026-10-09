@@ -1,6 +1,9 @@
 # EPCO agent workflow
 
 - A senior coordinator maintains the plan and assigns stages with explicit ownership.
+- Before planning, testing, implementing, or reviewing operator behavior, run `mise run agent-skills-setup` to provision this repository's private project skills. Surface provisioning conflicts and resolve them before continuing; never replace existing local skills.
+- When installed, explicitly invoke `$operator-reference` and read `.agents/skills/operator-reference/SKILL.md` before the work. If no private skill is installed, continue under these public instructions.
+- The coordinator must include provisioning and installed `$operator-reference` loading in every applicable subagent assignment, and require confirmation of the exact SKILL.md path read or that no private skill is installed before work begins.
 - The coordinator chooses each subagent's model and effort by task complexity and risk.
 - Do not use Astra for subagents or max/ultra effort.
 - All agents planning, testing, implementing, or reviewing operator behavior must understand Kubebuilder and controller-runtime principles and best practices. Architect assignments must explicitly require this expertise; a role title alone is not evidence of it.
@@ -9,7 +12,7 @@
 - Understand level-based, idempotent reconciliation and eventual consistency; cached reads versus APIReader and direct writes; watches, indexes, predicates, and workqueue retries; status conditions and observed generations; finalizers and garbage collection; and leader election, concurrency, and cancellation.
 - Prefer the manager's cached client for normal reconciliation. Use APIReader only for a narrowly justified correctness requirement, such as the accepted authoritative ownership-conflict check. Do not add repeated direct API reads merely because an input can change; use watches, retries, and accurate recording of the inputs actually applied.
 - Architects must account for cache staleness and normal convergence without assuming atomicity across Kubernetes resources and PostgreSQL. Justify additional synchronization, checkpoints, or state with a concrete failure scenario that violates an accepted contract.
-- Verify uncertain framework behavior against the project's pinned controller-runtime source and official Kubebuilder/controller-runtime documentation before making recommendations. CNPG is a reference, not a substitute for understanding the framework.
+- Verify uncertain framework behavior against the project's pinned controller-runtime source and official Kubebuilder/controller-runtime documentation before making recommendations.
 - Architecture reviews must distinguish accepted contracts, implementation gaps, and optional improvements. Findings must identify the affected contract, explain a concrete failure scenario, and cite supporting framework documentation or pinned source. Do not reopen documented decisions or label ordinary eventual consistency as a blocker; keep findings concise and explain them with concrete examples.
 - Use TDD with separate agents for test authoring and implementation.
 - The test author defines behavioral tests from requirements and demonstrates the failing run before handoff.
@@ -17,11 +20,6 @@
 - A third independent validation agent reviews the result and runs the required checks.
 - Store English plans and progress in `.agent-plans/YYYY-MM-DD-topic.md` (gitignored).
 - Keep handoffs short: changes, checks, blockers. Preserve others' work.
-- Implementation and review subagents must inspect the relevant CloudNativePG (CNPG) operator code in `../cloudnative-pg/` before implementing a feature or completing a review. If that sibling checkout is absent, locate an existing CNPG checkout and record its path and revision; do not skip the comparison.
-- Use CNPG as a reference for ideas and established approaches to reconciliation, PostgreSQL operations, error handling, status conditions, and testing. Write EPCO code independently to fit EPCO's API and lifecycle contracts; do not copy or port CNPG source code.
-- Independently written code may use CNPG ideas and approaches without adding CNPG copyright notices.
-- Review subagents must check whether the implementation follows suitable CNPG ideas and approaches, and identify departures that reduce correctness or maintainability.
-- Include the relevant CNPG source paths in implementation and review handoffs, explain which ideas and approaches informed the implementation, and justify departures or the absence of a suitable CNPG equivalent.
 - Use mise; run focused checks and fix failures or flakiness.
 - Never hand-edit generated files; preserve Kubebuilder scaffold markers.
 - Keep runners, fixtures and support with their test suite.

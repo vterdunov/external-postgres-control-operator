@@ -29,6 +29,10 @@ run = "mise tasks"
 description = "Install only this project's tools from the lockfile"
 run = "python3 tools/install.py"
 
+[tasks.agent-skills-setup]
+description = "Provision installed repository-private skills for this checkout"
+run = "python3 tools/setup_agent_skills.py"
+
 [tasks.manifests]
 description = "Generate RBAC, CRD and webhook manifests"
 run = "controller-gen rbac:roleName=manager-role crd webhook paths='./...' output:crd:artifacts:config=config/crd/bases"

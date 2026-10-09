@@ -1,4 +1,5 @@
 /.agent-plans/
+/.agents/skills/
 
 # Binaries for programs and plugins
 *.exe
