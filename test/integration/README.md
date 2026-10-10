@@ -7,6 +7,14 @@ be available. `EPCO_PG_VERSION=15|16|17|18` selects a pinned patch image; 16 is 
 default. `EPCO_TEST_SEED` replays randomization. `EPCO_ARTIFACTS_DIR` selects the
 artifact directory, including JUnit and failure logs.
 
+Application connection tests use actual libpq 18.6 and pgJDBC 42.7.10 parsers and
+SQL sessions. Install the pinned Java tool through mise and provide a C compiler.
+On macOS, install libpq 18.6 through Homebrew; Linux fixtures obtain its library
+and runtime dependencies from the pinned PostgreSQL 18.6 image. The suite fetches
+the JDBC jar from Maven and verifies its SHA256. `EPCO_TEST_JDBC_JAR` can select a
+local jar with the same verified checksum. Credentials reach these clients only
+through private stdin and files, with child diagnostic output suppressed.
+
 The suite uses one disposable container on a random loopback port. Every spec gets
 unique database and login names. The clients require TLS and verify a generated
 suite CA. Fixture clients expose a database administrator and a restricted login;

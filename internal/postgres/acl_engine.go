@@ -156,12 +156,17 @@ func (s *databaseSession) ReconcileACL(ctx context.Context, d ACLDesired) (*ACLR
 	if err = preflightACL(state, d.Spec); err != nil {
 		return nil, err
 	}
-	e, cleanup, err := s.newACLEngine(ctx, d, aclNeedsTarget(d.Spec, d.Targets, d.Target))
+	e, cleanup, err := s.newACLEngine(ctx, d, !d.ConnectionOnly && aclNeedsTarget(d.Spec, d.Targets, d.Target))
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
 	declarations := aclDeclarations(d.Spec)
+	if d.ConnectionOnly {
+		declarations = slices.DeleteFunc(declarations, func(d aclDeclaration) bool {
+			return d.binding.Class != aclClassDatabase || d.binding.Privilege != aclConnect
+		})
+	}
 	var first error
 	if !d.Observe {
 		if err = e.prepareIntent(ctx, declarations); err != nil {

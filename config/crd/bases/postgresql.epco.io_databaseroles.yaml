@@ -364,6 +364,45 @@ spec:
                   by the reconciler.
                 format: int64
                 type: integer
+              passwordApplied:
+                description: PasswordApplied records the exact credential-free input
+                  snapshot accepted by SQL.
+                properties:
+                  clusterGeneration:
+                    format: int64
+                    type: integer
+                  clusterUID:
+                    type: string
+                  host:
+                    type: string
+                  port:
+                    format: int32
+                    type: integer
+                  roleGeneration:
+                    format: int64
+                    type: integer
+                  roleUID:
+                    type: string
+                  sourceName:
+                    type: string
+                  sourceNamespace:
+                    type: string
+                  sourceResourceVersion:
+                    type: string
+                  sourceUID:
+                    type: string
+                required:
+                - clusterGeneration
+                - clusterUID
+                - host
+                - port
+                - roleGeneration
+                - roleUID
+                - sourceName
+                - sourceNamespace
+                - sourceResourceVersion
+                - sourceUID
+                type: object
               secretResourceVersion:
                 description: SecretResourceVersion identifies the password source
                   version applied to SQL.

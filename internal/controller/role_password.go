@@ -44,9 +44,12 @@ func validGeneratedOwners(role *epco.DatabaseRole, source *corev1.Secret) bool {
 	return true
 }
 
-func (r *DatabaseRoleReconciler) rolePassword(ctx context.Context, role *epco.DatabaseRole) (*string, string, error) {
+func (r *DatabaseRoleReconciler) rolePassword(ctx context.Context, role *epco.DatabaseRole) (*string, *corev1.Secret, error) {
 	if role.Spec.PasswordGeneration == nil && role.Spec.PasswordSecret == nil {
-		return nil, "", nil
+		return nil, nil, nil
+	}
+	if err := checkRoleSourceOutputReservation(ctx, r.Client, role); err != nil {
+		return nil, nil, err
 	}
 	name := ""
 	generated := role.Spec.PasswordGeneration != nil
@@ -59,38 +62,41 @@ func (r *DatabaseRoleReconciler) rolePassword(ctx context.Context, role *epco.Da
 	err := r.Client.Get(ctx, client.ObjectKey{Namespace: role.Namespace, Name: name}, source)
 	if apierrors.IsNotFound(err) {
 		if !generated {
-			return nil, "", &postgres.Failure{Reason: "SecretNotFound", Message: "The password source does not exist"}
+			return nil, nil, &postgres.Failure{Reason: "SecretNotFound", Message: "The password source does not exist"}
 		}
 		if role.Status.GeneratedPasswordInitialized {
-			return nil, "", &postgres.Failure{Reason: postgres.CredentialsMissing, Message: "The initialized password source is missing"}
+			return nil, nil, &postgres.Failure{Reason: postgres.CredentialsMissing, Message: "The initialized password source is missing"}
 		}
 		// Even an unchanged status UPDATE carries the cached RV precondition. Never CREATE first.
 		if err = r.Client.Status().Update(ctx, role); err != nil {
-			return nil, "", err
+			return nil, nil, err
 		}
 		random := make([]byte, 32)
 		if _, err = rand.Read(random); err != nil {
-			return nil, "", &postgres.Failure{Reason: postgres.InvalidConfiguration, Message: "Unable to generate role credentials"}
+			return nil, nil, &postgres.Failure{Reason: postgres.InvalidConfiguration, Message: "Unable to generate role credentials"}
 		}
 		source = &corev1.Secret{Namespace: role.Namespace, Name: name, Type: corev1.SecretTypeBasicAuth,
 			Labels:      map[string]string{GeneratedPasswordLabel: "true"},
 			Annotations: map[string]string{GeneratedRoleUIDAnnotation: string(role.UID), GeneratedRoleNameAnnotation: EffectiveRoleName(role), GeneratedRoleResourceAnnotation: role.Name, GeneratedRoleNamespaceAnnotation: role.Namespace},
 			Data:        map[string][]byte{corev1.BasicAuthUsernameKey: []byte(EffectiveRoleName(role)), corev1.BasicAuthPasswordKey: []byte(base64.RawURLEncoding.EncodeToString(random))}}
 		if err = r.Client.Create(ctx, source); err != nil {
-			return nil, "", err
+			return nil, nil, secretPayloadWriteError(err)
 		}
 	} else if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	if err = validatePasswordSource(role, source); err != nil {
-		return nil, "", err
+		return nil, nil, err
+	}
+	if source.Labels[ConnectionSecretLabel] == connectionSecretLabelValue {
+		return nil, nil, connectionConflict()
 	}
 	if generated {
 		if !generatedProvenance(role, source) {
-			return nil, "", &postgres.Failure{Reason: postgres.ConnectionSecretConflict, Message: "Generated credentials have conflicting provenance"}
+			return nil, nil, &postgres.Failure{Reason: postgres.ConnectionSecretConflict, Message: "Generated credentials have conflicting provenance"}
 		}
 		if !validGeneratedOwners(role, source) {
-			return nil, "", &postgres.Failure{Reason: postgres.ConnectionSecretConflict, Message: "Generated credentials have unrelated Kubernetes ownership"}
+			return nil, nil, &postgres.Failure{Reason: postgres.ConnectionSecretConflict, Message: "Generated credentials have unrelated Kubernetes ownership"}
 		}
 		if source.Annotations[GeneratedRoleUIDAnnotation] != string(role.UID) {
 			reader := r.APIReader
@@ -99,27 +105,27 @@ func (r *DatabaseRoleReconciler) rolePassword(ctx context.Context, role *epco.Da
 			}
 			current := &epco.DatabaseRole{}
 			if err = reader.Get(ctx, client.ObjectKeyFromObject(role), current); err != nil {
-				return nil, "", err
+				return nil, nil, err
 			}
 			if current.UID != role.UID || string(current.UID) == source.Annotations[GeneratedRoleUIDAnnotation] || !current.DeletionTimestamp.IsZero() {
-				return nil, "", &postgres.Failure{Reason: postgres.ConnectionSecretConflict, Message: "Generated credentials still have an active owner"}
+				return nil, nil, &postgres.Failure{Reason: postgres.ConnectionSecretConflict, Message: "Generated credentials still have an active owner"}
 			}
 			source.Annotations[GeneratedRoleUIDAnnotation] = string(role.UID)
 			source.OwnerReferences = nil
 			if err = r.Client.Update(ctx, source); err != nil {
-				return nil, "", err
+				return nil, nil, secretPayloadWriteError(err)
 			}
 		} else if len(source.OwnerReferences) != 0 {
-			return nil, "", &postgres.Failure{Reason: postgres.ConnectionSecretConflict, Message: "Generated source ownership is unsafe for retention"}
+			return nil, nil, &postgres.Failure{Reason: postgres.ConnectionSecretConflict, Message: "Generated source ownership is unsafe for retention"}
 		}
 		if !role.Status.GeneratedPasswordInitialized {
 			role.Status.GeneratedPasswordInitialized = true
 			if err = r.Client.Status().Update(ctx, role); err != nil {
-				return nil, "", err
+				return nil, nil, err
 			}
 		}
 	}
-	return new(string(source.Data[corev1.BasicAuthPasswordKey])), source.ResourceVersion, nil
+	return new(string(source.Data[corev1.BasicAuthPasswordKey])), source, nil
 }
 
 func (r *DatabaseRoleReconciler) deleteGeneratedSource(ctx context.Context, role *epco.DatabaseRole) error {
@@ -133,5 +139,5 @@ func (r *DatabaseRoleReconciler) deleteGeneratedSource(ctx context.Context, role
 	if !generatedProvenance(role, source) || source.Annotations[GeneratedRoleUIDAnnotation] != string(role.UID) || !validGeneratedOwners(role, source) {
 		return nil
 	}
-	return client.IgnoreNotFound(r.Client.Delete(ctx, source, client.Preconditions{UID: new(source.UID), ResourceVersion: new(source.ResourceVersion)}))
+	return client.IgnoreNotFound(secretPayloadWriteError(r.Client.Delete(ctx, source, client.Preconditions{UID: new(source.UID), ResourceVersion: new(source.ResourceVersion)})))
 }

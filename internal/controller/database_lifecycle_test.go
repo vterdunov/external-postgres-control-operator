@@ -294,6 +294,6 @@ func TestDatabaseContendersSerializeThenAuthoritativelySeeWinner(t *testing.T) {
 		if opens.Load() != 1 {
 			t.Fatal("waiting contender did not recheck authoritative recorded manager")
 		}
-		requireDatabaseCondition(t, currentDatabase(t, cl, second), metav1.ConditionFalse, "OwnershipConflict")
+		requireDatabaseCondition(t, currentDatabase(t, cl, second), metav1.ConditionFalse, connectionOwnershipConflictReason)
 	})
 }

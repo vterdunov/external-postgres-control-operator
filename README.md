@@ -2,7 +2,7 @@
 
 EPCO manages roles, databases, and access on external PostgreSQL servers, including AWS RDS. Its primary use case is a microservice database with a service login and a separate read-only login for an admin UI. The accepted API draws on CloudNativePG DatabaseRole and Database, adding an external PostgresCluster connection descriptor, inline permissions, password generation, and application connection Secrets.
 
-The three `postgresql.epco.io/v1alpha1` resources have Go types and generated CRDs. The manager implements **PostgresCluster connection readiness, DatabaseRole reconciliation, Database/schema lifecycle, and declarative ACLs/default privileges**, including named-table permissions and status-backed recovery. Application connection exports, extensions, and FDW/server runtime remain unsupported; requests report UnsupportedFeature with Ready=False. See the [documentation index and implementation status](docs/README.md).
+The three `postgresql.epco.io/v1alpha1` resources have Go types and generated CRDs. The manager implements **PostgresCluster connection readiness, DatabaseRole reconciliation, Database/schema lifecycle, declarative ACLs/default privileges, and application connection Secrets**, including named-table permissions and status-backed recovery. Initial application Secrets can precede SQL readiness; rotation waits for successful password application. Extensions and FDW/server runtime remain unsupported; requests report UnsupportedFeature with Ready=False. See the [documentation index and implementation status](docs/README.md).
 
 ## Documentation
 

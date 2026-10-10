@@ -57,7 +57,7 @@ func accessClient(t *testing.T, objects ...client.Object) client.WithWatch {
 }
 
 func TestNamespaceSelectorAuthorization(t *testing.T) {
-	selected := &metav1.LabelSelector{MatchLabels: map[string]string{testAccessLabel: "allowed"}}
+	selected := &metav1.LabelSelector{MatchLabels: map[string]string{testAccessLabel: testAllowedLabel}}
 	expressions := &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{
 		{Key: testTeamLabel, Operator: metav1.LabelSelectorOpIn, Values: []string{testOrdersNamespace, testBillingNamespace}},
 		{Key: "restricted", Operator: metav1.LabelSelectorOpDoesNotExist},
@@ -77,7 +77,7 @@ func TestNamespaceSelectorAuthorization(t *testing.T) {
 		{name: "null selector denies remote", namespace: testOrdersNamespace, access: &epco.ClusterAccess{}},
 		{name: "explicit empty selector allows local", namespace: testInfraNamespace, access: &epco.ClusterAccess{NamespaceSelector: &metav1.LabelSelector{}}, allowed: true},
 		{name: "explicit empty selector allows remote", namespace: testOrdersNamespace, access: &epco.ClusterAccess{NamespaceSelector: &metav1.LabelSelector{}}, allowed: true},
-		{name: "matching namespace labels", namespace: testOrdersNamespace, access: &epco.ClusterAccess{NamespaceSelector: selected}, labels: map[string]string{testAccessLabel: "allowed"}, allowed: true},
+		{name: "matching namespace labels", namespace: testOrdersNamespace, access: &epco.ClusterAccess{NamespaceSelector: selected}, labels: map[string]string{testAccessLabel: testAllowedLabel}, allowed: true},
 		{name: "local namespace has no exemption", namespace: testInfraNamespace, access: &epco.ClusterAccess{NamespaceSelector: selected}},
 		{name: "expressions match namespace", namespace: testOrdersNamespace, access: &epco.ClusterAccess{NamespaceSelector: expressions}, labels: map[string]string{testTeamLabel: testOrdersNamespace, testAccessLabel: testYesLabel, testEnvironmentLabel: "production"}, allowed: true},
 		{name: "expressions reject forbidden label", namespace: testOrdersNamespace, access: &epco.ClusterAccess{NamespaceSelector: expressions}, labels: map[string]string{testTeamLabel: testOrdersNamespace, testAccessLabel: testYesLabel, "restricted": testTrueLabel}},
@@ -94,7 +94,7 @@ func TestNamespaceSelectorAuthorization(t *testing.T) {
 				return
 			}
 			failure, ok := errors.AsType[*postgres.Failure](err)
-			if !ok || failure.Reason != "AccessDenied" {
+			if !ok || failure.Reason != testAccessDeniedReason {
 				t.Fatalf("authorization error=%v want typed AccessDenied", err)
 			}
 		})
@@ -117,7 +117,7 @@ func TestNamespaceAuthorizationUsesCurrentNamespaceLabels(t *testing.T) {
 		t.Fatal(err)
 	}
 	failure, ok := errors.AsType[*postgres.Failure](controller.AuthorizeNamespace(t.Context(), cl, cluster, testOrdersNamespace))
-	if !ok || failure.Reason != "AccessDenied" {
+	if !ok || failure.Reason != testAccessDeniedReason {
 		t.Fatal("namespace label removal must revoke access on the next evaluation")
 	}
 	latest.Labels = map[string]string{testSelectorAccessLabel: testYesLabel}

@@ -25,6 +25,7 @@ import (
 
 const (
 	clusterAuthenticationName = "auth"
+	tlsRequire                = "require"
 	tlsVerifyCA               = "verify-ca"
 )
 
@@ -159,7 +160,7 @@ func setFixtureAuthentication(ctx context.Context, f *Fixture, policy string) {
 	}).WithContext(ctx).Should(BeTrue())
 	forbiddenMode := "disable"
 	if policy == "plaintext" {
-		forbiddenMode = "require"
+		forbiddenMode = tlsRequire
 	}
 	Eventually(func() string {
 		return failureReason(pgcheck.NewChecker().Check(ctx, productionConfig(f, forbiddenMode, false)))
@@ -180,7 +181,7 @@ var _ = Describe("Production PostgreSQL connection checker", func() {
 	}, NodeTimeout(20*time.Second))
 	It("authenticates a restricted login through every TLS mode and closes each connection", func(ctx SpecContext) {
 		checker := pgcheck.NewChecker()
-		for _, mode := range []string{"disable", "allow", tlsPrefer, "require", tlsVerifyCA, roleTLSMode} {
+		for _, mode := range []string{"disable", "allow", tlsPrefer, tlsRequire, tlsVerifyCA, roleTLSMode} {
 			Expect(checker.Check(ctx, productionConfig(fixture, mode, false))).To(Succeed(), "mode %s", mode)
 		}
 		var connections int
@@ -231,7 +232,7 @@ var _ = Describe("Production PostgreSQL connection checker", func() {
 		Expect(pgcheck.NewChecker().Check(ctx, productionConfig(f, tlsPrefer, false))).To(Succeed())
 		Expect(failureReason(pgcheck.NewChecker().Check(ctx,
 			productionConfig(f,
-				"require",
+				tlsRequire,
 				false)))).To(Equal("ConnectionUnavailable"))
 	}, NodeTimeout(90*time.Second))
 
@@ -335,7 +336,7 @@ var _ = Describe("Production PostgreSQL connection checker", func() {
 		Expect(checker.Check(ctx, productionConfig(fixture, "allow", false))).To(Succeed())
 		Expect(failureReason(checker.Check(ctx,
 			productionConfig(fixture,
-				"require",
+				tlsRequire,
 				false)))).To(Equal("ConnectionUnavailable"))
 	}, NodeTimeout(25*time.Second))
 	It("falls back from plaintext to TLS for allow on a TLS-only login", func(ctx SpecContext) {
@@ -371,7 +372,7 @@ var _ = Describe("Production PostgreSQL connection checker", func() {
 	It("rejects an untrusted server in require when a custom CA was supplied", func(ctx SpecContext) {
 		other, err := NewTLSFixture(GinkgoT().TempDir())
 		Expect(err).NotTo(HaveOccurred())
-		config := productionConfigUsingCA(fixture, "require", false, other.CA)
+		config := productionConfigUsingCA(fixture, tlsRequire, false, other.CA)
 		Expect(failureReason(pgcheck.NewChecker().Check(ctx, config))).To(Equal("ConnectionUnavailable"))
 	}, NodeTimeout(20*time.Second))
 })

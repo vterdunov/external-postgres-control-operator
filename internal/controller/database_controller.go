@@ -8,6 +8,7 @@ import (
 
 	epco "github.com/vterdunov/external-postgres-control-operator/api/v1alpha1"
 	"github.com/vterdunov/external-postgres-control-operator/internal/postgres"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -34,14 +35,16 @@ type DatabaseReconciler struct {
 	Now       func() time.Time
 
 	// Computed field selectors are available only after manager cache setup.
-	ownerRoleIndexEnabled bool
+	ownerRoleIndexEnabled        bool
+	connectionRoleIndexesEnabled bool
 }
 
 // +kubebuilder:rbac:groups=postgresql.epco.io,resources=databases,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=postgresql.epco.io,resources=databases/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=postgresql.epco.io,resources=databases/finalizers,verbs=update
 // +kubebuilder:rbac:groups=postgresql.epco.io,resources=databaseroles,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=namespaces;secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 
 func (r *DatabaseReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 	database := &epco.Database{}
@@ -88,7 +91,13 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, request ctrl.Request
 		return r.databaseStatus(ctx, database, false, postgres.DependenciesNotReady, "The PostgresCluster is being deleted", interval)
 	}
 	deleting := !database.DeletionTimestamp.IsZero()
-	if deleting && (!controllerutil.ContainsFinalizer(database, DatabaseFinalizer) || database.Spec.ReclaimPolicy != epco.ReclaimDelete || !database.Status.HasManagedSQL) {
+	if deleting && (!controllerutil.ContainsFinalizer(database, DatabaseFinalizer) || database.Spec.ReclaimPolicy != epco.ReclaimDelete) {
+		return r.releaseDatabase(ctx, database)
+	}
+	if deleting && !database.Status.HasManagedSQL {
+		if err = r.cleanupConnectionSecrets(ctx, database, true); err != nil {
+			return r.databaseError(ctx, database, err, interval)
+		}
 		return r.releaseDatabase(ctx, database)
 	}
 	if !deleting && unsupportedDatabase(database.Spec) {
@@ -103,6 +112,13 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, request ctrl.Request
 			return r.databaseStatus(ctx, database, false, postgres.OwnershipConflict, "Another Database has recorded management of this SQL name", interval)
 		}
 	}
+	var cleanupErr error
+	if managesConnectionOutputs(database) {
+		cleanupErr = r.cleanupConnectionSecrets(ctx, database, false)
+		if connectionCleanupInterrupted(cleanupErr) {
+			return r.databaseError(ctx, database, cleanupErr, interval)
+		}
+	}
 	secrets, err := readSecrets(ctx, r.Client, cluster)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -110,6 +126,19 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, request ctrl.Request
 	config, err := r.Builder.Build(cluster, secrets)
 	if err != nil {
 		return r.databaseError(ctx, database, err, interval)
+	}
+	return r.reconcileDatabaseConfigured(ctx, database, cluster, config, secrets, interval, cleanupErr)
+}
+
+func (r *DatabaseReconciler) reconcileDatabaseConfigured(ctx context.Context, database *epco.Database, cluster *epco.PostgresCluster, config *postgres.Config, secrets map[string]*corev1.Secret, interval time.Duration, cleanupErr error) (ctrl.Result, error) {
+	deleting := !database.DeletionTimestamp.IsZero()
+	var inputs []connectionSecretInput
+	var err error
+	if managesConnectionOutputs(database) && len(database.Spec.ConnectionSecrets) > 0 {
+		inputs, err = r.prepareConnectionInputs(ctx, database, cluster, config, secrets)
+		if err != nil {
+			return r.databaseError(ctx, database, err, interval)
+		}
 	}
 	session, err := r.Databases.Open(ctx, config)
 	if err != nil {
@@ -120,7 +149,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, request ctrl.Request
 		defer cancel()
 		_ = session.Close(cleanup)
 	}()
-	state, err := session.Inspect(ctx, key.SQLName)
+	state, err := session.Inspect(ctx, EffectiveDatabaseName(database))
 	if err != nil {
 		return r.databaseError(ctx, database, err, interval)
 	}
@@ -130,10 +159,21 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, request ctrl.Request
 			return r.databaseError(ctx, database, err, interval)
 		}
 	}
-	return r.reconcileDatabaseSession(ctx, database, session, state, interval, aclDesired)
+	connectionsReady := len(database.Spec.ConnectionSecrets) == 0
+	if len(inputs) > 0 {
+		connectionsReady, state, err = r.confirmConnectionState(ctx, database, cluster, session, state, &aclDesired, inputs)
+		if err != nil {
+			return r.databaseError(ctx, database, err, interval)
+		}
+	}
+	result, err := r.reconcileDatabaseSession(ctx, database, session, state, interval, aclDesired, connectionsReady && cleanupErr == nil)
+	if err == nil && cleanupErr != nil {
+		return r.databaseError(ctx, database, cleanupErr, interval)
+	}
+	return result, err
 }
 
-func (r *DatabaseReconciler) reconcileDatabaseSession(ctx context.Context, database *epco.Database, session postgres.DatabaseSession, state *postgres.DatabaseState, interval time.Duration, aclDesired postgres.ACLDesired) (ctrl.Result, error) {
+func (r *DatabaseReconciler) reconcileDatabaseSession(ctx context.Context, database *epco.Database, session postgres.DatabaseSession, state *postgres.DatabaseState, interval time.Duration, aclDesired postgres.ACLDesired, connectionsReady bool) (ctrl.Result, error) {
 	name := EffectiveDatabaseName(database)
 	deleting := !database.DeletionTimestamp.IsZero()
 	var err error
@@ -166,6 +206,9 @@ func (r *DatabaseReconciler) reconcileDatabaseSession(ctx context.Context, datab
 				return r.databaseError(ctx, database, err, interval)
 			}
 		}
+		if err = r.cleanupConnectionSecrets(ctx, database, true); err != nil {
+			return r.databaseError(ctx, database, err, interval)
+		}
 		return r.releaseDatabase(ctx, database)
 	}
 	if database.Spec.ManagementPolicy == epco.ManagementObserve {
@@ -180,12 +223,15 @@ func (r *DatabaseReconciler) reconcileDatabaseSession(ctx context.Context, datab
 				return r.databaseError(ctx, database, err, interval)
 			}
 		}
-		return r.databaseSuccess(ctx, database, interval)
+		if err = r.cleanupConnectionSecrets(ctx, database, true); err != nil {
+			return r.databaseError(ctx, database, err, interval)
+		}
+		return r.databaseSuccess(ctx, database, interval, true)
 	}
-	return r.applyDatabaseACL(ctx, database, session, state, interval, aclDesired)
+	return r.applyDatabaseACL(ctx, database, session, state, interval, aclDesired, connectionsReady)
 }
 
-func (r *DatabaseReconciler) applyDatabaseSession(ctx context.Context, database *epco.Database, session postgres.DatabaseSession, state *postgres.DatabaseState, interval time.Duration) (ctrl.Result, error) {
+func (r *DatabaseReconciler) applyDatabaseSession(ctx context.Context, database *epco.Database, session postgres.DatabaseSession, state *postgres.DatabaseState, interval time.Duration, connectionsReady bool) (ctrl.Result, error) {
 	name := EffectiveDatabaseName(database)
 	var err error
 	// Enabling admission is a prerequisite for inspecting schemas on a previously disabled target.
@@ -195,6 +241,7 @@ func (r *DatabaseReconciler) applyDatabaseSession(ctx context.Context, database 
 		}
 		interim := database.Spec.DeepCopy()
 		interim.Schemas = nil
+		interim.ConnectionSecrets = nil
 		if err = r.ensureDatabaseCurrent(ctx, database); err != nil {
 			return r.databaseError(ctx, database, err, interval)
 		}
@@ -226,18 +273,20 @@ func (r *DatabaseReconciler) applyDatabaseSession(ctx context.Context, database 
 	if err = r.ensureDatabaseCurrent(ctx, database); err != nil {
 		return r.databaseError(ctx, database, err, interval)
 	}
-	result, err := session.Apply(ctx, postgres.DatabaseDesired{Name: name, Spec: database.Spec})
+	lifecycle := database.Spec.DeepCopy()
+	lifecycle.ConnectionSecrets = nil
+	result, err := session.Apply(ctx, postgres.DatabaseDesired{Name: name, Spec: *lifecycle})
 	if err != nil {
 		return r.databaseError(ctx, database, err, interval)
 	}
 	if result == nil {
 		return r.databaseStatus(ctx, database, false, postgres.UnsupportedFeature, "Database reconciliation did not confirm all requested changes", interval)
 	}
-	return r.databaseSuccess(ctx, database, interval)
+	return r.databaseSuccess(ctx, database, interval, connectionsReady)
 }
 
 func unsupportedDatabase(spec epco.DatabaseSpec) bool {
-	return len(spec.ConnectionSecrets) > 0 || len(spec.Extensions) > 0 || len(spec.FDWs) > 0 || len(spec.Servers) > 0
+	return len(spec.Extensions) > 0 || len(spec.FDWs) > 0 || len(spec.Servers) > 0
 }
 
 func (r *DatabaseReconciler) observeDatabase(ctx context.Context, database *epco.Database, session postgres.DatabaseSession, state *postgres.DatabaseState, interval time.Duration) (ctrl.Result, error) {
@@ -327,11 +376,14 @@ func (r *DatabaseReconciler) now() time.Time {
 	}
 	return time.Now()
 }
-func (r *DatabaseReconciler) databaseSuccess(ctx context.Context, database *epco.Database, interval time.Duration) (ctrl.Result, error) {
+func (r *DatabaseReconciler) databaseSuccess(ctx context.Context, database *epco.Database, interval time.Duration, connectionsReady bool) (ctrl.Result, error) {
 	if err := ctx.Err(); err != nil {
 		return ctrl.Result{}, err
 	}
 	database.Status.HasManagedSQL = true
+	if !connectionsReady {
+		return r.databaseStatus(ctx, database, false, postgres.DependenciesNotReady, "Application connection outputs are not fully reconciled", interval)
+	}
 	database.Status.AppliedGeneration = database.Generation
 	database.Status.LastSuccessfulReconcileTime = new(metav1.NewTime(r.now()))
 	return r.databaseStatus(ctx, database, true, "Ready", "The SQL database and listed schemas are reconciled", interval)
@@ -368,6 +420,9 @@ func (r *DatabaseReconciler) databaseStatus(ctx context.Context, database *epco.
 	return ctrl.Result{RequeueAfter: interval}, nil
 }
 func (r *DatabaseReconciler) databaseError(ctx context.Context, database *epco.Database, err error, interval time.Duration) (ctrl.Result, error) {
+	if apierrors.IsConflict(err) || apierrors.IsAlreadyExists(err) {
+		return freshCheck(), nil
+	}
 	if errors.Is(err, errDatabaseSnapshotChanged) {
 		return freshCheck(), nil
 	}
@@ -383,7 +438,7 @@ func (r *DatabaseReconciler) databaseError(ctx context.Context, database *epco.D
 	case postgres.AccessDenied:
 		message = namespaceAccessDeniedMessage
 	case postgres.DependenciesNotReady:
-		message = "A required SQL owner or target connection is not ready"
+		message = "A required SQL or application credential operation is pending"
 	case postgres.InsufficientPrivileges:
 		message = "The administrative connection lacks required SQL privileges"
 	case postgres.DeletionBlocked:
@@ -394,6 +449,14 @@ func (r *DatabaseReconciler) databaseError(ctx context.Context, database *epco.D
 		message = "A referenced connection Secret is invalid"
 	case postgres.SecretNotFound:
 		message = "A referenced connection Secret does not exist"
+	case postgres.ConnectionSecretConflict:
+		message = "An application connection Secret has conflicting ownership or provenance"
+	case postgres.CredentialsMissing:
+		message = "The initialized application password source is missing"
+	case postgres.InvalidConfiguration:
+		message = "An application or SQL configuration is invalid"
+	case postgres.ProtectedRoleReason:
+		message = "Administrative credentials cannot be exported"
 	case postgres.StatusSizeExceeded, postgres.ACLBindingUnresolved:
 		message = failure.Message
 	}

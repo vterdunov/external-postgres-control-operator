@@ -256,8 +256,6 @@ func TestDatabaseUnsupportedDeclarationsBlockEveryNormalPath(t *testing.T) {
 		s.Schemas = []epco.SchemaSpec{{Name: dbTestApplicationName, DefaultPrivileges: []epco.DefaultPrivileges{{ForRole: dbTestOwnerName}}}}
 	}, "named table ACL": func(s *epco.DatabaseSpec) {
 		s.Schemas = []epco.SchemaSpec{{Name: dbTestApplicationName, TablePermissions: []epco.NamedTablePermissions{{Name: "table"}}}}
-	}, "exports": func(s *epco.DatabaseSpec) {
-		s.ConnectionSecrets = []epco.ConnectionSecret{{Name: "export", RoleRef: epco.LocalReference{Name: dbTestOwnerName}}}
 	}, "extensions": func(s *epco.DatabaseSpec) { s.Extensions = []epco.ExtensionSpec{{Name: "hstore"}} }, "FDWs": func(s *epco.DatabaseSpec) { s.FDWs = []epco.FDWSpec{{Name: "wrapper"}} }, "servers": func(s *epco.DatabaseSpec) { s.Servers = []epco.ServerSpec{{Name: "foreign", FDW: "wrapper"}} }}
 	for name, change := range cases {
 		for _, policy := range []string{dbTestPresentCase, dbTestObserveCase, dbTestAbsentCase} {
@@ -361,7 +359,7 @@ func TestDatabaseAccessDenialNeverConnectsAndPreservesPendingFinalizer(t *testin
 			})
 			runDatabase(t, r, db)
 			latest := currentDatabase(t, cl, db)
-			requireDatabaseCondition(t, latest, metav1.ConditionFalse, "AccessDenied")
+			requireDatabaseCondition(t, latest, metav1.ConditionFalse, testAccessDeniedReason)
 			if deleting && !slices.Contains(latest.Finalizers, controller.DatabaseFinalizer) {
 				t.Fatal("authorization denial released finalizer")
 			}
@@ -373,7 +371,7 @@ func TestDatabaseAccessDenialNeverConnectsAndPreservesPendingFinalizer(t *testin
 }
 
 func TestDatabaseOwnershipUsesStickyMarkerAuthoritativeScopeAndUID(t *testing.T) {
-	for _, variation := range []string{"recorded", "former observer", "explicit absent", "deleting", "pure observer", "generation only", "self UID", dbTestOtherDescriptorCase, "different SQL"} {
+	for _, variation := range []string{"recorded", "former observer", connectionExplicitAbsentCase, "deleting", "pure observer", "generation only", "self UID", dbTestOtherDescriptorCase, "different SQL"} {
 		t.Run(variation, func(t *testing.T) {
 			db := ownershipDatabase(testOrdersNamespace, "requester", "requester")
 			other := ownershipDatabase(testBillingNamespace, "manager", testOtherName)
@@ -382,7 +380,7 @@ func TestDatabaseOwnershipUsesStickyMarkerAuthoritativeScopeAndUID(t *testing.T)
 			switch variation {
 			case "former observer":
 				other.Spec.ManagementPolicy = epco.ManagementObserve
-			case "explicit absent":
+			case connectionExplicitAbsentCase:
 				other.Spec.Ensure = epco.EnsureAbsent
 			case "deleting":
 				other.DeletionTimestamp = new(metav1.Now())
@@ -416,7 +414,7 @@ func TestDatabaseOwnershipUsesStickyMarkerAuthoritativeScopeAndUID(t *testing.T)
 			r.APIReader = databaseClient(t, db, other)
 			runDatabase(t, r, db)
 			if conflict {
-				requireDatabaseCondition(t, currentDatabase(t, cl, db), metav1.ConditionFalse, "OwnershipConflict")
+				requireDatabaseCondition(t, currentDatabase(t, cl, db), metav1.ConditionFalse, connectionOwnershipConflictReason)
 				noDatabaseMutation(t, s)
 			} else {
 				requireDatabaseCondition(t, currentDatabase(t, cl, db), metav1.ConditionTrue, testReadyCondition)
@@ -435,7 +433,7 @@ func TestDatabaseObserveToManageRechecksRecordedOwner(t *testing.T) {
 	requireDatabaseCondition(t, currentDatabase(t, cl, db), metav1.ConditionTrue, dbTestObservedReason)
 	db = updateDatabase(t, cl, db, func(d *epco.Database) { d.Spec.ManagementPolicy = epco.ManagementManage })
 	runDatabase(t, r, db)
-	requireDatabaseCondition(t, currentDatabase(t, cl, db), metav1.ConditionFalse, "OwnershipConflict")
+	requireDatabaseCondition(t, currentDatabase(t, cl, db), metav1.ConditionFalse, connectionOwnershipConflictReason)
 	noDatabaseMutation(t, s)
 }
 
@@ -550,12 +548,12 @@ func TestDatabaseSQLSuccessStatusConflictRetriesOrdinaryCurrentState(t *testing.
 	fail := true
 	failure := apierrors.NewConflict(schema.GroupResource{Group: epco.SchemeGroupVersion.Group, Resource: "databases"}, db.Name, errors.New("concurrent status"))
 	r.Client = interceptor.NewClient(cl, interceptor.Funcs{SubResourceUpdate: func(ctx context.Context, c client.Client, sub string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-		if sub == "status" && s.applies > 0 && fail {
+		if sub == testStatusSubresource && s.applies > 0 && fail {
 			return failure
 		}
 		return c.SubResource(sub).Update(ctx, obj, opts...)
 	}, SubResourcePatch: func(ctx context.Context, c client.Client, sub string, obj client.Object, p client.Patch, opts ...client.SubResourcePatchOption) error {
-		if sub == "status" && s.applies > 0 && fail {
+		if sub == testStatusSubresource && s.applies > 0 && fail {
 			return failure
 		}
 		return c.SubResource(sub).Patch(ctx, obj, p, opts...)

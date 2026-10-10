@@ -8,13 +8,16 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 var postgres *Server
 
 var _ = BeforeSuite(func(ctx SpecContext) {
+	ctrl.SetLogger(logr.Discard())
 	var err error
 	postgres, err = Start(ctx, Options{
 		Version: os.Getenv("EPCO_PG_VERSION"), RunID: os.Getenv("EPCO_TEST_RUN_ID"),

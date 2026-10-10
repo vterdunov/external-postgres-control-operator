@@ -57,7 +57,7 @@ func TestRoleAccessDenialPausesMutationsAndPendingFinalizer(t *testing.T) {
 			session.drop = func(context.Context, string) error { t.Fatal("access-denied deleting role dropped SQL"); return nil }
 			runRole(t, r, role)
 			latest := currentRole(t, cl, role)
-			requireRoleCondition(t, latest, metav1.ConditionFalse, "AccessDenied")
+			requireRoleCondition(t, latest, metav1.ConditionFalse, testAccessDeniedReason)
 			if deleting && !slices.Contains(latest.Finalizers, controller.RoleFinalizer) {
 				t.Fatal("access removal released pending finalizer")
 			}
@@ -215,7 +215,7 @@ func TestRoleDeletionPreservesForeignOwnedGeneratedSourceAfterSQLCleanup(t *test
 	source := ownedGeneratedSource(role)
 	source.UID = "original-generated-source"
 	source.OwnerReferences = []metav1.OwnerReference{{
-		APIVersion: "v1", Kind: "ConfigMap", Name: "independent-owner", UID: "foreign-owner",
+		APIVersion: "v1", Kind: testConfigMapKind, Name: "independent-owner", UID: "foreign-owner",
 	}}
 	r, cl, session := roleFixture(t, role, source)
 	before := &corev1.Secret{}

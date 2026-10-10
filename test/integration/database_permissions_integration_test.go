@@ -26,12 +26,14 @@ import (
 )
 
 const (
-	r3Schema       = databaseRecoveryApplicationName
-	r3AllowedTable = "r3_allowed"
-	r3MissingTable = "r3_missing"
-	r3Connect      = "CONNECT"
-	r3Usage        = "USAGE"
-	r3Create       = "CREATE"
+	r3Schema        = databaseRecoveryApplicationName
+	r3AllowedTable  = "r3_allowed"
+	r3MissingTable  = "r3_missing"
+	r3Connect       = "CONNECT"
+	r3Usage         = "USAGE"
+	r3Create        = "CREATE"
+	r3Temporary     = "TEMPORARY"
+	r3DatabaseScope = "database"
 )
 
 type r3SQLFixture struct {
@@ -92,7 +94,7 @@ func r3Permissions(name string, ensure epco.EnsureOption) []epco.Permission {
 func (f *r3SQLFixture) direct(ctx context.Context, kind, object, grantee, privilege string) bool {
 	var query string
 	switch kind {
-	case "database":
+	case r3DatabaseScope:
 		query = `SELECT EXISTS(SELECT 1 FROM pg_database o CROSS JOIN LATERAL
 		 aclexplode(COALESCE(o.datacl,acldefault('d',o.datdba))) a
 		 WHERE o.datname=$1 AND a.grantee=CASE WHEN $2='public' THEN 0
@@ -259,8 +261,9 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 		Expect(condition.Reason).NotTo(Equal("UnsupportedFeature"),
 			"R3 requires database/schema ACL support on every supported PostgreSQL major")
 		fixture.ready(ctx)
-		for _, privilege := range []string{r3Connect, r3Create, "TEMPORARY"} {
-			Expect(fixture.direct(ctx, "database", string(fixture.database.Spec.Name), fixture.reader, privilege)).To(BeTrue())
+		for _, privilege := range []string{r3Connect, r3Create, r3Temporary} {
+			Expect(fixture.direct(ctx, r3DatabaseScope, string(fixture.database.Spec.Name), fixture.reader, privilege)).
+				To(BeTrue())
 		}
 		for _, privilege := range []string{r3Usage, r3Create} {
 			Expect(fixture.direct(ctx, "schema", r3Schema, fixture.reader, privilege)).To(BeTrue())
@@ -335,8 +338,8 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 			spec.Schemas[0].Permissions = &epco.SchemaPermissions{Usage: r3Permissions(fixture.reader, epco.EnsurePresent)}
 		})
 		fixture.ready(ctx)
-		Expect(fixture.direct(ctx, "database", string(fixture.database.Spec.Name), "public", r3Connect)).To(BeFalse())
-		Expect(fixture.direct(ctx, "database", string(fixture.database.Spec.Name), "public", "TEMPORARY")).To(BeFalse())
+		Expect(fixture.direct(ctx, r3DatabaseScope, string(fixture.database.Spec.Name), "public", r3Connect)).To(BeFalse())
+		Expect(fixture.direct(ctx, r3DatabaseScope, string(fixture.database.Spec.Name), "public", r3Temporary)).To(BeFalse())
 		admin := fixture.login(ctx, fixture.Role)
 		var actual string
 		Expect(admin.QueryRowContext(ctx, "SELECT current_user").Scan(&actual)).To(Succeed())
@@ -364,7 +367,7 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 			string(fixture.database.Spec.Name)).Scan(&admission)).To(Succeed())
 		Expect(admission).To(BeFalse(), "target admission remains deliberately disabled")
 		for _, privilege := range []string{r3Create, r3Connect} {
-			Expect(fixture.direct(ctx, "database", string(fixture.database.Spec.Name), fixture.other, privilege)).
+			Expect(fixture.direct(ctx, r3DatabaseScope, string(fixture.database.Spec.Name), fixture.other, privilege)).
 				To(BeTrue(), "database ACLs use the administrative connection despite blocked target cleanup")
 		}
 		Expect(fixture.direct(ctx, "schema", r3Schema, fixture.reader, r3Usage)).To(BeTrue(),
@@ -387,7 +390,8 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 		fixture.ready(ctx)
 		Expect(fixture.direct(ctx, "schema", r3Schema, fixture.reader, r3Usage)).To(BeFalse())
 		for _, privilege := range []string{r3Create, r3Connect} {
-			Expect(fixture.direct(ctx, "database", string(fixture.database.Spec.Name), fixture.other, privilege)).To(BeTrue())
+			Expect(fixture.direct(ctx, r3DatabaseScope, string(fixture.database.Spec.Name), fixture.other, privilege)).
+				To(BeTrue())
 		}
 		Expect(fixture.login(ctx, fixture.Role).PingContext(ctx)).To(Succeed())
 	}, NodeTimeout(35*time.Second))

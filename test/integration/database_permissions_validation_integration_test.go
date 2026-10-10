@@ -187,7 +187,8 @@ var _ = Describe("R3 independent grantor provenance validation", Ordered, Contin
 			Expect(fixture.Admin.QueryRowContext(ctx, limitQuery,
 				string(fixture.database.Spec.Name)).Scan(&limit)).To(Succeed())
 			Expect(limit).To(Equal(originalLimit), "preflight must precede the requested lifecycle change")
-			Expect(fixture.direct(ctx, "database", string(fixture.database.Spec.Name), fixture.reader, "CREATE")).To(BeFalse())
+			Expect(fixture.direct(ctx, r3DatabaseScope, string(fixture.database.Spec.Name), fixture.reader, "CREATE")).
+				To(BeFalse())
 			Expect(fixture.direct(ctx, "table", "app.grantor_provenance", fixture.reader, "SELECT")).To(BeFalse())
 		}
 	}, NodeTimeout(30*time.Second))

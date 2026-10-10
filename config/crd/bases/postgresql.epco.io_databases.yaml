@@ -2055,6 +2055,34 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              connectionSecretHistory:
+                description: |-
+                  ConnectionSecretHistory records attempted publication before creating outputs.
+                  Missing recorded outputs require SQL confirmation before recreation.
+                items:
+                  description: ConnectionSecretState preserves credential-free output
+                    cleanup responsibility.
+                  properties:
+                    adoptionFromDatabaseUID:
+                      description: |-
+                        AdoptionFromDatabaseUID records a validated retained owner while adoption is pending.
+                        The exact Secret incarnation is claimed before its ownership annotation changes.
+                      type: string
+                    name:
+                      description: Name is the namespace-local output name whose publication
+                        was attempted.
+                      type: string
+                    uid:
+                      description: UID identifies the confirmed output incarnation.
+                        Omission preserves an uncertain CREATE.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               effectiveName:
                 description: EffectiveName is the resolved SQL name, including metadata.name
                   fallback.
