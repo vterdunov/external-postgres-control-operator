@@ -58,7 +58,7 @@ func (s *databaseSession) InspectSchemas(ctx context.Context, name string, schem
 func inspectSchema(ctx context.Context, q roleQuerier, name string) (*SchemaState, error) {
 	state := &SchemaState{Name: name}
 	err := q.QueryRow(ctx, `SELECT pg_catalog.pg_get_userbyid(nspowner)
-		FROM pg_catalog.pg_namespace WHERE nspname=$1`, name).Scan(&state.Owner)
+		FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) $1`, name).Scan(&state.Owner)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return state, nil
 	}
@@ -141,7 +141,8 @@ func applySchema(ctx context.Context, tx pgx.Tx, database *DatabaseState, state 
 		owner = database.Owner
 	}
 	var exists bool
-	if err := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_roles WHERE rolname=$1)", owner).Scan(&exists); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_roles
+		WHERE rolname OPERATOR(pg_catalog.=) $1)`, owner).Scan(&exists); err != nil {
 		return err
 	}
 	if !exists {

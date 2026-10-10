@@ -153,6 +153,11 @@ func (r *DatabaseReconciler) reconcileDatabaseConfigured(ctx context.Context, da
 	if err != nil {
 		return r.databaseError(ctx, database, err, interval)
 	}
+	if !deleting {
+		if err = preflightDatabaseExtensions(database, session); err != nil {
+			return r.databaseError(ctx, database, err, interval)
+		}
+	}
 	aclDesired := r.databaseACLDesired(database, cluster, config)
 	if !deleting {
 		if err = preflightDatabaseACL(ctx, database, session); err != nil {
@@ -241,6 +246,7 @@ func (r *DatabaseReconciler) applyDatabaseSession(ctx context.Context, database 
 		}
 		interim := database.Spec.DeepCopy()
 		interim.Schemas = nil
+		interim.Extensions = nil
 		interim.ConnectionSecrets = nil
 		if err = r.ensureDatabaseCurrent(ctx, database); err != nil {
 			return r.databaseError(ctx, database, err, interval)
@@ -276,6 +282,9 @@ func (r *DatabaseReconciler) applyDatabaseSession(ctx context.Context, database 
 	lifecycle := database.Spec.DeepCopy()
 	lifecycle.ConnectionSecrets = nil
 	result, err := session.Apply(ctx, postgres.DatabaseDesired{Name: name, Spec: *lifecycle})
+	if receiptErr := r.recordDatabaseBase(ctx, database, result); receiptErr != nil {
+		return r.databaseError(ctx, database, receiptErr, interval)
+	}
 	if err != nil {
 		return r.databaseError(ctx, database, err, interval)
 	}
@@ -286,12 +295,15 @@ func (r *DatabaseReconciler) applyDatabaseSession(ctx context.Context, database 
 }
 
 func unsupportedDatabase(spec epco.DatabaseSpec) bool {
-	return len(spec.Extensions) > 0 || len(spec.FDWs) > 0 || len(spec.Servers) > 0
+	return len(spec.FDWs) > 0 || len(spec.Servers) > 0
 }
 
 func (r *DatabaseReconciler) observeDatabase(ctx context.Context, database *epco.Database, session postgres.DatabaseSession, state *postgres.DatabaseState, interval time.Duration) (ctrl.Result, error) {
 	if !state.Exists {
 		return r.databaseStatus(ctx, database, false, postgres.DatabaseNotFound, "The SQL database does not exist", interval)
+	}
+	if err := observeDatabaseExtensions(ctx, database, session); err != nil {
+		return r.databaseError(ctx, database, err, interval)
 	}
 	if len(database.Spec.Schemas) > 0 {
 		schemas, err := session.InspectSchemas(ctx, EffectiveDatabaseName(database), database.Spec.Schemas)
@@ -305,7 +317,7 @@ func (r *DatabaseReconciler) observeDatabase(ctx context.Context, database *epco
 			}
 		}
 	}
-	return r.databaseStatus(ctx, database, true, "Observed", "The SQL database and listed schemas were observed; no changes were made", interval)
+	return r.databaseStatus(ctx, database, true, "Observed", "The SQL database, listed schemas and extensions were observed; no changes were made", interval)
 }
 
 func (r *DatabaseReconciler) databaseOwnerDependencies(ctx context.Context, database *epco.Database, state *postgres.DatabaseState, schemas []postgres.SchemaState, includeSchemas bool) error {
@@ -386,7 +398,7 @@ func (r *DatabaseReconciler) databaseSuccess(ctx context.Context, database *epco
 	}
 	database.Status.AppliedGeneration = database.Generation
 	database.Status.LastSuccessfulReconcileTime = new(metav1.NewTime(r.now()))
-	return r.databaseStatus(ctx, database, true, "Ready", "The SQL database and listed schemas are reconciled", interval)
+	return r.databaseStatus(ctx, database, true, "Ready", "The SQL database, listed schemas and extensions are reconciled", interval)
 }
 func (r *DatabaseReconciler) databaseStatus(ctx context.Context, database *epco.Database, ready bool, reason, message string, interval time.Duration) (ctrl.Result, error) {
 	database.Status.ObservedGeneration = database.Generation
@@ -459,6 +471,9 @@ func (r *DatabaseReconciler) databaseError(ctx context.Context, database *epco.D
 		message = "Administrative credentials cannot be exported"
 	case postgres.StatusSizeExceeded, postgres.ACLBindingUnresolved:
 		message = failure.Message
+	}
+	if extension, extensionFailure := errors.AsType[*postgres.ExtensionFailure](err); extensionFailure {
+		message = extension.Error()
 	}
 	return r.databaseStatus(ctx, database, false, failure.Reason, message, interval)
 }

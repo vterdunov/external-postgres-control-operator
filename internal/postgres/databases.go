@@ -47,8 +47,13 @@ type DatabaseDesired struct {
 	Spec epco.DatabaseSpec
 }
 
-// DatabaseApplyResult confirms complete reconciliation and catalog readback.
-type DatabaseApplyResult struct{}
+// DatabaseApplyResult reports confirmed lifecycle work. A nonnil result with
+// an error may reserve base management without confirming child completion.
+type DatabaseApplyResult struct {
+	// BaseManaged confirms the managed database core independently of later
+	// child work. A partial result may accompany an error, but never means Ready.
+	BaseManaged bool
+}
 
 type databaseFactory struct{}
 

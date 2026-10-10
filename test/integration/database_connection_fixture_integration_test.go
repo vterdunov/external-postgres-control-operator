@@ -67,26 +67,46 @@ func r4NewFixture(ctx context.Context, environment *kubeenv.Environment) *r4Conn
 	DeferCleanup(func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		defer cancel()
-		Expect(scope.Cleanup(cleanup)).To(Succeed())
-		for _, database := range f.dbs {
-			_, dropErr := postgres.Admin.ExecContext(cleanup,
-				"DROP DATABASE IF EXISTS "+quoteIdentifier(string(database.Spec.Name))+" WITH (FORCE)")
-			Expect(dropErr).NotTo(HaveOccurred())
-		}
-		for _, role := range f.roles {
-			if string(role.Spec.Name) != base.Role {
-				_, dropErr := postgres.Admin.ExecContext(cleanup,
-					"DROP ROLE IF EXISTS "+quoteIdentifier(string(role.Spec.Name)))
-				Expect(dropErr).NotTo(HaveOccurred())
-			}
-		}
-		Expect(base.Close(cleanup)).To(Succeed())
+		// Every owned cleanup runs even when an earlier step fails.
+		Expect(errors.Join(scope.Cleanup(cleanup), f.cleanupSQL(cleanup), base.Close(cleanup))).To(Succeed())
 	})
 	f.cluster = recoveryCluster(ctx, scope, base)
 	f.role, f.source = f.addRole(ctx, "application", base.Role, base.Password)
 	f.database = f.addDatabase(ctx, r4DatabaseName, f.role, r4OutputName)
 	return f
 }
+
+func (f *r4ConnectionFixture) cleanupSQL(ctx context.Context) (resultErr error) {
+	database, err := f.Server.Open(roleSQLAdmin, roleSQLAdmin, f.Server.password)
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, database.Close()) }()
+	connection, err := database.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, connection.Close()) }()
+	// DROP FORCE also waits for a checkpoint and storage-manager barrier.
+	// This disposable session uses the cleanup context's bounded budget rather
+	// than the shared fixture administrator's shorter statement timeout.
+	if _, err = connection.ExecContext(ctx, "SET statement_timeout=0"); err != nil {
+		return err
+	}
+	for _, target := range f.dbs {
+		_, err = connection.ExecContext(ctx,
+			"DROP DATABASE IF EXISTS "+quoteIdentifier(string(target.Spec.Name))+" WITH (FORCE)")
+		resultErr = errors.Join(resultErr, err)
+	}
+	for _, role := range f.roles {
+		if string(role.Spec.Name) != f.Role {
+			_, err = connection.ExecContext(ctx, "DROP ROLE IF EXISTS "+quoteIdentifier(string(role.Spec.Name)))
+			resultErr = errors.Join(resultErr, err)
+		}
+	}
+	return resultErr
+}
+
 func (f *r4ConnectionFixture) addRole(ctx context.Context, name, sqlName, password string) (
 	*epco.DatabaseRole, *corev1.Secret,
 ) {

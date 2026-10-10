@@ -145,6 +145,9 @@ func (r *DatabaseReconciler) applyDatabaseACL(ctx context.Context, database *epc
 		return r.databaseError(ctx, database, err, interval)
 	}
 	result, err := session.Apply(ctx, postgres.DatabaseDesired{Name: desired.Name, Spec: *base})
+	if receiptErr := r.recordDatabaseBase(ctx, database, result); receiptErr != nil {
+		return r.databaseError(ctx, database, receiptErr, interval)
+	}
 	if err != nil {
 		return r.databaseError(ctx, database, err, interval)
 	}

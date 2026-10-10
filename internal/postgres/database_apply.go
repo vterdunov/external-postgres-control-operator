@@ -23,13 +23,7 @@ func (s *databaseSession) Apply(ctx context.Context, desired DatabaseDesired) (*
 		return nil, err
 	}
 	if desired.Spec.ManagementPolicy == epco.ManagementObserve {
-		if !state.Exists {
-			return nil, &Failure{DatabaseNotFound, "The observed SQL database does not exist"}
-		}
-		if _, err = s.InspectSchemas(bounded, desired.Name, desired.Spec.Schemas); err != nil {
-			return nil, err
-		}
-		return &DatabaseApplyResult{}, nil
+		return s.observeDatabaseDesired(bounded, state, desired)
 	}
 	if desired.Spec.Ensure == epco.EnsureAbsent {
 		if err = s.Drop(bounded, desired.Name); err != nil {
@@ -71,24 +65,20 @@ func (s *databaseSession) Apply(ctx context.Context, desired DatabaseDesired) (*
 	if !databaseMatches(state, desired.Spec) {
 		return nil, &Failure{DependenciesNotReady, "The requested database properties could not be confirmed"}
 	}
-	if len(desired.Spec.Schemas) != 0 {
-		if !state.AllowConnections {
-			return nil, &Failure{DependenciesNotReady, "Schema reconciliation requires the target database to allow connections"}
-		}
-		if err = s.applySchemas(bounded, state, desired.Spec.Schemas); err != nil {
-			return nil, databaseFailure(err)
-		}
+	result := &DatabaseApplyResult{BaseManaged: true}
+	if err = s.applyDatabaseChildren(bounded, state, desired); err != nil {
+		return result, err
 	}
 	// Child work uses separate target connections; confirm the database again
 	// after those transactions have completed.
 	state, err = inspectDatabase(bounded, s.connection, desired.Name)
 	if err != nil {
-		return nil, databaseFailure(err)
+		return result, databaseFailure(err)
 	}
 	if !databaseMatches(state, desired.Spec) {
-		return nil, &Failure{DependenciesNotReady, "The requested database properties changed during reconciliation"}
+		return result, &Failure{DependenciesNotReady, "The requested database properties changed during reconciliation"}
 	}
-	return &DatabaseApplyResult{}, nil
+	return result, nil
 }
 
 func preflightDatabase(state *DatabaseState, desired DatabaseDesired) error {
@@ -97,8 +87,11 @@ func preflightDatabase(state *DatabaseState, desired DatabaseDesired) error {
 	}
 	spec := desired.Spec
 	if spec.Permissions != nil || len(spec.DefaultPrivileges) != 0 || len(spec.ConnectionSecrets) != 0 ||
-		len(spec.Extensions) != 0 || len(spec.FDWs) != 0 || len(spec.Servers) != 0 {
-		return &Failure{UnsupportedFeature, "Database permissions, exports, extensions and foreign objects are not implemented"}
+		len(spec.FDWs) != 0 || len(spec.Servers) != 0 {
+		return &Failure{UnsupportedFeature, "Database permissions, exports and foreign objects are not implemented"}
+	}
+	if err := validateExtensions(spec, state.MaxIdentifierLength); err != nil {
+		return err
 	}
 	if spec.ManagementPolicy != epco.ManagementObserve && IsProtectedDatabase(desired.Name, state.AdminDatabase) {
 		return &Failure{ProtectedDatabase, "The SQL database is protected from management"}

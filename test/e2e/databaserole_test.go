@@ -194,18 +194,6 @@ var _ = Describe("Installed DatabaseRole controller", func() {
 
 	It("reconciles roles after Lease takeover", func(ctx SpecContext) {
 		cluster := installedRoleDescriptor(ctx, "leader-role-connection", nil)
-		role := &epco.DatabaseRole{
-			Namespace: operatorNamespace,
-			Name:      "leader-role",
-			Spec: epco.DatabaseRoleSpec{
-				Cluster:       epco.ClusterReference{Name: cluster.Name},
-				Name:          "epco_e2e_leader",
-				ReclaimPolicy: epco.ReclaimDelete,
-			},
-		}
-		Expect(apiClient.Create(ctx, role)).To(Succeed())
-		DeferCleanup(func() { deleteObject(role) })
-		role = installedRole(ctx, role, metav1.ConditionTrue, "Ready")
 		deployment, err := kubeClient.AppsV1().Deployments(operatorNamespace).Get(
 			ctx, "epco-controller-manager", metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
@@ -244,6 +232,18 @@ var _ = Describe("Installed DatabaseRole controller", func() {
 				return len(pods.Items)
 			}).WithContext(cleanupCtx).WithTimeout(50 * time.Second).Should(Equal(int(originalReplicas)))
 		})
+		role := &epco.DatabaseRole{
+			Namespace: operatorNamespace,
+			Name:      "leader-role",
+			Spec: epco.DatabaseRoleSpec{
+				Cluster:       epco.ClusterReference{Name: cluster.Name},
+				Name:          "epco_e2e_leader",
+				ReclaimPolicy: epco.ReclaimDelete,
+			},
+		}
+		Expect(apiClient.Create(ctx, role)).To(Succeed())
+		DeferCleanup(func() { deleteObject(role) })
+		role = installedRole(ctx, role, metav1.ConditionTrue, "Ready")
 		setReplicas(2)
 		Eventually(func() int32 {
 			latest, getErr := kubeClient.AppsV1().Deployments(operatorNamespace).Get(ctx, deployment.Name, metav1.GetOptions{})
