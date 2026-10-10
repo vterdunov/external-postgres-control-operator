@@ -253,7 +253,7 @@ type UsageSpec struct {
 
 // DatabaseStatus reports database reconciliation and per-grant results.
 type DatabaseStatus struct {
-	// HasManagedSQL records a complete successful management reconciliation.
+	// HasManagedSQL records confirmed database and schema lifecycle management.
 	// It remains true through observation and subsequent failures.
 	// +optional
 	HasManagedSQL  bool `json:"hasManagedSQL,omitzero"`
@@ -261,10 +261,30 @@ type DatabaseStatus struct {
 	// Permissions identifies observed outcomes for schema/table/grantee tuples.
 	// +optional
 	Permissions []PermissionStatus `json:"permissions,omitempty"`
+	// PermissionsOmitted counts optional outcome reports omitted to preserve the
+	// resource size budget. Durable ACL cleanup history is never omitted.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	PermissionsOmitted int32 `json:"permissionsOmitted,omitzero"`
+	// ManagedACLTargets retains cleanup responsibility within this resource UID.
+	// +optional
+	ManagedACLTargets []ManagedACLTarget `json:"managedACLTargets,omitempty"`
+	// ActiveACLTarget identifies the last selected configured target, without credentials.
+	// +optional
+	ActiveACLTarget string `json:"activeACLTarget,omitempty"`
 }
 
 // PermissionStatus identifies the result of one permission reconciliation.
 type PermissionStatus struct {
+	// Scope distinguishes database, schema, relation and default ACL outcomes.
+	// +optional
+	Scope string `json:"scope,omitempty"`
+	// Creator identifies the actual object creator for default privileges.
+	// +optional
+	Creator string `json:"creator,omitempty"`
+	// Class identifies tables, sequences, functions or types for default privileges.
+	// +optional
+	Class string `json:"class,omitempty"`
 	// Schema identifies the SQL schema when applicable.
 	// +optional
 	Schema string `json:"schema,omitempty"`
@@ -278,6 +298,10 @@ type PermissionStatus struct {
 	// Applied indicates whether the desired permission state was confirmed.
 	// +optional
 	Applied bool `json:"applied,omitempty"`
+	// Effective reports access through all ACL grantors, PUBLIC and inherited roles.
+	// For defaults it reports the combined global and schema-local future layer.
+	// +optional
+	Effective *bool `json:"effective,omitempty"`
 	// Message describes the observed outcome without credentials.
 	// +optional
 	Message string `json:"message,omitempty"`

@@ -137,7 +137,7 @@ func databaseFailure(err error) error {
 		case "2BP01", "55006":
 			return &Failure{DeletionBlocked, "SQL dependencies or connected sessions block the database or schema operation"}
 		case "3D000":
-			return &Failure{DatabaseNotFound, "The target SQL database does not exist"}
+			return &Failure{DatabaseNotFound, databaseNotFoundMessage}
 		case "42704":
 			return &Failure{DependenciesNotReady, "A required SQL role or tablespace does not exist"}
 		case "25006":

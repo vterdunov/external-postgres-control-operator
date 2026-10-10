@@ -275,12 +275,39 @@ var _ = Describe("Installed Database controller", func() {
 			Expect(scaleErr).NotTo(HaveOccurred())
 		}
 		DeferCleanup(func() {
+			deleteObject(database)
 			cleanup, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
+			restoredAt := time.Now()
 			setReplicas(cleanup, originalReplicas)
 			_, rolloutErr := utils.Run(kubectlCommand(cleanup, "-n", operatorNamespace, "rollout", "status",
 				"deployment/"+deployment.Name, "--timeout=50s"))
 			Expect(rolloutErr).NotTo(HaveOccurred())
+			// Scale-down can remove the leader. Probe readiness alone does not
+			// establish that the surviving manager can process the next fixture.
+			Eventually(func(g Gomega) {
+				pods, listErr := kubeClient.CoreV1().Pods(operatorNamespace).List(cleanup,
+					metav1.ListOptions{LabelSelector: installedManagerSelector})
+				g.Expect(listErr).NotTo(HaveOccurred())
+				g.Expect(pods.Items).To(HaveLen(int(originalReplicas)))
+				lease, getErr := kubeClient.CoordinationV1().Leases(operatorNamespace).Get(
+					cleanup, "ccd893cc.epco.io", metav1.GetOptions{})
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(lease.Spec.HolderIdentity).NotTo(BeNil())
+				g.Expect(lease.Spec.RenewTime).NotTo(BeNil())
+				g.Expect(lease.Spec.RenewTime.Time).To(BeTemporally(">=", restoredAt))
+				holderPresent := false
+				for _, pod := range pods.Items {
+					g.Expect(pod.DeletionTimestamp).To(BeNil())
+					g.Expect(pod.Status.Phase).To(Equal(corev1.PodRunning))
+					g.Expect(pod.Status.ContainerStatuses).NotTo(BeEmpty())
+					for _, status := range pod.Status.ContainerStatuses {
+						g.Expect(status.Ready).To(BeTrue())
+					}
+					holderPresent = holderPresent || strings.HasPrefix(*lease.Spec.HolderIdentity, pod.Name+"_")
+				}
+				g.Expect(holderPresent).To(BeTrue(), "The restored manager must hold the renewed Lease")
+			}).WithContext(cleanup).WithTimeout(50 * time.Second).WithPolling(200 * time.Millisecond).Should(Succeed())
 		})
 		setReplicas(ctx, 2)
 		Eventually(func() int32 {

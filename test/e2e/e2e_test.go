@@ -177,10 +177,13 @@ func deleteObject(object client.Object) {
 	defer cancel()
 	err := apiClient.Delete(ctx, object)
 	ExpectWithOffset(1, client.IgnoreNotFound(err)).To(Succeed())
-	Eventually(func() bool {
+	Eventually(func(g Gomega) {
 		copy := object.DeepCopyObject().(client.Object)
-		return apierrors.IsNotFound(apiClient.Get(ctx, client.ObjectKeyFromObject(object), copy))
-	}, 20*time.Second, 100*time.Millisecond).Should(BeTrue())
+		err := apiClient.Get(ctx, client.ObjectKeyFromObject(object), copy)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+			"Waiting for deletion of %T %s (finalizers %v): %v",
+			object, client.ObjectKeyFromObject(object), copy.GetFinalizers(), err)
+	}).WithContext(ctx).WithTimeout(20 * time.Second).WithPolling(100 * time.Millisecond).Should(Succeed())
 }
 
 func kubectlCommand(ctx context.Context, args ...string) *exec.Cmd {

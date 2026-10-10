@@ -26,7 +26,7 @@ func (s *databaseSession) InspectSchemas(ctx context.Context, name string, schem
 		return nil, err
 	}
 	if !database.Exists {
-		return nil, &Failure{DatabaseNotFound, "The target SQL database does not exist"}
+		return nil, &Failure{DatabaseNotFound, databaseNotFoundMessage}
 	}
 	for _, schema := range schemas {
 		if err = validateDatabaseIdentifier(string(schema.Name), database.MaxIdentifierLength); err != nil {
@@ -124,7 +124,7 @@ func applySchema(ctx context.Context, tx pgx.Tx, database *DatabaseState, state 
 			return nil
 		}
 		owner := state.Owner
-		if owner == "pg_database_owner" {
+		if owner == databaseOwnerRole {
 			owner = database.Owner
 		}
 		if err := selectDatabaseRole(ctx, tx, owner, true); err != nil {
@@ -165,7 +165,7 @@ func applySchema(ctx context.Context, tx pgx.Tx, database *DatabaseState, state 
 	// Owner transfer requires the administrative principal to combine the
 	// existing owner, new-owner SET authority and database CREATE privileges.
 	currentOwner := state.Owner
-	if currentOwner == "pg_database_owner" {
+	if currentOwner == databaseOwnerRole {
 		// PostgreSQL 15+ assigns public to the database-owner pseudo-role.
 		// Resolve its implicit owner to the actual database role.
 		currentOwner = database.Owner

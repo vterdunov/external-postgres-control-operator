@@ -1,6 +1,6 @@
 # Project roadmap
 
-Updated: 2026-10-08. This roadmap tracks delivery; detailed plans belong in gitignored `.agent-plans/YYYY-MM-DD-topic.md`. The [API baseline](api-proposal.md), [namespace access](cross-namespace-access.md), and [SQL ownership](sql-object-ownership.md) remain authoritative. See [implementation status](README.md#implementation-status) and [development](development.md) for runtime coverage and checks.
+Updated: 2026-10-10. This roadmap tracks delivery; detailed plans belong in gitignored `.agent-plans/YYYY-MM-DD-topic.md`. The [API baseline](api-proposal.md), [namespace access](cross-namespace-access.md), and [SQL ownership](sql-object-ownership.md) remain authoritative. See [implementation status](README.md#implementation-status) and [development](development.md) for runtime coverage and checks.
 
 ## Established foundations
 
@@ -38,11 +38,11 @@ Table statuses are authoritative. Keep IDs stable. Update status (`TODO`, `IN_PR
 | --- | --- | --- | --- | --- | --- | --- |
 | F0 | DONE | n/a: established | [#1 tests](https://github.com/vterdunov/external-postgres-control-operator/pull/1), [#2 PostgresCluster](https://github.com/vterdunov/external-postgres-control-operator/pull/2), [#3 architecture](https://github.com/vterdunov/external-postgres-control-operator/pull/3) | Linked guides/suites | None | Maintain coverage |
 | R1 | DONE | Reviewed local R1 plan and independent acceptance | [#5 roles and passwords](https://github.com/vterdunov/external-postgres-control-operator/pull/5), merged | check; envtest 41/41; PG15 49 + 2 expected skips, PG16-18 51/51 each; Kind 7/7 | None | Maintain role coverage |
-| R2 | DONE | Reviewed local R2 plan, architecture corrections and independent acceptance | This PR, pending merge | check; envtest 51/51; PG15 85 + 2 expected skips, PG16-18 87/87 each; prior Kind 10/10; recovery/concurrency replay | None | Plan R3 declarative grants and defaults |
-| R3 | TODO | Pending | Pending | Pending | None recorded | Plan after R2 |
+| R2 | DONE | Reviewed local R2 plan, architecture corrections and independent acceptance | [#6 databases and schemas](https://github.com/vterdunov/external-postgres-control-operator/pull/6), merged | check; envtest 51/51; PG15 85 + 2 expected skips, PG16-18 87/87 each; prior Kind 10/10; recovery/concurrency replay | None | Maintain lifecycle coverage |
+| R3 | DONE | Reviewed local R3 plan, behavioral TDD and independently accepted Go/operator/DBA architecture corrections | Pending: local branch | Standard check; envtest 55/55; PG15 131 + 6 expected PG16-only skips, PG16-18 137/137 each; Kind 11/11; all five corrections independently accepted | None | Maintain ACL coverage; plan R4 |
 | R4 | TODO | Pending | Pending | Pending | None recorded | Plan after R3 |
 | R5 | TODO | Pending | Pending | Pending | None recorded | Plan after R4 |
 | R6 | TODO | Pending | Pending | Pending | None recorded | Plan after R5 |
 | R7 | TODO | Pending | Pending | Pending | None recorded | Plan after R6 |
 
-Feature plans assign separate test-author, implementation, and independent-validation agents. Test authors demonstrate failing behavioral tests before handoff. Implementation/review inspect CNPG and cite paths, approaches, and justified departures; write EPCO independently. Run scoped mise checks, fix failures/flakiness, keep suite support together, and never hand-edit generated files. R2 is independently accepted in this PR. Merge status and deployed behavior require separate evidence. Next: plan R3 declarative grants and defaults.
+Feature plans assign separate test-author, implementation, and independent-validation agents. Test authors demonstrate failing behavioral tests before handoff. Implementation/review inspect CNPG and cite paths, approaches, and justified departures; write EPCO independently. Run scoped mise checks, fix failures/flakiness, keep suite support together, and never hand-edit generated files. R2 is merged in PR #6. R3 is complete locally on `feat/r3-declarative-grants`, including the five Go/operator/DBA architecture corrections, behavioral regression evidence, repeated full gates and independent acceptance. Its PR remains pending; installed evidence comes from disposable Kind. Production deployment and real RDS validation remain future delivery work.
