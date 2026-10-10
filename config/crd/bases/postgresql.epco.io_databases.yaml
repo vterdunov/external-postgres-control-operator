@@ -1982,6 +1982,10 @@ spec:
             description: DatabaseStatus reports database reconciliation and per-grant
               results.
             properties:
+              activeACLTarget:
+                description: ActiveACLTarget identifies the last selected configured
+                  target, without credentials.
+                type: string
               applied:
                 description: Applied reports whether reconciliation succeeded.
                 type: boolean
@@ -2057,7 +2061,7 @@ spec:
                 type: string
               hasManagedSQL:
                 description: |-
-                  HasManagedSQL records a complete successful management reconciliation.
+                  HasManagedSQL records confirmed database and schema lifecycle management.
                   It remains true through observation and subsequent failures.
                 type: boolean
               lastSuccessfulReconcileTime:
@@ -2065,6 +2069,172 @@ spec:
                   reconciliation.
                 format: date-time
                 type: string
+              managedACLTargets:
+                description: ManagedACLTargets retains cleanup responsibility within
+                  this resource UID.
+                items:
+                  description: |-
+                    ManagedACLTarget records concrete ACL responsibility on one configured target.
+                    Inactive targets are retained but never contacted for cleanup.
+                  properties:
+                    bindingRevision:
+                      description: BindingRevision invalidates catalog identity after
+                        routing/descriptor changes.
+                      type: string
+                    bindings:
+                      items:
+                        description: |-
+                          ACLBinding is one concrete object/privilege/grantee/grantor responsibility.
+                          Pending operations are possibly issued work, never commands to replay blindly.
+                        properties:
+                          administrative:
+                            type: boolean
+                          before:
+                            description: Before contains the matching direct rows
+                              before a possibly issued operation.
+                            items:
+                              description: ACLGrantIdentity preserves the narrow pre-operation
+                                grantor provenance.
+                              properties:
+                                grantable:
+                                  type: boolean
+                                grantee:
+                                  description: Grantee is recorded when owner transfer
+                                    can also rewrite the grantee.
+                                  properties:
+                                    name:
+                                      type: string
+                                    oid:
+                                      format: int32
+                                      type: integer
+                                  required:
+                                  - name
+                                  type: object
+                                grantor:
+                                  description: ACLRoleIdentity is the catalog identity
+                                    and last confirmed name of a SQL role.
+                                  properties:
+                                    name:
+                                      type: string
+                                    oid:
+                                      format: int32
+                                      type: integer
+                                  required:
+                                  - name
+                                  type: object
+                              required:
+                              - grantor
+                              type: object
+                            type: array
+                          bindingRevision:
+                            description: BindingRevision records the target epoch
+                              in which catalog identities were resolved.
+                            type: string
+                          class:
+                            type: string
+                          creator:
+                            type: string
+                          creatorOID:
+                            format: int32
+                            type: integer
+                          databaseOID:
+                            format: int32
+                            type: integer
+                          declaration:
+                            type: string
+                          desiredOwner:
+                            description: ACLRoleIdentity is the catalog identity and
+                              last confirmed name of a SQL role.
+                            properties:
+                              name:
+                                type: string
+                              oid:
+                                format: int32
+                                type: integer
+                            required:
+                            - name
+                            type: object
+                          generation:
+                            format: int64
+                            type: integer
+                          grantee:
+                            type: string
+                          granteeOID:
+                            format: int32
+                            type: integer
+                          grantor:
+                            type: string
+                          grantorCandidates:
+                            items:
+                              description: ACLRoleIdentity is the catalog identity
+                                and last confirmed name of a SQL role.
+                              properties:
+                                name:
+                                  type: string
+                                oid:
+                                  format: int32
+                                  type: integer
+                              required:
+                              - name
+                              type: object
+                            type: array
+                          grantorOID:
+                            format: int32
+                            type: integer
+                          objectOID:
+                            format: int32
+                            type: integer
+                          owner:
+                            type: string
+                          ownerOID:
+                            format: int32
+                            type: integer
+                          pending:
+                            type: string
+                          previousOwner:
+                            description: ACLRoleIdentity is the catalog identity and
+                              last confirmed name of a SQL role.
+                            properties:
+                              name:
+                                type: string
+                              oid:
+                                format: int32
+                                type: integer
+                            required:
+                            - name
+                            type: object
+                          privilege:
+                            type: string
+                          schema:
+                            type: string
+                          schemaOID:
+                            format: int32
+                            type: integer
+                          scope:
+                            type: string
+                          table:
+                            type: string
+                        required:
+                        - class
+                        - declaration
+                        - grantee
+                        - privilege
+                        - scope
+                        type: object
+                      type: array
+                    database:
+                      type: string
+                    host:
+                      type: string
+                    port:
+                      format: int32
+                      type: integer
+                  required:
+                  - database
+                  - host
+                  - port
+                  type: object
+                type: array
               message:
                 description: Message describes the most recent reconciliation result.
                 type: string
@@ -2084,6 +2254,19 @@ spec:
                       description: Applied indicates whether the desired permission
                         state was confirmed.
                       type: boolean
+                    class:
+                      description: Class identifies tables, sequences, functions or
+                        types for default privileges.
+                      type: string
+                    creator:
+                      description: Creator identifies the actual object creator for
+                        default privileges.
+                      type: string
+                    effective:
+                      description: |-
+                        Effective reports access through all ACL grantors, PUBLIC and inherited roles.
+                        For defaults it reports the combined global and schema-local future layer.
+                      type: boolean
                     grantee:
                       description: Grantee identifies the SQL role or PUBLIC grantee.
                       type: string
@@ -2097,6 +2280,10 @@ spec:
                     schema:
                       description: Schema identifies the SQL schema when applicable.
                       type: string
+                    scope:
+                      description: Scope distinguishes database, schema, relation
+                        and default ACL outcomes.
+                      type: string
                     table:
                       description: Table identifies an explicitly named SQL table
                         when applicable.
@@ -2106,6 +2293,13 @@ spec:
                   - privilege
                   type: object
                 type: array
+              permissionsOmitted:
+                description: |-
+                  PermissionsOmitted counts optional outcome reports omitted to preserve the
+                  resource size budget. Durable ACL cleanup history is never omitted.
+                format: int32
+                minimum: 0
+                type: integer
             type: object
         required:
         - spec

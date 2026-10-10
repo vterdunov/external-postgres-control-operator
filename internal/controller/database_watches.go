@@ -62,6 +62,18 @@ func (r *DatabaseReconciler) SetupWithManager(manager ctrl.Manager) error {
 					names[string(schema.Owner)] = true
 				}
 			}
+			for _, name := range postgres.ACLRoleDependencies(database.Spec) {
+				names[name] = true
+			}
+			for _, target := range database.Status.ManagedACLTargets {
+				for _, binding := range target.Bindings {
+					for _, name := range []string{binding.Grantee, binding.Grantor, binding.Creator, binding.Owner} {
+						if name != "PUBLIC" {
+							names[name] = true
+						}
+					}
+				}
+			}
 			keys := make([]string, 0, len(names))
 			for name := range names {
 				if name != "" {

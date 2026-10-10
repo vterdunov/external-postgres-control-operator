@@ -124,10 +124,16 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, request ctrl.Request
 	if err != nil {
 		return r.databaseError(ctx, database, err, interval)
 	}
-	return r.reconcileDatabaseSession(ctx, database, session, state, interval)
+	aclDesired := r.databaseACLDesired(database, cluster, config)
+	if !deleting {
+		if err = preflightDatabaseACL(ctx, database, session); err != nil {
+			return r.databaseError(ctx, database, err, interval)
+		}
+	}
+	return r.reconcileDatabaseSession(ctx, database, session, state, interval, aclDesired)
 }
 
-func (r *DatabaseReconciler) reconcileDatabaseSession(ctx context.Context, database *epco.Database, session postgres.DatabaseSession, state *postgres.DatabaseState, interval time.Duration) (ctrl.Result, error) {
+func (r *DatabaseReconciler) reconcileDatabaseSession(ctx context.Context, database *epco.Database, session postgres.DatabaseSession, state *postgres.DatabaseState, interval time.Duration, aclDesired postgres.ACLDesired) (ctrl.Result, error) {
 	name := EffectiveDatabaseName(database)
 	deleting := !database.DeletionTimestamp.IsZero()
 	var err error
@@ -163,7 +169,7 @@ func (r *DatabaseReconciler) reconcileDatabaseSession(ctx context.Context, datab
 		return r.releaseDatabase(ctx, database)
 	}
 	if database.Spec.ManagementPolicy == epco.ManagementObserve {
-		return r.observeDatabase(ctx, database, session, state, interval)
+		return r.observeDatabaseACL(ctx, database, session, state, interval, aclDesired)
 	}
 	if database.Spec.Ensure == epco.EnsureAbsent {
 		if state.Exists {
@@ -176,7 +182,7 @@ func (r *DatabaseReconciler) reconcileDatabaseSession(ctx context.Context, datab
 		}
 		return r.databaseSuccess(ctx, database, interval)
 	}
-	return r.applyDatabaseSession(ctx, database, session, state, interval)
+	return r.applyDatabaseACL(ctx, database, session, state, interval, aclDesired)
 }
 
 func (r *DatabaseReconciler) applyDatabaseSession(ctx context.Context, database *epco.Database, session postgres.DatabaseSession, state *postgres.DatabaseState, interval time.Duration) (ctrl.Result, error) {
@@ -231,15 +237,7 @@ func (r *DatabaseReconciler) applyDatabaseSession(ctx context.Context, database 
 }
 
 func unsupportedDatabase(spec epco.DatabaseSpec) bool {
-	if spec.Permissions != nil || len(spec.DefaultPrivileges) > 0 || len(spec.ConnectionSecrets) > 0 || len(spec.Extensions) > 0 || len(spec.FDWs) > 0 || len(spec.Servers) > 0 {
-		return true
-	}
-	for _, schema := range spec.Schemas {
-		if schema.Permissions != nil || len(schema.DefaultPrivileges) > 0 || len(schema.TablePermissions) > 0 {
-			return true
-		}
-	}
-	return false
+	return len(spec.ConnectionSecrets) > 0 || len(spec.Extensions) > 0 || len(spec.FDWs) > 0 || len(spec.Servers) > 0
 }
 
 func (r *DatabaseReconciler) observeDatabase(ctx context.Context, database *epco.Database, session postgres.DatabaseSession, state *postgres.DatabaseState, interval time.Duration) (ctrl.Result, error) {
@@ -352,6 +350,9 @@ func (r *DatabaseReconciler) databaseStatus(ctx context.Context, database *epco.
 		condition.Status = metav1.ConditionTrue
 	}
 	meta.SetStatusCondition(&database.Status.Conditions, condition)
+	if err := boundDatabasePermissionReports(database); err != nil {
+		return roleWriteResult(err)
+	}
 	if err := r.ensureDatabaseCurrent(ctx, database); err != nil {
 		if errors.Is(err, errDatabaseSnapshotChanged) {
 			return freshCheck(), nil
@@ -388,11 +389,13 @@ func (r *DatabaseReconciler) databaseError(ctx context.Context, database *epco.D
 	case postgres.DeletionBlocked:
 		message = "SQL dependencies prevent database or schema deletion"
 	case postgres.UnsupportedFeature:
-		message = "A requested database feature is not implemented"
+		message = "A requested database feature is unsupported"
 	case postgres.InvalidSecret:
 		message = "A referenced connection Secret is invalid"
 	case postgres.SecretNotFound:
 		message = "A referenced connection Secret does not exist"
+	case postgres.StatusSizeExceeded, postgres.ACLBindingUnresolved:
+		message = failure.Message
 	}
 	return r.databaseStatus(ctx, database, false, failure.Reason, message, interval)
 }

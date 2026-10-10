@@ -1,6 +1,6 @@
 # SQL object ownership and reconciliation
 
-Status: selected design for the [accepted API baseline](api-proposal.md), updated 2026-10-08. Follow inspected CNPG behavior for retries, existing SQL objects, CR conflicts, and reclaim policies. DatabaseRole and Database implement this ownership/lifecycle contract. Database ACL bookkeeping remains pending. See [implementation status](README.md#implementation-status) and the implemented [PostgresCluster connection check](postgrescluster.md).
+Status: selected design for the [accepted API baseline](api-proposal.md), updated 2026-10-10. Follow inspected CNPG behavior for retries, existing SQL objects, CR conflicts, and reclaim policies. DatabaseRole and Database implement this ownership/lifecycle contract. Database implements status-backed ACL cleanup and recovery within a live CR UID. See [implementation status](README.md#implementation-status) and the implemented [PostgresCluster connection check](postgrescluster.md).
 
 ## Verified CNPG behavior
 
@@ -31,11 +31,11 @@ For a new managing CR:
 3. Exclude the current CR by UID, not metadata.name alone.
 4. Look for another CR of the same type and SQL name with recorded management.
 5. If found, report OwnershipConflict without SQL mutation or connection export for the competing CR.
-6. Otherwise, create a missing SQL object or reconcile an existing one, then record the successful generation.
+6. Otherwise, create a missing SQL object or reconcile an existing one, then record confirmed lifecycle management. Publish the successful generation only after all requested work is confirmed.
 
 Temporary failure does not erase a manager's recorded reconciliation. Same-UID retries continue managing the same SQL object. A pure observer is not a manager merely because it recorded an observed generation; a former manager retains its management record while its CR remains.
 
-Both SQL controllers record sticky `status.hasManagedSQL` only after confirmed successful managed reconciliation. Database rechecks the authoritative CR UID and current inputs after acquiring its lock and before SQL/status publication. A deleted/replaced or changed snapshot cannot publish success for a new resource. Database deletion checks actual SQL ownership and does not wait for the desired owner role to become Ready. Unsupported desired child declarations do not block an authorized reclaim-delete finalizer for a previously managed database.
+Both SQL controllers record sticky `status.hasManagedSQL` only after confirmed successful managed lifecycle reconciliation. For Database, confirmed database/schema management reserves the SQL name even when ACLs are pending, for example while a migration has not created a named table. Journal intent alone does not acquire ownership. Full Ready, appliedGeneration and last successful reconciliation still require declared ACLs and required cleanup. Database rechecks the authoritative CR UID and current inputs after acquiring its lock and before SQL/status publication. A deleted/replaced or changed snapshot cannot publish success for a new resource. Database deletion checks actual SQL ownership and does not wait for the desired owner role to become Ready. Unsupported desired child declarations do not block an authorized reclaim-delete finalizer for a previously managed database.
 
 A live Database with ensure=absent still records management of its SQL name. A competing CR cannot recreate that database while its recorded manager remains.
 
@@ -59,7 +59,9 @@ This is ordinary Kubernetes leader-election behavior, not a guarantee that an al
 
 ## State and authorization boundaries
 
-The [API baseline](api-proposal.md#permissions-based-on-the-cnpg-proposals) defines managed-grant/pending-change persistence before SQL mutation and recovery within the same CR UID. SQL-name conflict checks do not replace that bookkeeping. CR deletion ends permission history; retained SQL grants require explicit absent entries for historical cleanup in a recreated CR. The [current status schema](README.md#implementation-status) still needs the durable bookkeeping fields.
+The [API baseline](api-proposal.md#permissions-based-on-the-cnpg-proposals) defines managed-grant/pending-change persistence before SQL mutation and recovery within the same CR UID. SQL-name conflict checks do not replace that bookkeeping. CR deletion ends permission history; retained SQL grants require explicit absent entries for historical cleanup in a recreated CR. Database persists concrete target-scoped bindings in `managedACLTargets`, the selected `activeACLTarget`, pending changes and pre-operation grantor/owner snapshots. Target and per-binding revisions prevent using stale OIDs after endpoint changes or descriptor recreation. Inactive targets are retained but never contacted; recovery re-resolves identity only on the current target. A checkpoint must fit the 768 KiB serialized whole-resource budget before its corresponding SQL mutation. Catalog confirmation permits pruning completed responsibility; uncertain identity or an unobserved external owner merge retains pending cleanup rather than revoking an independent grant. Explicit absent can resolve that requested removal. See [runtime status and constraints](api-proposal.md#lifecycle-ownership-and-status).
+
+Within a trusted target revision, a replacement database OID retires its old child/default bindings before lookup. Before staging another owner change, resolve and checkpoint the original pending transition so cleanup provenance survives successive changes. ACL transactions confirm the affected object and role identities and exact ACL effect before commit, then reread afterward. A mismatch rolls back and retains pending responsibility. Catalog/access reads use the configured client deadline through full result consumption. Obsolete administrator CONNECT pins use the same remaining-access check as other revokes, preserving the current administrator's access without adding unnecessary pins.
 
 [Passwords and connection Secrets](api-proposal.md#passwords-and-connection-secrets) define initial publication before SQL readiness, rotation after SQL password application, retained Secret reuse, and conditional provenance/ownership updates. Reusing retained credentials does not restore deleted ACL history. Apply authorization and SQL-name conflicts before any initial export.
 
