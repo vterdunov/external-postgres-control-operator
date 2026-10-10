@@ -21,6 +21,8 @@ DatabaseRole scenarios verify generated-source rotation, retain/GC safety, condi
   toolchain and packages it in a scratch image. The default `docker` mode builds
   the project Dockerfile. Both use unique image tags and remove them afterward.
 
+Extension scenarios install and relocate hstore, retain it after declaration omission, protect dependent application data with RESTRICT, and converge after the dependency is removed. Application output scenarios verify initial publication and eligible password rotation while an unrelated extension remains unavailable.
+
 The runner preserves command failure statuses and returns 130/143 on
 SIGINT/SIGTERM. It stops descendant processes, saves diagnostics before
 cleanup on failure, and deletes only its own cluster, image and temporary

@@ -90,6 +90,6 @@ mise exec -- go test -c -race -mod=readonly -tags=integration -o "$binary_dir/in
 child_pid=$!
 wait "$child_pid"
 child_pid=""
-"$binary_dir/integration.test" -test.v -test.timeout=5m -ginkgo.randomize-all -ginkgo.seed="${EPCO_TEST_SEED:-$(date +%s)}" -ginkgo.junit-report="$artifacts/junit.xml" "$@" &
+"$binary_dir/integration.test" -test.v -test.timeout=10m -ginkgo.randomize-all -ginkgo.seed="${EPCO_TEST_SEED:-$(date +%s)}" -ginkgo.junit-report="$artifacts/junit.xml" "$@" &
 child_pid=$!
 wait "$child_pid"

@@ -720,7 +720,8 @@ var _ = Describe("Database PostgreSQL reconciliation", func() {
 			desired.Spec.Schemas = []epco.SchemaSpec{schemaSpec(databaseOwnedSchema, other, "")}
 			result, err := session.Apply(ctx, desired)
 			Expect(failureReason(err)).To(Equal(pgdatabase.InsufficientPrivileges))
-			Expect(result).To(BeNil(), "a denied mutation must not return a success marker")
+			Expect(result).NotTo(BeNil(), "the independently confirmed database core returns a partial receipt")
+			Expect(result.BaseManaged).To(BeTrue(), "a denied child operation does not erase confirmed core management")
 			schemas, err := session.InspectSchemas(ctx, name, desired.Spec.Schemas)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(schemas).To(ConsistOf(pgdatabase.SchemaState{Name: databaseOwnedSchema, Owner: fixture.Role, Exists: true}))

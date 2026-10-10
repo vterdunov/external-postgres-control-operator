@@ -55,6 +55,7 @@ func (r *DatabaseReconciler) applyConnectionCore(ctx context.Context, database *
 	}
 	base := database.Spec.DeepCopy()
 	base.ConnectionSecrets, base.Schemas, base.DefaultPrivileges = nil, nil, nil
+	base.Extensions = nil
 	base.Permissions = nil
 	if err := r.ensureDatabaseCurrent(ctx, database); err != nil {
 		return nil, err

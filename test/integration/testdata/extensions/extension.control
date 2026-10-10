@@ -1,0 +1,5 @@
+comment = 'EPCO disposable behavioral extension fixture'
+default_version = 'omega'
+relocatable = true
+superuser = true
+trusted = true

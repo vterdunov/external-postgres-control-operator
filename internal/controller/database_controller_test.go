@@ -256,7 +256,7 @@ func TestDatabaseUnsupportedDeclarationsBlockEveryNormalPath(t *testing.T) {
 		s.Schemas = []epco.SchemaSpec{{Name: dbTestApplicationName, DefaultPrivileges: []epco.DefaultPrivileges{{ForRole: dbTestOwnerName}}}}
 	}, "named table ACL": func(s *epco.DatabaseSpec) {
 		s.Schemas = []epco.SchemaSpec{{Name: dbTestApplicationName, TablePermissions: []epco.NamedTablePermissions{{Name: "table"}}}}
-	}, "extensions": func(s *epco.DatabaseSpec) { s.Extensions = []epco.ExtensionSpec{{Name: "hstore"}} }, "FDWs": func(s *epco.DatabaseSpec) { s.FDWs = []epco.FDWSpec{{Name: "wrapper"}} }, "servers": func(s *epco.DatabaseSpec) { s.Servers = []epco.ServerSpec{{Name: "foreign", FDW: "wrapper"}} }}
+	}, "FDWs": func(s *epco.DatabaseSpec) { s.FDWs = []epco.FDWSpec{{Name: "wrapper"}} }, "servers": func(s *epco.DatabaseSpec) { s.Servers = []epco.ServerSpec{{Name: "foreign", FDW: "wrapper"}} }}
 	for name, change := range cases {
 		for _, policy := range []string{dbTestPresentCase, dbTestObserveCase, dbTestAbsentCase} {
 			t.Run(name+"/"+policy, func(t *testing.T) {

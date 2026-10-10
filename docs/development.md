@@ -44,9 +44,9 @@ Architecture checks include generated API Go sources and exclude `_test.go` file
 | Task | Coverage and requirements |
 | --- | --- |
 | `test-unit` | Fast unit/race tests, randomized specs, runner tests, and architecture-policy tests; no container runtime or envtest assets |
-| `test-envtest` | CRD admission/defaults, real manager/dependency-watch tests, generated-source, ACL dependency watches and Database status conflicts on an isolated API server; no workload controllers or garbage collection |
-| [test-integration](../test/integration/README.md) | PostgreSQL client/role/database/schema/ACL/default behavior, application connection exports with actual libpq/pgJDBC consumption, TLS, restricted-administrator fixtures, and composed envtest recovery; requires a Docker-compatible runtime, a C compiler, and the pinned Java tool |
-| [test-e2e](../test/e2e/README.md) | Installed manager health, metrics, CRD CRUD, connection/role/database/schema recovery, grants/defaults and named-table removal, credential lifecycle, authorization, and leader takeover in disposable Kind; a Docker-compatible runtime is required |
+| `test-envtest` | CRD admission/defaults, real manager/dependency-watch tests, generated-source, ACL dependency watches, extension ownership/output/status recovery and Database status conflicts on an isolated API server; no workload controllers or garbage collection |
+| [test-integration](../test/integration/README.md) | PostgreSQL client/role/database/schema/extension/ACL/default behavior, application connection exports with actual libpq/pgJDBC consumption, TLS, restricted-administrator fixtures, and composed envtest recovery; requires a Docker-compatible runtime, a C compiler, and the pinned Java tool |
+| [test-e2e](../test/e2e/README.md) | Installed manager health, metrics, CRD CRUD, connection/role/database/schema/extension recovery, grants/defaults and named-table removal, credential lifecycle, authorization, and leader takeover in disposable Kind; a Docker-compatible runtime is required |
 | `check-generated` | Regenerate in a temporary copy and compare derived files without changing the checkout |
 
 On macOS, the integration and e2e suites use OrbStack's Docker-compatible runtime. Suite-specific fixture APIs, image pins, build modes, and runtime coverage belong in their linked READMEs. Real RDS verification remains separate work.

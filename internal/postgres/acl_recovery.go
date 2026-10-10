@@ -250,7 +250,7 @@ func (e *aclEngine) resolveOwnerRewrite(old, b epco.ACLBinding) (epco.ACLBinding
 
 func (s *databaseSession) restoreACLAccess(ctx context.Context, d ACLDesired, state *DatabaseState) ([]epco.ManagedACLTarget, error) {
 	var err error
-	if len(d.Spec.Schemas) > 0 || aclNeedsTarget(d.Spec, d.Targets, d.Target) {
+	if len(d.Spec.Schemas) > 0 || len(d.Spec.Extensions) > 0 || aclNeedsTarget(d.Spec, d.Targets, d.Target) {
 		var access bool
 		if err = s.aclQueries(s.connection).QueryRow(ctx, "SELECT pg_catalog.has_database_privilege(current_user,$1,'CONNECT')", d.Name).Scan(&access); err != nil {
 			return d.Targets, databaseFailure(err)
