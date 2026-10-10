@@ -272,6 +272,25 @@ type DatabaseStatus struct {
 	// ActiveACLTarget identifies the last selected configured target, without credentials.
 	// +optional
 	ActiveACLTarget string `json:"activeACLTarget,omitempty"`
+	// ConnectionSecretHistory records attempted publication before creating outputs.
+	// Missing recorded outputs require SQL confirmation before recreation.
+	// +listType=map
+	// +listMapKey=name
+	// +optional
+	ConnectionSecretHistory []ConnectionSecretState `json:"connectionSecretHistory,omitempty"`
+}
+
+// ConnectionSecretState preserves credential-free output cleanup responsibility.
+type ConnectionSecretState struct {
+	// Name is the namespace-local output name whose publication was attempted.
+	Name string `json:"name"`
+	// UID identifies the confirmed output incarnation. Omission preserves an uncertain CREATE.
+	// +optional
+	UID string `json:"uid,omitempty"`
+	// AdoptionFromDatabaseUID records a validated retained owner while adoption is pending.
+	// The exact Secret incarnation is claimed before its ownership annotation changes.
+	// +optional
+	AdoptionFromDatabaseUID string `json:"adoptionFromDatabaseUID,omitempty"`
 }
 
 // PermissionStatus identifies the result of one permission reconciliation.

@@ -56,7 +56,7 @@ func (f roleFactoryFunc) Open(ctx context.Context, c *postgres.Config) (postgres
 func roleFixture(t *testing.T, role *epco.DatabaseRole, objects ...client.Object) (*controller.DatabaseRoleReconciler, client.WithWatch, *roleSessionStub) {
 	t.Helper()
 	cluster := &epco.PostgresCluster{Namespace: testInfraNamespace, Name: testDescriptorName, Spec: epco.PostgresClusterSpec{
-		Connection: epco.PostgresConnection{Host: "DATABASE.EXAMPLE."}, CredentialsSecret: epco.LocalReference{Name: testAdminName}, TLS: &epco.PostgresTLS{Mode: "disable"}, Access: &epco.ClusterAccess{NamespaceSelector: &metav1.LabelSelector{}},
+		Connection: epco.PostgresConnection{Host: "DATABASE.EXAMPLE."}, CredentialsSecret: epco.LocalReference{Name: testAdminName}, TLS: &epco.PostgresTLS{Mode: dbTestTLSDisable}, Access: &epco.ClusterAccess{NamespaceSelector: &metav1.LabelSelector{}},
 	}}
 	admin := &corev1.Secret{Namespace: testInfraNamespace, Name: testAdminName, Type: corev1.SecretTypeBasicAuth, Data: map[string][]byte{corev1.BasicAuthUsernameKey: []byte(testAdminName), corev1.BasicAuthPasswordKey: []byte("administrative-credential")}}
 	all := append([]client.Object{role, cluster, admin, &corev1.Namespace{Name: testOrdersNamespace}}, objects...)
@@ -313,7 +313,7 @@ func TestPasswordCheckpointFailureProhibitsSourceAndSQLMutation(t *testing.T) {
 }
 
 func TestSuppliedPasswordSourceValidationAndImmutability(t *testing.T) {
-	for _, variation := range []string{testValidCase, "wrong type", "missing username", "missing password", "mismatched username", "remote source"} {
+	for _, variation := range []string{testValidCase, "wrong type", "missing username", connectionMissingPasswordCase, "mismatched username", "remote source"} {
 		t.Run(variation, func(t *testing.T) {
 			role := ownershipRole(testOrdersNamespace, "app", "uid")
 			role.Spec.PasswordSecret = &epco.LocalReference{Name: testProvidedName}
@@ -323,7 +323,7 @@ func TestSuppliedPasswordSourceValidationAndImmutability(t *testing.T) {
 				source.Type = corev1.SecretTypeOpaque
 			case "missing username":
 				delete(source.Data, corev1.BasicAuthUsernameKey)
-			case "missing password":
+			case connectionMissingPasswordCase:
 				delete(source.Data, corev1.BasicAuthPasswordKey)
 			case "mismatched username":
 				source.Data[corev1.BasicAuthUsernameKey] = []byte("different")
@@ -475,7 +475,7 @@ func TestRoleEndpointHistoryPreservesDormantCleanup(t *testing.T) {
 }
 
 func TestRetainedGeneratedSourceIsConditionallyAdoptedWithoutRotation(t *testing.T) {
-	for _, variation := range []string{testValidCase, "unrelated", "wrong resource", "wrong namespace", "wrong SQL name", "wrong username", "live prior UID", "foreign owner reference"} {
+	for _, variation := range []string{testValidCase, "unrelated", "wrong resource", "wrong namespace", "wrong SQL name", connectionWrongUsernameCase, "live prior UID", "foreign owner reference"} {
 		t.Run(variation, func(t *testing.T) {
 			role := ownershipRole(testOrdersNamespace, "app", "new-uid")
 			role.Spec.PasswordGeneration = &epco.PasswordGeneration{SecretName: testGeneratedName}
@@ -496,10 +496,10 @@ func TestRetainedGeneratedSourceIsConditionallyAdoptedWithoutRotation(t *testing
 				source.Annotations[controller.GeneratedRoleNamespaceAnnotation] = testAnotherName
 			case "wrong SQL name":
 				source.Annotations[controller.GeneratedRoleNameAnnotation] = testAnotherName
-			case "wrong username":
+			case connectionWrongUsernameCase:
 				source.Data[corev1.BasicAuthUsernameKey] = []byte(testAnotherName)
 			case "foreign owner reference":
-				source.OwnerReferences = []metav1.OwnerReference{{APIVersion: "v1", Kind: "ConfigMap", Name: "independent-owner", UID: "foreign-owner"}}
+				source.OwnerReferences = []metav1.OwnerReference{{APIVersion: "v1", Kind: testConfigMapKind, Name: "independent-owner", UID: "foreign-owner"}}
 			}
 			r, cl, session := roleFixture(t, role, source)
 			if variation == "live prior UID" {
@@ -547,7 +547,7 @@ func TestRoleDependencyUsesRecordedParentManagerOverLosingContender(t *testing.T
 	contender := ownershipRole(testBillingNamespace, testParentName, "losing-contender")
 	contender.Spec.Name = testParentName
 	contender.Generation = 1
-	contender.Status.Conditions = []metav1.Condition{{Type: testReadyCondition, Status: metav1.ConditionFalse, Reason: "OwnershipConflict", ObservedGeneration: 1}}
+	contender.Status.Conditions = []metav1.Condition{{Type: testReadyCondition, Status: metav1.ConditionFalse, Reason: connectionOwnershipConflictReason, ObservedGeneration: 1}}
 	r, cl, _ := roleFixture(t, child, parent, contender)
 	runRole(t, r, child)
 	requireRoleCondition(t, currentRole(t, cl, child), metav1.ConditionTrue, testReadyCondition)

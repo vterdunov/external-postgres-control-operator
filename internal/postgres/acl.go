@@ -29,7 +29,9 @@ type ACLDesired struct {
 	BindingRevision string
 	Generation      int64
 	Observe         bool
-	Checkpoint      func(context.Context, []epco.ManagedACLTarget) error
+	// ConnectionOnly reconciles database CONNECT without touching child responsibility.
+	ConnectionOnly bool
+	Checkpoint     func(context.Context, []epco.ManagedACLTarget) error
 }
 
 // ACLResult reports only catalog-confirmed outcomes and retained responsibilities.

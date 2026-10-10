@@ -34,7 +34,7 @@ type checkFunc func(context.Context, *postgres.Config) error
 func (f checkFunc) Check(ctx context.Context, c *postgres.Config) error { return f(ctx, c) }
 func testCluster() *epco.PostgresCluster {
 	return &epco.PostgresCluster{Name: testClusterName, Namespace: controllerTestNamespace, Generation: 2, UID: types.UID("original"), Spec: epco.PostgresClusterSpec{
-		Connection: epco.PostgresConnection{Host: "database"}, CredentialsSecret: epco.LocalReference{Name: "auth"}, TLS: &epco.PostgresTLS{Mode: "disable"}, ReconcileInterval: "2m"}}
+		Connection: epco.PostgresConnection{Host: "database"}, CredentialsSecret: epco.LocalReference{Name: "auth"}, TLS: &epco.PostgresTLS{Mode: dbTestTLSDisable}, ReconcileInterval: "2m"}}
 }
 func authSecret() *corev1.Secret {
 	return &corev1.Secret{Name: "auth", Namespace: controllerTestNamespace, Type: corev1.SecretTypeBasicAuth, Data: map[string][]byte{"username": []byte("admin"), "password": []byte("sensitive-password")}}

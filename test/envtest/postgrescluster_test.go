@@ -84,8 +84,8 @@ func clusterAuth(name, password string) *corev1.Secret {
 	return &corev1.Secret{Name: name,
 		Namespace: namespace.Name,
 		Type:      corev1.SecretTypeBasicAuth,
-		Data: map[string][]byte{"username": []byte("admin"),
-			"password": []byte(password)}}
+		Data: map[string][]byte{connectionAPIUsernameKey: []byte("admin"),
+			passwordKey: []byte(password)}}
 }
 func watchedCluster() *epco.PostgresCluster {
 	return &epco.PostgresCluster{Name: "watched-cluster",
@@ -167,7 +167,7 @@ var _ = Describe("PostgresCluster manager reconciliation", func() {
 			latest.Status.Message = "independent status edit"
 			Expect(environment.Client.Status().Update(ctx, latest)).To(Succeed())
 			Consistently(p.count).WithContext(ctx).WithTimeout(500 * time.Millisecond).Should(Equal(before))
-			s.Data["password"] = []byte("broken")
+			s.Data[passwordKey] = []byte("broken")
 			Expect(environment.Client.Update(ctx, s)).To(Succeed())
 			expectReady(ctx, c, metav1.ConditionFalse, "ConnectionUnavailable")
 			Expect(environment.Client.Get(ctx, client.ObjectKeyFromObject(c), latest)).To(Succeed())
@@ -196,10 +196,10 @@ var _ = Describe("PostgresCluster manager reconciliation", func() {
 		Eventually(p.seen).WithContext(ctx).Should(Receive(Equal("second")))
 		expectReady(ctx, c, metav1.ConditionTrue, "Ready")
 		before := p.count()
-		old.Data["password"] = []byte("unused")
+		old.Data[passwordKey] = []byte("unused")
 		Expect(environment.Client.Update(ctx, old)).To(Succeed())
 		Consistently(p.count).WithContext(ctx).WithTimeout(500 * time.Millisecond).Should(Equal(before))
-		other.Data["password"] = []byte("broken")
+		other.Data[passwordKey] = []byte("broken")
 		Expect(environment.Client.Update(ctx, other)).To(Succeed())
 		expectReady(ctx, c, metav1.ConditionFalse, "ConnectionUnavailable")
 	}, NodeTimeout(45*time.Second))
@@ -213,7 +213,7 @@ var _ = Describe("PostgresCluster manager reconciliation", func() {
 		c := watchedCluster()
 		Expect(scope.Create(ctx, c)).To(Succeed())
 		Eventually(p.seen).WithContext(ctx).Should(Receive(Equal("valid")))
-		s.Data["password"] = []byte("broken")
+		s.Data[passwordKey] = []byte("broken")
 		Expect(environment.Client.Update(ctx, s)).To(Succeed())
 		close(release)
 		Eventually(p.seen).WithContext(ctx).Should(Receive(Equal("broken")))
@@ -282,7 +282,7 @@ var _ = Describe("PostgresCluster manager reconciliation", func() {
 		Expect(err).NotTo(HaveOccurred())
 		key, err := os.ReadFile(fixture.ClientKey)
 		Expect(err).NotTo(HaveOccurred())
-		caSecret := &corev1.Secret{Name: "ca", Namespace: namespace.Name, Data: map[string][]byte{"root": ca}}
+		caSecret := &corev1.Secret{Name: "ca", Namespace: namespace.Name, Data: map[string][]byte{databaseTestCAKey: ca}}
 		clientSecret := &corev1.Secret{Name: "client",
 			Namespace: namespace.Name,
 			Type:      corev1.SecretTypeTLS,
@@ -296,14 +296,14 @@ var _ = Describe("PostgresCluster manager reconciliation", func() {
 		c := watchedCluster()
 		c.Spec.TLS = &epco.PostgresTLS{Mode: "verify-full",
 			CASecret: &epco.SecretKeyReference{Name: caSecret.Name,
-				Key: "root"},
+				Key: databaseTestCAKey},
 			ClientCertificateSecret: &epco.LocalReference{Name: clientSecret.Name}}
 		Expect(scope.Create(ctx, c)).To(Succeed())
 		expectReady(ctx, c, metav1.ConditionTrue, "Ready")
-		caSecret.Data["root"] = []byte("invalid")
+		caSecret.Data[databaseTestCAKey] = []byte("invalid")
 		Expect(environment.Client.Update(ctx, caSecret)).To(Succeed())
 		expectReady(ctx, c, metav1.ConditionFalse, "InvalidSecret")
-		caSecret.Data["root"] = ca
+		caSecret.Data[databaseTestCAKey] = ca
 		Expect(environment.Client.Update(ctx, caSecret)).To(Succeed())
 		expectReady(ctx, c, metav1.ConditionTrue, "Ready")
 		clientSecret.Data[corev1.TLSPrivateKeyKey] = []byte("invalid")

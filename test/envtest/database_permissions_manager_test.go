@@ -10,15 +10,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	epco "github.com/vterdunov/external-postgres-control-operator/api/v1alpha1"
-	"github.com/vterdunov/external-postgres-control-operator/internal/controller"
 	"github.com/vterdunov/external-postgres-control-operator/internal/postgres"
-	harness "github.com/vterdunov/external-postgres-control-operator/test/envtest"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 const (
@@ -57,22 +53,7 @@ func (s *permissionWatchSession) ReconcileACL(_ context.Context,
 	return &postgres.ACLResult{Targets: desired.Targets}, nil
 }
 func startPermissionManager(ctx context.Context, factory *permissionWatchFactory) {
-	builder, err := postgres.NewConfigBuilder()
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	instance, err := environment.StartManager(ctx, harness.ManagerOptions{
-		CachedObjects: []client.Object{
-			&epco.Database{}, &epco.DatabaseRole{}, &epco.PostgresCluster{}, &corev1.Secret{}, &corev1.Namespace{}},
-		Register: func(mgr manager.Manager) error {
-			return (&controller.DatabaseReconciler{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Builder: builder,
-				Databases: factory, Locks: &controller.ManagementLocks{}}).SetupWithManager(mgr)
-		},
-	})
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	DeferCleanup(func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		defer cancel()
-		Expect(instance.Stop(cleanup)).To(Succeed())
-	})
+	startConnectionAPIManager(ctx, factory)
 }
 
 var _ = Describe("R3 Database ACL API and dependency watches", func() {
@@ -92,22 +73,22 @@ var _ = Describe("R3 Database ACL API and dependency watches", func() {
 		targets := []any{map[string]any{permissionHostField: "postgres.example.test",
 			"port": int64(5432), permissionDatabaseField: "postgres",
 			"bindingRevision": "descriptor-revision", "bindings": []any{binding}}}
-		setField(db, targets, "status", "managedACLTargets")
-		setField(db, "current-target", "status", "activeACLTarget")
+		setField(db, targets, connectionAPIStatusSubresource, "managedACLTargets")
+		setField(db, "current-target", connectionAPIStatusSubresource, "activeACLTarget")
 		Expect(environment.Client.Status().Update(ctx, db)).To(Succeed())
 		stale := db.DeepCopy()
 		latest := &unstructured.Unstructured{}
 		latest.SetGroupVersionKind(db.GroupVersionKind())
 		Expect(environment.Client.Get(ctx, client.ObjectKeyFromObject(db), latest)).To(Succeed())
-		Expect(field(latest, "status", "managedACLTargets")).To(Equal(targets))
-		Expect(field(latest, "status", "activeACLTarget")).To(Equal("current-target"))
+		Expect(field(latest, connectionAPIStatusSubresource, "managedACLTargets")).To(Equal(targets))
+		Expect(field(latest, connectionAPIStatusSubresource, "activeACLTarget")).To(Equal("current-target"))
 		Expect(latest.GetGeneration()).To(Equal(generation))
-		setField(latest, "concurrent status update", "status", "message")
+		setField(latest, "concurrent status update", connectionAPIStatusSubresource, "message")
 		Expect(environment.Client.Status().Update(ctx, latest)).To(Succeed())
-		setField(stale, []any{}, "status", "managedACLTargets")
+		setField(stale, []any{}, connectionAPIStatusSubresource, "managedACLTargets")
 		Expect(apierrors.IsConflict(environment.Client.Status().Update(ctx, stale))).To(BeTrue())
 		Expect(environment.Client.Get(ctx, client.ObjectKeyFromObject(db), latest)).To(Succeed())
-		Expect(field(latest, "status", "managedACLTargets")).To(Equal(targets))
+		Expect(field(latest, connectionAPIStatusSubresource, "managedACLTargets")).To(Equal(targets))
 	}, NodeTimeout(30*time.Second))
 
 	DescribeTable("requeues the current generation when a managed permission role becomes ready",

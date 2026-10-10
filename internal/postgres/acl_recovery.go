@@ -74,6 +74,9 @@ func (e *aclEngine) cleanupHistory(ctx context.Context, declarations []aclDeclar
 	history := slices.Clone(e.targets[e.index].Bindings)
 	var first error
 	for _, old := range history {
+		if e.desired.ConnectionOnly && (old.Class != aclClassDatabase || old.Privilege != aclConnect) {
+			continue
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -291,11 +294,13 @@ func (s *databaseSession) PrepareACL(ctx context.Context, d ACLDesired) (*ACLRes
 	if !state.Exists {
 		return &ACLResult{Targets: d.Targets}, nil
 	}
-	d.Targets, err = s.restoreACLAccess(ctx, d, state)
-	if err != nil {
-		return &ACLResult{Targets: d.Targets}, err
+	if !d.ConnectionOnly {
+		d.Targets, err = s.restoreACLAccess(ctx, d, state)
+		if err != nil {
+			return &ACLResult{Targets: d.Targets}, err
+		}
 	}
-	e, cleanup, err := s.newACLEngine(ctx, d, aclNeedsTarget(epco.DatabaseSpec{}, d.Targets, d.Target))
+	e, cleanup, err := s.newACLEngine(ctx, d, !d.ConnectionOnly && aclNeedsTarget(epco.DatabaseSpec{}, d.Targets, d.Target))
 	if err != nil {
 		return nil, err
 	}
@@ -306,6 +311,11 @@ func (s *databaseSession) PrepareACL(ctx context.Context, d ACLDesired) (*ACLRes
 	history := slices.Clone(e.targets[e.index].Bindings)
 	changed := false
 	for _, old := range history {
+		// Database OWNER rewrites every database ACL grantor, including CREATE
+		// and TEMPORARY. Their evidence must be staged before the core mutation.
+		if d.ConnectionOnly && old.Class != aclClassDatabase {
+			continue
+		}
 		if old.Class != aclClassDatabase && e.targetFailure != nil {
 			continue
 		}
@@ -365,6 +375,9 @@ func (e *aclEngine) requestedOwner(b epco.ACLBinding) string {
 func (e *aclEngine) resolvePriorOwnerTransitions(ctx context.Context) error {
 	changed := false
 	for _, old := range slices.Clone(e.targets[e.index].Bindings) {
+		if e.desired.ConnectionOnly && old.Class != aclClassDatabase {
+			continue
+		}
 		if old.Class != aclClassDatabase && e.targetFailure != nil {
 			continue
 		}

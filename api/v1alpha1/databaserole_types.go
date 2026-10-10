@@ -118,6 +118,23 @@ type DatabaseRoleStatus struct {
 	// SecretResourceVersion identifies the password source version applied to SQL.
 	// +optional
 	SecretResourceVersion string `json:"secretResourceVersion,omitempty"`
+	// PasswordApplied records the exact credential-free input snapshot accepted by SQL.
+	// +optional
+	PasswordApplied *PasswordApplicationReceipt `json:"passwordApplied,omitempty"`
+}
+
+// PasswordApplicationReceipt identifies configured inputs, never credential bytes.
+type PasswordApplicationReceipt struct {
+	SourceNamespace       string `json:"sourceNamespace"`
+	SourceName            string `json:"sourceName"`
+	SourceUID             string `json:"sourceUID"`
+	SourceResourceVersion string `json:"sourceResourceVersion"`
+	RoleUID               string `json:"roleUID"`
+	RoleGeneration        int64  `json:"roleGeneration"`
+	ClusterUID            string `json:"clusterUID"`
+	ClusterGeneration     int64  `json:"clusterGeneration"`
+	Host                  string `json:"host"`
+	Port                  int32  `json:"port"`
 }
 
 // RoleEndpointState stores managed or possibly applied changes for one configured endpoint, not a physical server identity.

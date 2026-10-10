@@ -187,9 +187,10 @@ var _ = Describe("DatabaseRole combined API and PostgreSQL recovery", Ordered, f
 		})
 		cluster = recoveryCluster(ctx, scope, fixture)
 		name := roleName(fixture)
-		role = &epco.DatabaseRole{Name: "app", Namespace: scope.Namespace.Name, Spec: epco.DatabaseRoleSpec{
-			Name: epco.SQLName(name), Cluster: epco.ClusterReference{Name: cluster.Name},
-			MembershipPolicy: epco.MembershipManaged}}
+		role = &epco.DatabaseRole{Name: databaseRecoveryApplicationName, Namespace: scope.Namespace.Name,
+			Spec: epco.DatabaseRoleSpec{
+				Name: epco.SQLName(name), Cluster: epco.ClusterReference{Name: cluster.Name},
+				MembershipPolicy: epco.MembershipManaged}}
 	}, NodeTimeout(30*time.Second))
 
 	DescribeTable("recovers SQL success and status failure, then cleans withdrawn declarations after restart",

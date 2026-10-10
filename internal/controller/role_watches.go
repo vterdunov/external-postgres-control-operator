@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	epco "github.com/vterdunov/external-postgres-control-operator/api/v1alpha1"
 	"github.com/vterdunov/external-postgres-control-operator/internal/postgres"
@@ -92,13 +93,31 @@ func (r *DatabaseRoleReconciler) SetupWithManager(manager ctrl.Manager) error {
 			before.Status.AppliedGeneration != after.Status.AppliedGeneration ||
 			!equality.Semantic.DeepEqual(before.DeletionTimestamp, after.DeletionTimestamp) || roleReadiness(before) != roleReadiness(after)
 	}}
+	outputs := predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+		before, after := e.ObjectOld.(*epco.Database), e.ObjectNew.(*epco.Database)
+		return before.Generation != after.Generation || !equality.Semantic.DeepEqual(before.Status.ConnectionSecretHistory, after.Status.ConnectionSecretHistory) || !equality.Semantic.DeepEqual(before.DeletionTimestamp, after.DeletionTimestamp)
+	}}
 	return ctrl.NewControllerManagedBy(manager).
 		For(&epco.DatabaseRole{}, builder.WithPredicates(primary)).
 		Watches(&epco.DatabaseRole{}, handler.EnqueueRequestsFromMapFunc(r.rolesForRole), builder.WithPredicates(dependencies)).
+		Watches(&epco.Database{}, handler.EnqueueRequestsFromMapFunc(r.rolesForDatabaseOutputs), builder.WithPredicates(outputs)).
 		Watches(&epco.PostgresCluster{}, handler.EnqueueRequestsFromMapFunc(r.rolesForCluster), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.rolesForSecret), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.rolesForNamespace), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Complete(r)
+}
+
+func (r *DatabaseRoleReconciler) rolesForDatabaseOutputs(ctx context.Context, object client.Object) []reconcile.Request {
+	database := object.(*epco.Database)
+	var requests []reconcile.Request
+	for _, name := range databaseOutputNames(database) {
+		for _, request := range r.roleRequests(ctx, client.InNamespace(database.Namespace), client.MatchingFields{roleSourceIndex: name}) {
+			if !slices.Contains(requests, request) {
+				requests = append(requests, request)
+			}
+		}
+	}
+	return requests
 }
 
 func roleReadiness(role *epco.DatabaseRole) string {

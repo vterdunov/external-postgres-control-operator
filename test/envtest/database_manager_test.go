@@ -474,7 +474,7 @@ var _ = Describe("Database real API status recovery", func() {
 			writeCtx context.Context, c client.Client, sub string, obj client.Object,
 			opts ...client.SubResourceUpdateOption) error {
 			_, _, applies, _ := factory.snapshot()
-			if sub == "status" && applies > 0 {
+			if sub == connectionAPIStatusSubresource && applies > 0 {
 				conflictOnce.Do(func() {
 					latest := &epco.Database{}
 					Expect(c.Get(writeCtx, client.ObjectKeyFromObject(db), latest)).To(Succeed())

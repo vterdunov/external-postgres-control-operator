@@ -423,8 +423,8 @@ var _ = Describe("R3 architecture SQL regression boundaries", Ordered, ContinueO
 				fixture.exec(ctx, "SET ROLE "+quoteIdentifier(owner)+"; GRANT CONNECT ON DATABASE "+
 					quoteIdentifier(string(fixture.database.Spec.Name))+" TO "+quoteIdentifier(nextAdmin)+"; RESET ROLE")
 			}
-			Expect(fixture.direct(ctx, "database", string(fixture.database.Spec.Name), "public", "CONNECT")).To(BeFalse())
-			Expect(fixture.direct(ctx, "database", string(fixture.database.Spec.Name), nextAdmin, "CONNECT")).
+			Expect(fixture.direct(ctx, r3DatabaseScope, string(fixture.database.Spec.Name), "public", "CONNECT")).To(BeFalse())
+			Expect(fixture.direct(ctx, r3DatabaseScope, string(fixture.database.Spec.Name), nextAdmin, "CONNECT")).
 				To(Equal(independent))
 			var inheritedOwner, setOwner bool
 			Expect(fixture.target.QueryRowContext(ctx, "SELECT pg_has_role($1,$2,'USAGE'),pg_has_role($1,$2,'SET')",
@@ -453,15 +453,16 @@ var _ = Describe("R3 architecture SQL regression boundaries", Ordered, ContinueO
 			Expect(archFreshConnect(ctx, fixture, nextAdmin)).To(Succeed(),
 				"old pin cleanup never removes B's sole effective CONNECT")
 			if rejectPin {
-				Expect(fixture.direct(ctx, "database", string(fixture.database.Spec.Name), fixture.Role, "CONNECT")).
+				Expect(fixture.direct(ctx, r3DatabaseScope, string(fixture.database.Spec.Name), fixture.Role, "CONNECT")).
 					To(BeTrue(), "failed new-pin checkpoint prohibits old pin revocation")
 				Expect(rejected.Load()).To(BeTrue())
 				Expect(archCondition(current).Status).To(Equal(metav1.ConditionFalse))
 			} else {
 				fixture.ready(ctx)
 				current = recoveredDatabase(ctx, fixture.scope.Client, fixture.database)
-				Expect(fixture.direct(ctx, "database", string(fixture.database.Spec.Name), nextAdmin, "CONNECT")).To(BeTrue())
-				Expect(fixture.direct(ctx, "database", string(fixture.database.Spec.Name), fixture.Role, "CONNECT")).To(BeFalse())
+				Expect(fixture.direct(ctx, r3DatabaseScope, string(fixture.database.Spec.Name), nextAdmin, "CONNECT")).To(BeTrue())
+				Expect(fixture.direct(ctx, r3DatabaseScope, string(fixture.database.Spec.Name), fixture.Role, "CONNECT")).
+					To(BeFalse())
 				Expect(slices.ContainsFunc(archBindings(current), func(binding epco.ACLBinding) bool {
 					return binding.Administrative && binding.Grantee == nextAdmin && (independent || binding.Pending == "")
 				})).To(Equal(!independent), "an independent B path must not be claimed as an operator-owned pin")

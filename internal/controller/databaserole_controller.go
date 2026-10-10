@@ -10,6 +10,7 @@ import (
 
 	epco "github.com/vterdunov/external-postgres-control-operator/api/v1alpha1"
 	"github.com/vterdunov/external-postgres-control-operator/internal/postgres"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -97,6 +98,20 @@ func (r *DatabaseRoleReconciler) Reconcile(ctx context.Context, request ctrl.Req
 	if err != nil {
 		return r.roleError(ctx, role, err, interval)
 	}
+	var password *string
+	var source *corev1.Secret
+	if role.DeletionTimestamp.IsZero() && role.Spec.ManagementPolicy != epco.ManagementObserve {
+		if postgres.IsProtectedRole(key.SQLName, config.Connection.User) {
+			return r.roleStatus(ctx, role, false, postgres.ProtectedRoleReason, "The SQL role is protected from management", interval)
+		}
+		password, source, err = r.rolePassword(ctx, role)
+		if err != nil {
+			if apierrors.IsConflict(err) || apierrors.IsAlreadyExists(err) {
+				return freshCheck(), nil
+			}
+			return r.roleError(ctx, role, err, interval)
+		}
+	}
 	session, err := r.Roles.Open(ctx, config)
 	if err != nil {
 		return r.roleError(ctx, role, err, interval)
@@ -109,10 +124,10 @@ func (r *DatabaseRoleReconciler) Reconcile(ctx context.Context, request ctrl.Req
 	if !role.DeletionTimestamp.IsZero() {
 		return r.deleteRole(ctx, role, session, key.SQLName, interval)
 	}
-	return r.reconcileRoleSession(ctx, role, cluster, session, interval)
+	return r.reconcileRoleSession(ctx, role, cluster, session, interval, password, source)
 }
 
-func (r *DatabaseRoleReconciler) reconcileRoleSession(ctx context.Context, role *epco.DatabaseRole, cluster *epco.PostgresCluster, session postgres.RoleSession, interval time.Duration) (ctrl.Result, error) {
+func (r *DatabaseRoleReconciler) reconcileRoleSession(ctx context.Context, role *epco.DatabaseRole, cluster *epco.PostgresCluster, session postgres.RoleSession, interval time.Duration, password *string, source *corev1.Secret) (ctrl.Result, error) {
 	name := EffectiveRoleName(role)
 	state, err := session.Inspect(ctx, name)
 	if err != nil {
@@ -131,19 +146,18 @@ func (r *DatabaseRoleReconciler) reconcileRoleSession(ctx context.Context, role 
 	if err = r.roleDependencies(ctx, role); err != nil {
 		return r.roleError(ctx, role, err, interval)
 	}
-	password, version, err := r.rolePassword(ctx, role)
-	if err != nil {
-		if apierrors.IsConflict(err) || apierrors.IsAlreadyExists(err) {
-			return freshCheck(), nil
-		}
-		return r.roleError(ctx, role, err, interval)
-	}
+	receipt := passwordApplicationReceipt(role, cluster, source)
 	endpoint := roleEndpoint(role, cluster)
 	index := endpointIndex(role, endpoint)
 	previous := role.Status.ManagedEndpoints[index]
 	desired := postgres.RoleDesired{Name: name, Spec: role.Spec, Password: password,
 		TrackedMemberships: slices.Clone(previous.Memberships), TrackedParameters: slices.Clone(previous.Parameters)}
 	addRoleCleanupIntent(role, index, state, name)
+	budget := role.DeepCopy()
+	budget.Status.PasswordApplied = receipt
+	if err = boundRoleStatus(budget); err != nil {
+		return r.roleError(ctx, role, err, interval)
+	}
 	if err = r.Client.Status().Update(ctx, role); err != nil {
 		return roleWriteResult(err)
 	}
@@ -156,7 +170,11 @@ func (r *DatabaseRoleReconciler) reconcileRoleSession(ctx context.Context, role 
 	}
 	role.Status.ManagedEndpoints[index].Memberships = result.Memberships
 	role.Status.ManagedEndpoints[index].Parameters = result.Parameters
-	role.Status.SecretResourceVersion = version
+	role.Status.PasswordApplied = receipt
+	role.Status.SecretResourceVersion = ""
+	if receipt != nil {
+		role.Status.SecretResourceVersion = receipt.SourceResourceVersion
+	}
 	role.Status.HasManagedSQL = true
 	role.Status.AppliedGeneration = role.Generation
 	role.Status.LastSuccessfulReconcileTime = new(metav1.NewTime(r.now()))
@@ -248,6 +266,9 @@ func (r *DatabaseRoleReconciler) roleStatus(ctx context.Context, role *epco.Data
 		condition.Status = metav1.ConditionTrue
 	}
 	meta.SetStatusCondition(&role.Status.Conditions, condition)
+	if err := boundRoleStatus(role); err != nil {
+		return ctrl.Result{}, err
+	}
 	if err := r.Client.Status().Update(ctx, role); err != nil {
 		return roleWriteResult(err)
 	}
@@ -278,7 +299,9 @@ func (r *DatabaseRoleReconciler) roleError(ctx context.Context, role *epco.Datab
 	case postgres.ConnectionSecretConflict:
 		message = "The generated password source has conflicting provenance"
 	case postgres.DependenciesNotReady:
-		message = "A required role or connection is not ready"
+		message = "A required role, connection or credential operation is pending"
+	case postgres.StatusSizeExceeded:
+		message = failure.Message
 	case postgres.InsufficientPrivileges:
 		message = "The administrative connection lacks required SQL privileges"
 	case postgres.DeletionBlocked:

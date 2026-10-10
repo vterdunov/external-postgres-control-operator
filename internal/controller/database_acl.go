@@ -87,10 +87,10 @@ func (r *DatabaseReconciler) databaseACLDesired(database *epco.Database, cluster
 		}}
 }
 
-func (r *DatabaseReconciler) applyDatabaseACL(ctx context.Context, database *epco.Database, session postgres.DatabaseSession, state *postgres.DatabaseState, interval time.Duration, desired postgres.ACLDesired) (ctrl.Result, error) {
+func (r *DatabaseReconciler) applyDatabaseACL(ctx context.Context, database *epco.Database, session postgres.DatabaseSession, state *postgres.DatabaseState, interval time.Duration, desired postgres.ACLDesired, connectionsReady bool) (ctrl.Result, error) {
 	aclSession, capable := session.(postgres.DatabaseACLSession)
 	if !capable {
-		return r.applyDatabaseSession(ctx, database, session, state, interval)
+		return r.applyDatabaseSession(ctx, database, session, state, interval, connectionsReady)
 	}
 	// An explicit admission repair uses the existing owner only, before target
 	// inspection. It cannot smuggle an uncheckpointed owner transition.
@@ -123,6 +123,7 @@ func (r *DatabaseReconciler) applyDatabaseACL(ctx context.Context, database *epc
 	}
 	desired.Targets = prepared.Targets
 	base := database.Spec.DeepCopy()
+	base.ConnectionSecrets = nil
 	base.Permissions = nil
 	base.DefaultPrivileges = nil
 	for i := range base.Schemas {
@@ -173,7 +174,7 @@ func (r *DatabaseReconciler) applyDatabaseACL(ctx context.Context, database *epc
 		return r.databaseStatus(ctx, database, false, postgres.DependenciesNotReady, "ACL reconciliation did not confirm all scopes", interval)
 	}
 	database.Status.ManagedACLTargets = aclResult.Targets
-	return r.databaseSuccess(ctx, database, interval)
+	return r.databaseSuccess(ctx, database, interval, connectionsReady)
 }
 func (r *DatabaseReconciler) observeDatabaseACL(ctx context.Context, database *epco.Database, session postgres.DatabaseSession, state *postgres.DatabaseState, interval time.Duration, desired postgres.ACLDesired) (ctrl.Result, error) {
 	aclSession, capable := session.(postgres.DatabaseACLSession)

@@ -64,6 +64,19 @@ url = "https://github.com/golangci/golangci-lint/releases/download/v2.13.1/golan
 url_api = "https://api.github.com/repos/golangci/golangci-lint/releases/assets/522396798"
 provenance = "github-attestations"
 
+[[tools.java]]
+version = "temurin-17.0.15+6"
+backend = "core:java"
+specifiers = ["temurin-17.0.15+6"]
+
+[tools.java."platforms.linux-x64"]
+checksum = "sha256:9616877c733c9249328ea9bd83a5c8c30e0f9a7af180cac8ffda9034161c2df2"
+url = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.15%2B6/OpenJDK17U-jdk_x64_linux_hotspot_17.0.15_6.tar.gz"
+
+[tools.java."platforms.macos-arm64"]
+checksum = "sha256:1a2fa2bb9ea059cf2c1ab3e296a98e006fb6fdad2bd19ce52df48794eaa1836a"
+url = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.15%2B6/OpenJDK17U-jdk_aarch64_mac_hotspot_17.0.15_6.tar.gz"
+
 [[tools.kind]]
 version = "0.32.0"
 backend = "aqua:kubernetes-sigs/kind"
