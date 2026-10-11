@@ -70,11 +70,12 @@ def hydrate(source, suite, reference):
         raise Refused()
     if git(source, "status", "--porcelain", "--untracked-files=all") or git(suite, "status", "--porcelain", "--untracked-files=all"):
         raise Refused()
+    tracked = set(git(source, "ls-tree", "-r", "--name-only", "HEAD").splitlines())
     for path in source.rglob("*"):
         relative = path.relative_to(source)
         if relative.parts[0] == ".git":
             continue
-        if "__pycache__" in relative.parts or ((path.is_file() or path.is_symlink()) and (relative.parts[0] == "test" or path.name.endswith("_test.go"))):
+        if "__pycache__" in relative.parts or ((path.is_file() or path.is_symlink()) and (relative.parts[0] == "test" or path.name.endswith("_test.go")) and relative.as_posix() not in tracked):
             raise Refused()
     verify_checkout(source)
     verify_checkout(suite)
@@ -196,7 +197,8 @@ def main():
     try:
         if args.command == "require":
             root = Path(__file__).resolve().parents[1]
-            if not (root / "test/unit/run.sh").is_file() or not any((root / "internal").rglob("*_test.go")):
+            required = ("test/envtest/run.sh", "test/integration/run.sh", "test/e2e/run.sh", "test/architecture/policy_test.py", "test/runners/run.sh")
+            if not all((root / path).is_file() for path in required):
                 print("Private tests are absent. Hydrate the pinned private suite first.", file=sys.stderr)
                 return 1
             return 0

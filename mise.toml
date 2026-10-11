@@ -60,7 +60,7 @@ depends = ["test-unit"]
 
 [tasks.test-unit]
 description = "Unit tests with race detection and randomized specs"
-run = ["mise run test-suite-required", "bash test/unit/run.sh", "python3 test/envtest/runner_test.py", "bash test/e2e/runner_test.sh", "mise run test-architecture"]
+run = "bash test/unit/run.sh"
 
 [tasks.test-architecture]
 description = "Test production architecture boundaries with isolated fixtures"
@@ -102,7 +102,7 @@ run = [
   "bash tools/linter.sh config verify",
   "bash tools/linter.sh run",
   "bash tools/linter.sh run --build-tags envtest,integration,e2e",
-  "shellcheck tools/*.sh test/unit/run.sh test/generated/check.sh test/envtest/run.sh test/integration/run.sh test/e2e/run.sh test/e2e/runner_test.sh",
+  "shellcheck tools/*.sh test/unit/run.sh test/runners/run.sh test/generated/check.sh test/envtest/run.sh test/integration/run.sh test/e2e/run.sh test/e2e/runner_test.sh",
 ]
 
 [tasks.lint-architecture]
@@ -110,11 +110,13 @@ description = "Check production package and vendor dependency boundaries"
 run = "go-arch-lint check"
 
 [tasks.check-private]
-description = "Build, private unit tests, full lint, generated checks and render manifests"
+description = "Build, public units, private checks, full lint, generated checks and render manifests"
 run = [
   "mise run test-suite-required",
   "mise run build",
   "mise run test-unit",
+  "mise run test-runner-contracts",
+  "mise run test-architecture",
   "mise run lint-private",
   "mise run check-generated",
   "kustomize build config/default > /dev/null",
@@ -176,20 +178,25 @@ description = "Require the private test overlay"
 run = "python3 tools/test-suite.py require"
 
 [tasks.lint]
-description = "Verify production linter configuration, architecture, Go and shell code"
+description = "Verify production and public unit Go/shell code and architecture"
 run = [
   "mise run lint-architecture",
   "bash tools/linter.sh config verify",
-  "bash tools/linter.sh run --tests=false",
-  "shellcheck tools/*.sh",
+  "bash tools/linter.sh run",
+  "shellcheck tools/*.sh test/unit/run.sh",
 ]
 
 [tasks.check]
-description = "Build, vet, production lint, generated consistency and manifest rendering"
+description = "Build, unit tests, vet, lint, generated consistency and manifest rendering"
 run = [
   "mise run build",
+  "mise run test-unit",
   "mise run vet",
   "mise run lint",
   "mise run check-generated",
   "kustomize build config/default > /dev/null",
 ]
+
+[tasks.test-runner-contracts]
+description = "Private runner lifecycle and fixture-support contracts"
+run = ["mise run test-suite-required", "bash test/runners/run.sh"]

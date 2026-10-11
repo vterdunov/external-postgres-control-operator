@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   public:
-    name: Build and static checks
+    name: Units, build and static checks
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -29,8 +29,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: Build, vet, lint, check generation and render manifests
+      - name: Run public units, build, vet, lint, generation and manifest checks
         run: mise run check
+      - name: Repeat public unit seeds on scheduled and manual runs
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          for run in 2 3; do
+            EPCO_TEST_SEED="$(( $(date +%s) + run ))" EPCO_ARTIFACTS_DIR="$PWD/artifacts/unit/$run" mise run test-unit
+          done
       - name: Validate workflows
         run: mise exec -- actionlint
       - name: Verify checks left tracked sources unchanged

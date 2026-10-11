@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [test-split, test-unit, test-envtest, check-generated, lint-private]
+        suite: [test-split, test-runner-contracts, test-architecture, test-envtest, check-generated, lint-private]
     steps:
       - name: Checkout exact operator revision
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -96,7 +96,7 @@ jobs:
           EXTENDED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         run: |
           runs=1
-          if [ "$EXTENDED" = true ] && [ "$TASK" != check-generated ] && [ "$TASK" != lint-private ] && [ "$TASK" != test-split ]; then runs=3; fi
+          if [ "$EXTENDED" = true ] && [ "$TASK" != check-generated ] && [ "$TASK" != lint-private ] && [ "$TASK" != test-split ] && [ "$TASK" != test-runner-contracts ] && [ "$TASK" != test-architecture ]; then runs=3; fi
           for run in $(seq 1 "$runs"); do
             python3 ../private-suite/tools/run_ci.py --source "$PWD" --task "$TASK" --seed "$(( $(date +%s) + run ))" --logs "$RUNNER_TEMP/private-checks/$TASK/$run"
           done
@@ -187,7 +187,7 @@ jobs:
           EPCO_PG_VERSION: ${{ matrix.pg }}
         run: |
           runs=1
-          if [ "$EXTENDED" = true ] && [ "$TASK" != check-generated ] && [ "$TASK" != lint-private ] && [ "$TASK" != test-split ]; then runs=3; fi
+          if [ "$EXTENDED" = true ] && [ "$TASK" != check-generated ] && [ "$TASK" != lint-private ] && [ "$TASK" != test-split ] && [ "$TASK" != test-runner-contracts ] && [ "$TASK" != test-architecture ]; then runs=3; fi
           for run in $(seq 1 "$runs"); do
             python3 ../private-suite/tools/run_ci.py --source "$PWD" --task "$TASK" --seed "$(( $(date +%s) + run ))" --logs "$RUNNER_TEMP/private-checks/$TASK/$run"
           done

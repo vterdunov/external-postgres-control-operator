@@ -34,6 +34,17 @@ go.work
 # Suite reports and sanitized diagnostics
 /artifacts/
 
-# Private test overlay must never enter public commits
-/test/
+# Keep heavy private suites out of public commits; ordinary unit tests stay public.
+/test/*
+!/test/unit/
+/test/unit/*
+!/test/unit/run.sh
+!/test/utils/
+/test/utils/*
+!/test/utils/utils.go
+!/test/utils/utils_test.go
+!/test/utils/tls.go
 *_test.go
+!/internal/controller/*_test.go
+!/internal/postgres/*_test.go
+!/test/utils/utils_test.go
