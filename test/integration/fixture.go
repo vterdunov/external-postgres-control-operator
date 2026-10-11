@@ -89,14 +89,7 @@ func (f *Fixture) Close(ctx context.Context) error {
 	if f.Server == nil || f.Server.Admin == nil {
 		return errors.Join(errs...)
 	}
-	if f.Database != "" {
-		_, err := f.Server.Admin.ExecContext(ctx, "DROP DATABASE IF EXISTS "+quoteIdentifier(f.Database)+" WITH (FORCE)")
-		errs = append(errs, err)
-	}
-	if f.Role != "" {
-		_, err := f.Server.Admin.ExecContext(ctx, "DROP ROLE IF EXISTS "+quoteIdentifier(f.Role))
-		errs = append(errs, err)
-	}
+	errs = append(errs, f.Server.cleanupOwnedSQL(ctx, []string{f.Database}, []string{f.Role}))
 	return errors.Join(errs...)
 }
 

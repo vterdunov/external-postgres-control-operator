@@ -5,6 +5,8 @@ package integration
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"errors"
 	"os"
 	"os/exec"
 	"strconv"
@@ -234,9 +236,15 @@ var _ = Describe("R4 application connections with real API and PostgreSQL", Orde
 				parent, err := randomName("r4_parent_")
 				Expect(err).NotTo(HaveOccurred())
 				roleSQL(ctx, fixture.Fixture, "CREATE ROLE "+quoteIdentifier(parent)+" NOLOGIN")
-				DeferCleanup(func(ctx SpecContext) {
-					roleSQL(ctx, fixture.Fixture, "REVOKE CONNECT ON DATABASE "+database+" FROM "+quoteIdentifier(parent))
-					roleSQL(ctx, fixture.Fixture, "DROP ROLE "+quoteIdentifier(parent))
+				DeferCleanup(func() {
+					cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+					defer cancel()
+					Expect(fixture.Server.withCleanupConnection(cleanup, roleSQLAdmin, func(connection *sql.Conn) error {
+						_, revokeErr := connection.ExecContext(cleanup,
+							"REVOKE CONNECT ON DATABASE "+database+" FROM "+quoteIdentifier(parent))
+						_, dropErr := connection.ExecContext(cleanup, "DROP ROLE "+quoteIdentifier(parent))
+						return errors.Join(revokeErr, dropErr)
+					})).To(Succeed())
 				})
 				roleSQL(ctx, fixture.Fixture, "GRANT CONNECT ON DATABASE "+database+" TO "+quoteIdentifier(parent))
 				role := recoveryRole(ctx, fixture.api, fixture.role)

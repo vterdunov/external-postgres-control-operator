@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	epco "github.com/vterdunov/external-postgres-control-operator/api/v1alpha1"
 	"github.com/vterdunov/external-postgres-control-operator/test/utils"
 	authenticationv1 "k8s.io/api/authentication/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -83,18 +85,53 @@ var _ = Describe("Installed operator", func() {
 		Expect(status).To(Equal(http.StatusForbidden))
 	})
 
-	It("connects to PostgreSQL 16 over authenticated TCP in its separate namespace", func() {
-		ctx, cancel := boundedContext()
-		defer cancel()
+	It("verifies the selected PostgreSQL server over authenticated TCP "+
+		"and the independently pinned client", func(ctx SpecContext) {
 		namespace := os.Getenv("EPCO_E2E_POSTGRES_NAMESPACE")
 		Expect(namespace).To(Equal("epco-postgres"))
+		deployment, err := kubeClient.AppsV1().Deployments(namespace).Get(ctx, "postgres", metav1.GetOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(Equal(os.Getenv("EPCO_E2E_POSTGRES_IMAGE")))
 		cmd := kubectlCommand(ctx, "-n", namespace, "exec", "deployment/postgres", "--",
 			"psql", "-h", "127.0.0.1", "-U", "postgres", "-Atc",
-			"SELECT current_user, current_database(), current_setting('server_version_num')::int / 10000")
+			"SELECT current_user, current_database(), current_setting('server_version_num'), version()")
 		output, err := utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(strings.TrimSpace(output)).To(Equal("postgres|postgres|16"))
-	})
+		fields := strings.Split(strings.TrimSpace(output), "|")
+		Expect(fields).To(HaveLen(4))
+		Expect(fields[:2]).To(Equal([]string{installedDatabasePostgresName, installedDatabasePostgresName}))
+		serverNumber, err := strconv.Atoi(fields[2])
+		Expect(err).NotTo(HaveOccurred())
+		Expect(strconv.Itoa(serverNumber / 10000)).To(Equal(os.Getenv("EPCO_PG_VERSION")))
+		job := &batchv1.Job{Namespace: namespace, Name: "client-version",
+			Spec: batchv1.JobSpec{BackoffLimit: new(int32(0)), ActiveDeadlineSeconds: new(int64(60)),
+				Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+					RestartPolicy: corev1.RestartPolicyNever, AutomountServiceAccountToken: new(false),
+					Containers: []corev1.Container{{Name: r6MigrationContainer, Image: installedClientImage(),
+						Command: []string{"psql", "--version"}}},
+				}}}}
+		_, err = kubeClient.BatchV1().Jobs(namespace).Create(ctx, job, metav1.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			cleanup, stop := boundedContext()
+			defer stop()
+			Expect(kubeClient.BatchV1().Jobs(namespace).Delete(cleanup, job.Name,
+				metav1.DeleteOptions{PropagationPolicy: new(metav1.DeletePropagationForeground)})).To(Succeed())
+		})
+		var clientVersion string
+		Eventually(func(g Gomega) {
+			latest, getErr := kubeClient.BatchV1().Jobs(namespace).Get(ctx, job.Name, metav1.GetOptions{})
+			g.Expect(getErr).NotTo(HaveOccurred())
+			g.Expect(latest.Status.Succeeded).To(Equal(int32(1)))
+			clientVersion = strings.TrimSpace(installedConnectionJobLogs(ctx, job))
+			g.Expect(clientVersion).To(HavePrefix("psql (PostgreSQL) 16.15"))
+		}).WithContext(ctx).WithTimeout(65 * time.Second).WithPolling(200 * time.Millisecond).Should(Succeed())
+		observed := fmt.Sprintf("server authenticated identity: %s|%s\nserver_version_num: %d\n"+
+			"server actual version: %s\nclient actual version: %s\n",
+			fields[0], fields[1], serverNumber, fields[3], clientVersion)
+		Expect(os.WriteFile(filepath.Join(os.Getenv("EPCO_E2E_ARTIFACTS"), "fixture-observed.txt"),
+			[]byte(observed), 0600)).To(Succeed())
+	}, NodeTimeout(90*time.Second))
 
 	It("supports create, read, update and delete for each existing CRD", func() {
 		ctx, cancel := boundedContext()

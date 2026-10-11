@@ -173,19 +173,7 @@ var _ = Describe("R3 architecture SQL regression boundaries", Ordered, ContinueO
 		DeferCleanup(func() {
 			cleanup, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 			defer cancel()
-			Expect(scope.Cleanup(cleanup)).To(Succeed())
-			if fixture.target != nil {
-				Expect(fixture.target.Close()).To(Succeed())
-			}
-			if fixture.database != nil {
-				_, dropErr := base.Server.Admin.ExecContext(cleanup,
-					"DROP DATABASE IF EXISTS "+quoteIdentifier(string(fixture.database.Spec.Name))+" WITH (FORCE)")
-				Expect(dropErr).NotTo(HaveOccurred())
-			}
-			for _, role := range fixture.roles {
-				roleSQL(cleanup, base, "DROP ROLE IF EXISTS "+quoteIdentifier(role))
-			}
-			Expect(base.Close(cleanup)).To(Succeed())
+			Expect(fixture.cleanup(cleanup)).To(Succeed())
 		})
 		Expect(base.Admin.QueryRowContext(ctx, "SHOW server_version_num").Scan(&fixture.version)).To(Succeed())
 		roleSQL(ctx, base, "ALTER ROLE "+quoteIdentifier(base.Role)+" CREATEDB")

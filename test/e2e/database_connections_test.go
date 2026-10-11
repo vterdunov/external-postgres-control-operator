@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"maps"
+	"os"
 	"strings"
 	"time"
 
@@ -25,26 +26,52 @@ import (
 
 const (
 	installedConnectionMigrationGate      = "migration-gate"
+	installedConnectionHostKey            = "host"
+	installedConnectionPortKey            = "port"
+	installedConnectionUserKey            = "user"
+	installedConnectionSSLModeKey         = "sslmode"
 	installedConnectionDatabase           = "epco_e2e_connections"
 	installedConnectionService            = "epco_e2e_connections_service"
 	installedConnectionAdmin              = "epco_e2e_connections_reader"
-	installedConnectionClientImage        = "public.ecr.aws/docker/library/postgres:16.15-bookworm"
 	installedConnectionServiceOutput      = "service-connection"
 	installedConnectionAdminOutput        = "reader-connection"
 	installedConnectionRetryMessage       = "Waiting for application connection"
 	installedConnectionEstablishedMessage = "Application connection established"
 )
 
-// Both the Job and fresh probes consume the output URI. Credentials enter the
-// local kubectl process only through stdin; assertions never print the URI.
+func installedClientImage() string {
+	if image := os.Getenv("EPCO_E2E_CLIENT_IMAGE"); image != "" {
+		return image
+	}
+	return "public.ecr.aws/docker/library/postgres:16.15-bookworm"
+}
+
+// Credentials stay in private stdin/password files, outside local and remote argv.
 func installedConnectionSucceeded(err error) bool { return err == nil }
 
 func installedConnectionLogin(ctx context.Context, output *corev1.Secret, query string, allowed bool) string {
-	const script = "IFS= read -r connection; " +
-		"exec psql -X -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate \"$connection\" -Atc \"$1\""
+	const script = `umask 077
+unset PGPASSWORD
+IFS= read -r PGHOST
+IFS= read -r PGPORT
+IFS= read -r PGDATABASE
+IFS= read -r PGUSER
+IFS= read -r PGSSLMODE
+PGPASSFILE=$(mktemp)
+trap 'rm -f "$PGPASSFILE"' EXIT
+cat > "$PGPASSFILE"
+export PGHOST PGPORT PGDATABASE PGUSER PGSSLMODE PGPASSFILE
+psql -X -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -Atc "$1"`
 	cmd := kubectlCommand(ctx, "-n", "epco-postgres", "exec", "-i", "deployment/postgres", "--",
 		"sh", "-c", script, "sh", query)
-	cmd.Stdin = strings.NewReader(string(output.Data["uri"]) + "\n")
+	var input strings.Builder
+	for _, key := range []string{installedConnectionHostKey, installedConnectionPortKey,
+		r6DatabaseKey, installedConnectionUserKey, installedConnectionSSLModeKey} {
+		input.Write(output.Data[key])
+		input.WriteByte('\n')
+	}
+	input.Write(output.Data["pgpass"])
+	cmd.Stdin = strings.NewReader(input.String())
 	result, err := utils.Run(cmd)
 	if allowed {
 		ExpectWithOffset(1, installedConnectionSucceeded(err)).To(BeTrue(),
@@ -80,8 +107,21 @@ func installedConnectionPassword(ctx context.Context, namespace, name string, ex
 }
 
 func installedConnectionJob(namespace, output string) *batchv1.Job {
-	const script = `attempt=0
-until psql -X -v ON_ERROR_STOP=1 "$DATABASE_URL" -Atc 'SELECT 1' >/dev/null 2>&1; do
+	const script = `umask 077
+PGPASSFILE=$(mktemp)
+trap 'rm -f "$PGPASSFILE"' EXIT
+export PGPASSFILE
+load_connection() {
+  PGHOST=$(cat /connection/host)
+  PGPORT=$(cat /connection/port)
+  PGDATABASE=$(cat /connection/dbname)
+  PGUSER=$(cat /connection/user)
+  PGSSLMODE=$(cat /connection/sslmode)
+  cp /connection/pgpass "$PGPASSFILE"
+  export PGHOST PGPORT PGDATABASE PGUSER PGSSLMODE
+}
+attempt=0
+until load_connection && psql -X -v ON_ERROR_STOP=1 -Atc 'SELECT 1' >/dev/null 2>&1; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 150 ]; then
     echo "Application connection retry limit reached"
@@ -92,7 +132,8 @@ until psql -X -v ON_ERROR_STOP=1 "$DATABASE_URL" -Atc 'SELECT 1' >/dev/null 2>&1
 done
 echo "Application connection established"
 until [ -f /migration-gate/ready ]; do sleep 1; done
-psql -X -v ON_ERROR_STOP=1 "$DATABASE_URL" -Atc \
+load_connection
+psql -X -v ON_ERROR_STOP=1 -Atc \
   'CREATE TABLE app.orders(value integer); INSERT INTO app.orders VALUES (42)' >/dev/null 2>&1
 echo "Migration completed"
 `
@@ -100,18 +141,25 @@ echo "Migration completed"
 		Spec: batchv1.JobSpec{BackoffLimit: new(int32(0)), ActiveDeadlineSeconds: new(int64(240)),
 			Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{RestartPolicy: corev1.RestartPolicyNever,
 				AutomountServiceAccountToken: new(false),
-				Containers: []corev1.Container{{Name: "migration", Image: installedConnectionClientImage,
+				Containers: []corev1.Container{{Name: r6MigrationContainer, Image: installedClientImage(),
 					Command: []string{"sh", "-ceu", script},
-					Env: []corev1.EnvVar{{Name: "PGCONNECT_TIMEOUT", Value: "1"},
-						{Name: "DATABASE_URL", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-							Name: output, Key: "uri"}}}},
+					Env:     []corev1.EnvVar{{Name: "PGCONNECT_TIMEOUT", Value: "1"}},
 					VolumeMounts: []corev1.VolumeMount{{Name: installedConnectionMigrationGate,
-						MountPath: "/migration-gate", ReadOnly: true}},
+						MountPath: "/migration-gate", ReadOnly: true},
+						{Name: "connection", MountPath: "/connection", ReadOnly: true}},
 				}},
 				Volumes: []corev1.Volume{{Name: installedConnectionMigrationGate,
 					ConfigMap: &corev1.ConfigMapVolumeSource{
 						Name: installedConnectionMigrationGate,
-					}}},
+					}}, {Name: "connection", Secret: &corev1.SecretVolumeSource{
+					SecretName: output, DefaultMode: new(int32(0400)),
+					Items: []corev1.KeyToPath{{Key: installedConnectionHostKey, Path: installedConnectionHostKey},
+						{Key: installedConnectionPortKey, Path: installedConnectionPortKey},
+						{Key: r6DatabaseKey, Path: r6DatabaseKey},
+						{Key: installedConnectionUserKey, Path: installedConnectionUserKey},
+						{Key: installedConnectionSSLModeKey, Path: installedConnectionSSLModeKey},
+						{Key: "pgpass", Path: "pgpass"}},
+				}}},
 			}},
 		}}
 }
@@ -123,7 +171,7 @@ func installedConnectionJobLogs(ctx context.Context, job *batchv1.Job) string {
 		return ""
 	}
 	logs, err := kubeClient.CoreV1().Pods(job.Namespace).GetLogs(
-		pods.Items[0].Name, &corev1.PodLogOptions{Container: "migration"}).DoRaw(ctx)
+		pods.Items[0].Name, &corev1.PodLogOptions{Container: r6MigrationContainer}).DoRaw(ctx)
 	if err != nil {
 		return ""
 	}

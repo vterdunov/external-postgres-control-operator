@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os/exec"
 	"strings"
 	"time"
@@ -37,13 +38,17 @@ func roleName(f *Fixture) string {
 	DeferCleanup(func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		var exists bool
-		Expect(f.Server.Admin.QueryRowContext(cleanup,
-			"SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=$1)", name).Scan(&exists)).To(Succeed())
-		if exists {
-			roleSQL(cleanup, f, "DROP OWNED BY "+quoteIdentifier(name))
-			roleSQL(cleanup, f, "DROP ROLE "+quoteIdentifier(name))
-		}
+		Expect(f.Server.withCleanupConnection(cleanup, f.Database, func(connection *sql.Conn) error {
+			var exists bool
+			queryErr := connection.QueryRowContext(cleanup,
+				"SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=$1)", name).Scan(&exists)
+			if !exists && queryErr == nil {
+				return nil
+			}
+			_, ownedErr := connection.ExecContext(cleanup, "DROP OWNED BY "+quoteIdentifier(name))
+			_, roleErr := connection.ExecContext(cleanup, "DROP ROLE "+quoteIdentifier(name))
+			return errors.Join(queryErr, ownedErr, roleErr)
+		})).To(Succeed())
 	})
 	return name
 }
@@ -542,7 +547,11 @@ var _ = Describe("DatabaseRole PostgreSQL reconciliation", func() {
 	It("protects predefined, service and administrative roles from mutation and drop", func(ctx SpecContext) {
 		service := "rds_" + strings.TrimPrefix(roleName(fixture), "managed_")
 		roleSQL(ctx, fixture, "CREATE ROLE "+quoteIdentifier(service))
-		DeferCleanup(func(ctx SpecContext) { roleSQL(ctx, fixture, "DROP ROLE "+quoteIdentifier(service)) })
+		DeferCleanup(func() {
+			cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			Expect(fixture.Server.cleanupOwnedSQL(cleanup, nil, []string{service})).To(Succeed())
+		})
 		session := roleSession(ctx, fixture, false)
 		for _, name := range []string{roleSQLAdmin, "pg_monitor", service} {
 			_, err := session.Apply(ctx, pgroles.RoleDesired{Name: name,

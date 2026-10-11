@@ -76,35 +76,18 @@ func r4NewFixture(ctx context.Context, environment *kubeenv.Environment) *r4Conn
 	return f
 }
 
-func (f *r4ConnectionFixture) cleanupSQL(ctx context.Context) (resultErr error) {
-	database, err := f.Server.Open(roleSQLAdmin, roleSQLAdmin, f.Server.password)
-	if err != nil {
-		return err
-	}
-	defer func() { resultErr = errors.Join(resultErr, database.Close()) }()
-	connection, err := database.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { resultErr = errors.Join(resultErr, connection.Close()) }()
-	// DROP FORCE also waits for a checkpoint and storage-manager barrier.
-	// This disposable session uses the cleanup context's bounded budget rather
-	// than the shared fixture administrator's shorter statement timeout.
-	if _, err = connection.ExecContext(ctx, "SET statement_timeout=0"); err != nil {
-		return err
-	}
+func (f *r4ConnectionFixture) cleanupSQL(ctx context.Context) error {
+	databases := make([]string, 0, len(f.dbs))
+	roles := make([]string, 0, len(f.roles))
 	for _, target := range f.dbs {
-		_, err = connection.ExecContext(ctx,
-			"DROP DATABASE IF EXISTS "+quoteIdentifier(string(target.Spec.Name))+" WITH (FORCE)")
-		resultErr = errors.Join(resultErr, err)
+		databases = append(databases, string(target.Spec.Name))
 	}
 	for _, role := range f.roles {
 		if string(role.Spec.Name) != f.Role {
-			_, err = connection.ExecContext(ctx, "DROP ROLE IF EXISTS "+quoteIdentifier(string(role.Spec.Name)))
-			resultErr = errors.Join(resultErr, err)
+			roles = append(roles, string(role.Spec.Name))
 		}
 	}
-	return resultErr
+	return f.Server.cleanupOwnedSQL(ctx, databases, roles)
 }
 
 func (f *r4ConnectionFixture) addRole(ctx context.Context, name, sqlName, password string) (

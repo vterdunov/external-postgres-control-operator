@@ -2,6 +2,19 @@
 set -euo pipefail
 suite_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 project_dir=${EPCO_E2E_PROJECT_DIR:-$(cd "$suite_dir/../.." && pwd)}
+major=${EPCO_PG_VERSION:-16}
+case $major in
+  15) server_version=15.19 ;;
+  16) server_version=16.15 ;;
+  17) server_version=17.11 ;;
+  18) server_version=18.6 ;;
+  *) printf 'Unsupported EPCO_PG_VERSION: %s (expected 15, 16, 17 or 18)\n' "$major" >&2; exit 2 ;;
+esac
+build_mode=${EPCO_E2E_BUILD_MODE:-docker}
+case $build_mode in
+  docker|local) ;;
+  *) printf 'Unsupported EPCO_E2E_BUILD_MODE\n' >&2; exit 2 ;;
+esac
 run_dir=$(mktemp -d "${TMPDIR:-/tmp}/epco-e2e.XXXXXX")
 suffix=$(printf '%s' "${run_dir##*.}" | tr '[:upper:]' '[:lower:]')
 run_id="$(date +%s)-$$-$suffix"
@@ -10,8 +23,11 @@ context="kind-$cluster"
 image="epco/e2e:$run_id"
 kubeconfig="$run_dir/kubeconfig"
 artifacts=${EPCO_ARTIFACTS_DIR:-"$project_dir/artifacts/e2e/$run_id"}
+case $artifacts in
+  /*) ;;
+  *) artifacts="$PWD/$artifacts" ;;
+esac
 mkdir -p "$artifacts"
-artifacts=$(cd "$artifacts" && pwd)
 command_log="$artifacts/commands.log"
 : > "$command_log"
 : > "$kubeconfig"
@@ -20,11 +36,14 @@ kind_owned=false
 image_owned=false
 child=''
 node_image='kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5'
-postgres_image='public.ecr.aws/docker/library/postgres:16.15-bookworm'
+postgres_image="public.ecr.aws/docker/library/postgres:$server_version-bookworm"
+client_version=16.15
+client_image="public.ecr.aws/docker/library/postgres:$client_version-bookworm"
 seed=${EPCO_TEST_SEED:-$(date +%s)}
 export KUBECONFIG="$kubeconfig" KUBECTL_KUBERC=false
 export EPCO_E2E_CONTEXT="$context" EPCO_E2E_ARTIFACTS="$artifacts"
 export EPCO_E2E_POSTGRES_NAMESPACE=epco-postgres
+export EPCO_PG_VERSION="$major" EPCO_E2E_POSTGRES_IMAGE="$postgres_image" EPCO_E2E_CLIENT_IMAGE="$client_image"
 printf 'E2e seed: %s\nArtifacts: %s\n' "$seed" "$artifacts"
 
 redact() {
@@ -130,12 +149,30 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 cd "$project_dir"
+source_revision=$(git rev-parse HEAD)
+cat > "$artifacts/fixture-expected.txt" <<METADATA
+source revision: $source_revision
+server expected version: $server_version
+server expected image: $postgres_image
+server expected host authentication: scram-sha-256
+client expected version: $client_version
+client expected image: $client_image
+manager image: $image
+build mode: $build_mode
+context: $context
+seed: $seed
+METADATA
+if (($# > 0)); then
+  printf 'suite argument: %s\n' "$@" | redact >> "$artifacts/fixture-expected.txt"
+fi
+
+run 600 go test -tags=e2e ./test/e2e/ -race -run '^$'
 
 kind_owned=true
 run 240 kind create cluster --name "$cluster" --image "$node_image" --kubeconfig "$kubeconfig" --wait 180s
 chmod 600 "$kubeconfig"
 image_owned=true
-case ${EPCO_E2E_BUILD_MODE:-docker} in
+case $build_mode in
   docker) run 900 docker build --build-arg BASE_IMAGE=public.ecr.aws/docker/library/golang:1.27.1 -t "$image" . ;;
   local)
     arch=$(go env GOARCH)
@@ -200,6 +237,8 @@ spec:
       - name: postgres
         image: $postgres_image
         env:
+        - name: POSTGRES_INITDB_ARGS
+          value: --auth-host=scram-sha-256
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
@@ -239,4 +278,4 @@ POSTGRES
 kubectl_run 60 apply -f "$run_dir/postgres.yaml"
 kubectl_run 240 -n epco-postgres rollout status deployment/postgres --timeout=210s
 run 600 go test -tags=e2e ./test/e2e/ -race -count=1 -v \
-  -ginkgo.randomize-all -ginkgo.seed="$seed" -ginkgo.junit-report="$artifacts/junit.xml"
+  -ginkgo.randomize-all -ginkgo.seed="$seed" -ginkgo.junit-report="$artifacts/junit.xml" "$@"
