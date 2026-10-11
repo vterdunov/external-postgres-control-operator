@@ -25,6 +25,11 @@ DatabaseRole scenarios verify generated-source rotation, retain/GC safety, condi
   toolchain and packages it in a scratch image. The default `docker` mode builds
   the project Dockerfile. Both use unique image tags and remove them afterward.
 
+Before acquiring Kind or the manager image, the runner compiles the race-enabled
+e2e package with no tests selected. Compilation has its own bounded phase; the
+full or focused test execution keeps its existing separate 600-second guard.
+Commands and reports distinguish preparation from behavioral execution.
+
 Extension scenarios install and relocate hstore, retain it after declaration omission, protect dependent application data with RESTRICT, and converge after the dependency is removed. Application output scenarios verify initial publication and eligible password rotation while an unrelated extension remains unavailable.
 
 The R6 application scenarios cover a NOLOGIN owner, a separate authenticated

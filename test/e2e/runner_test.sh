@@ -68,6 +68,21 @@ case "$name $*" in
       shift
     done ;;
   'go test'*)
+    compile_only=false
+    previous=''
+    for argument in "$@"; do
+      if [[ $previous == -run && $argument == '^$' || $argument == '-run=^$' ]]; then
+        compile_only=true
+      fi
+      previous=$argument
+    done
+    if [[ $compile_only == true ]]; then
+      printf '%s\0' "$@" > "$E2E_FAKE_LOG.compile-argv"
+      printf '%s\n' "$KUBECONFIG" > "$E2E_FAKE_LOG.compile-kubeconfig"
+      printf 'password=e2e-secret postgresql://user:e2e-secret@localhost/test Authorization: Bearer aaa.bbb.ccc\n'
+      if [[ ${E2E_FAKE_FAIL:-} == compile ]]; then exit 31; fi
+      exit 0
+    fi
     printf '%s\0' "$@" > "$E2E_FAKE_LOG.argv"
     printf '%s\n' "${EPCO_PG_VERSION:-}" > "$E2E_FAKE_LOG.major"
     printf '%s\n' "${EPCO_E2E_POSTGRES_IMAGE:-}" > "$E2E_FAKE_LOG.server-env"
@@ -239,3 +254,68 @@ for ((index=0; index<${#focused_args[@]}; index++)); do
     fail "focused recovery argument $index was omitted or split: ${focused_args[index]}"
 done
 printf 'PASS e2e runner: exact focused recovery arguments\n'
+
+# Cold race compilation must complete before the runner owns cluster resources.
+# Keep the existing runtime failure injections above separate from this phase.
+compile_failures=0
+for compilation in success failure; do
+  prepare_case "precompile-$compilation"
+  if [[ $compilation == failure ]]; then export E2E_FAKE_FAIL=compile; fi
+  run_case
+  problems=()
+  if [[ $compilation == failure ]]; then
+    [[ $status == 31 ]] || problems+=("compile failure status: expected 31, got $status")
+    if grep -Eq '^(kind|docker|kubectl) ' "$E2E_FAKE_LOG"; then
+      problems+=("compile failure acquired or touched cluster/image resources")
+    fi
+    [[ ! -f $E2E_FAKE_LOG.argv ]] || problems+=("compile failure reached the runtime suite")
+    if [[ -f $EPCO_ARTIFACTS_DIR/runner-junit.xml ]]; then
+      grep -Fq 'Exit status 31' "$EPCO_ARTIFACTS_DIR/runner-junit.xml" ||
+        problems+=("compile failure report did not preserve status 31")
+    else
+      problems+=("compile failure report missing")
+    fi
+  else
+    [[ $status == 0 ]] || problems+=("successful precompile returned $status")
+    compile_line=$(awk '/^go test / && / -run (\^\$|-run=\^\$)/ { print NR; exit }' "$E2E_FAKE_LOG")
+    acquisition_line=$(awk '/^(kind|docker|kubectl) / { print NR; exit }' "$E2E_FAKE_LOG")
+    if [[ -z $compile_line || -z $acquisition_line || $compile_line -ge $acquisition_line ]]; then
+      problems+=("mandatory compile-only invocation did not precede Kind/image acquisition")
+    fi
+    [[ -f $E2E_FAKE_LOG.argv ]] || problems+=("successful precompile did not reach runtime suite")
+  fi
+  if [[ -f $E2E_FAKE_LOG.compile-argv ]]; then
+    compile_args=()
+    while IFS= read -r -d '' argument; do compile_args+=("$argument"); done < "$E2E_FAKE_LOG.compile-argv"
+    expected_compile_args=(test -tags=e2e ./test/e2e/ -race -run '^$')
+    if ((${#compile_args[@]} != ${#expected_compile_args[@]})); then
+      problems+=("compile-only invocation changed literal argv or selected behaviors")
+    else
+      for ((index=0; index<${#expected_compile_args[@]}; index++)); do
+        [[ ${compile_args[index]} == "${expected_compile_args[index]}" ]] ||
+          problems+=("compile-only argument $index differs from required literal argv")
+      done
+    fi
+    [[ $(grep -c '^go test .* -run ' "$E2E_FAKE_LOG") == 1 ]] ||
+      problems+=("compile-only phase was repeated")
+    compile_kubeconfig=$(cat "$E2E_FAKE_LOG.compile-kubeconfig")
+    [[ -n $compile_kubeconfig && ! -e ${compile_kubeconfig%/*} ]] ||
+      problems+=("compile-only private temporary directory not cleaned")
+  else
+    problems+=("mandatory compile-only invocation missing")
+  fi
+  [[ $(cksum "$fixture/source/config/default/kustomization.yaml") == "$source_checksum" ]] ||
+    problems+=("compilation changed tracked project source")
+  [[ $(find "$fixture/source" -type f | wc -l | tr -d ' ') == 1 ]] ||
+    problems+=("compilation created project files")
+  if grep -REq 'e2e-secret|aaa[.]bbb[.]ccc' "$EPCO_ARTIFACTS_DIR"; then
+    problems+=("compile-only artifacts leaked credentials")
+  fi
+  if ((${#problems[@]} > 0)); then
+    printf 'FAIL e2e runner: precompile %s: %s\n' "$compilation" "${problems[*]}" >&2
+    compile_failures=$((compile_failures + 1))
+  else
+    printf 'PASS e2e runner: precompile %s\n' "$compilation"
+  fi
+done
+[[ $compile_failures == 0 ]]

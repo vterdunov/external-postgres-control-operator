@@ -166,6 +166,8 @@ if (($# > 0)); then
   printf 'suite argument: %s\n' "$@" | redact >> "$artifacts/fixture-expected.txt"
 fi
 
+run 600 go test -tags=e2e ./test/e2e/ -race -run '^$'
+
 kind_owned=true
 run 240 kind create cluster --name "$cluster" --image "$node_image" --kubeconfig "$kubeconfig" --wait 180s
 chmod 600 "$kubeconfig"
