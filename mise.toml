@@ -60,27 +60,27 @@ depends = ["test-unit"]
 
 [tasks.test-unit]
 description = "Unit tests with race detection and randomized specs"
-run = ["bash test/unit/run.sh", "python3 test/envtest/runner_test.py", "bash test/e2e/runner_test.sh", "mise run test-architecture"]
+run = ["mise run test-suite-required", "bash test/unit/run.sh", "python3 test/envtest/runner_test.py", "bash test/e2e/runner_test.sh", "mise run test-architecture"]
 
 [tasks.test-architecture]
 description = "Test production architecture boundaries with isolated fixtures"
-run = "python3 test/architecture/policy_test.py"
+run = ["mise run test-suite-required", "python3 test/architecture/policy_test.py"]
 
 [tasks.test-envtest]
 description = "Real API CRD and manager/watch tests"
-run = "bash test/envtest/run.sh"
+run = ["mise run test-suite-required", "bash test/envtest/run.sh"]
 
 [tasks.test-integration]
 description = "Isolated PostgreSQL integration tests"
-run = "bash test/integration/run.sh"
+run = ["mise run test-suite-required", "bash test/integration/run.sh"]
 
 [tasks.test-e2e]
 description = "Installed operator smoke tests in disposable Kind"
-run = "bash test/e2e/run.sh"
+run = ["mise run test-suite-required", "bash test/e2e/run.sh"]
 
 [tasks.check-generated]
 description = "Regenerate in a temporary copy and compare outputs"
-run = "bash test/generated/check.sh"
+run = "bash tools/check-generated.sh"
 
 [tasks.golangci-lint]
 description = "Build the custom linter with the pinned logcheck plugin"
@@ -94,9 +94,10 @@ run = "bash tools/linter.sh config verify"
 description = "Lint and automatically fix Go code"
 run = "bash tools/linter.sh run --fix --build-tags envtest,integration,e2e"
 
-[tasks.lint]
-description = "Verify linter configuration, architecture and lint Go and shell code"
+[tasks.lint-private]
+description = "Verify linter configuration, architecture and all private Go and shell tests"
 run = [
+  "mise run test-suite-required",
   "mise run lint-architecture",
   "bash tools/linter.sh config verify",
   "bash tools/linter.sh run",
@@ -108,12 +109,13 @@ run = [
 description = "Check production package and vendor dependency boundaries"
 run = "go-arch-lint check"
 
-[tasks.check]
-description = "Build, unit tests, lint, generated checks and render manifests"
+[tasks.check-private]
+description = "Build, private unit tests, full lint, generated checks and render manifests"
 run = [
+  "mise run test-suite-required",
   "mise run build",
   "mise run test-unit",
-  "mise run lint",
+  "mise run lint-private",
   "mise run check-generated",
   "kustomize build config/default > /dev/null",
 ]
@@ -168,3 +170,26 @@ run = "mise install --locked setup-envtest"
 [tasks.setup-envtest]
 description = "Download the pinned Kubernetes control plane"
 run = "setup-envtest use 1.37.0 --bin-dir bin -p path"
+
+[tasks.test-suite-required]
+description = "Require the private test overlay"
+run = "python3 tools/test-suite.py require"
+
+[tasks.lint]
+description = "Verify production linter configuration, architecture, Go and shell code"
+run = [
+  "mise run lint-architecture",
+  "bash tools/linter.sh config verify",
+  "bash tools/linter.sh run --tests=false",
+  "shellcheck tools/*.sh",
+]
+
+[tasks.check]
+description = "Build, vet, production lint, generated consistency and manifest rendering"
+run = [
+  "mise run build",
+  "mise run vet",
+  "mise run lint",
+  "mise run check-generated",
+  "kustomize build config/default > /dev/null",
+]

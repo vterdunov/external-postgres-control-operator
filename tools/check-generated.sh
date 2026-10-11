@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/.."
 artifacts="${EPCO_ARTIFACTS_DIR:-$PWD/artifacts/generated}"
 mkdir -p "$artifacts"
 exec > >(tee "$artifacts/check.log") 2>&1

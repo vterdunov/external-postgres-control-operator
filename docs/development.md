@@ -10,24 +10,19 @@ Install [mise](https://mise.jdx.dev/) and use the pinned Go and Kubebuilder vers
 mise trust
 mise run --skip-tools tools-install
 mise run build # Build bin/manager without changing sources
-mise run test-unit # Fast unit tests, race detection and randomization
-mise run test-architecture # Verify architecture policy against isolated fixtures
-mise run test-envtest # CRD contracts and real manager/watch tests
-mise run test-integration # Isolated PostgreSQL fixtures (Docker)
-mise run test-e2e # Installed application/recovery scenarios in disposable Kind
 mise run check-generated # Compare generated output in a temporary copy
 mise run lint # Verify linter configuration and run the configured linters
 mise run lint-architecture # Check production package dependency boundaries
-mise run check # Build, unit tests, lint, generated checks and manifest render
+mise run check # Build, vet, production lint, generated consistency and manifest render
 ```
 
 Run `mise tasks` to list all development, image and deployment commands. For example, `IMG=registry/epco:dev mise run docker-build` builds an image. Cluster commands require an explicit context: `KUBE_CONTEXT=my-cluster IMG=registry/epco:dev mise run deploy`. Set `IGNORE_NOT_FOUND=true` for tolerant deletion.
 
-Test commands do not generate, format, or tidy sources. `mise.lock` locks tool downloads and checksums for Linux amd64 and macOS arm64; `mise run --skip-tools tools-install` installs only project tools from the lockfile, preserving unrelated global mise settings. Refresh it with `mise lock --platform linux-x64,macos-arm64` after changing tool pins. The custom logcheck linter is built into the ignored `bin/` directory. Envtest downloads Kubernetes 1.37.0 and starts its own API/etcd; it does not run Kubernetes garbage collection or workload controllers. The reusable `test/envtest` harness exposes an uncached client, explicit scope cleanup, and an optional manager with cache synchronization and bounded shutdown. API and manual reconcile tests are separate from manager/watch tests.
+Checks do not generate, format, or tidy the source checkout. `mise.lock` locks tool downloads and checksums for Linux amd64 and macOS arm64; `mise run --skip-tools tools-install` installs only project tools from the lockfile, preserving unrelated global mise settings. Refresh it with `mise lock --platform linux-x64,macos-arm64` after changing tool pins. The custom logcheck linter is built into ignored `bin/`. The public generated-file consistency checker regenerates in a temporary copy and compares derived output without changing the checkout.
 
 ## Architecture boundaries
 
-The pinned go-arch-lint v1.19.0 enforces `.go-arch-lint.yml` during `mise run lint`, including the existing CI lint job and `mise run check`. API packages use Kubernetes apimachinery; PostgreSQL code uses API types, pgx, Kubernetes core/v1 Secret types, and stringprep for server-compatible password normalization; controllers use API types, PostgreSQL code and Kubernetes clients/runtime; `cmd` wires these components with Kubernetes runtime libraries. Standard library imports are permitted, while vendor imports require explicit allowlists. New production packages outside the configured components and imports of test helpers fail the check. Deep scanning also checks local dependency injection through interfaces.
+The pinned go-arch-lint v1.19.0 enforces `.go-arch-lint.yml` during `mise run lint`, including public CI and `mise run check`. API packages use Kubernetes apimachinery; PostgreSQL code uses API types, pgx, Kubernetes core/v1 Secret types, and stringprep for server-compatible password normalization; controllers use API types, PostgreSQL code and Kubernetes clients/runtime; `cmd` wires these components with Kubernetes runtime libraries. Standard library imports are permitted, while vendor imports require explicit allowlists. New production packages outside the configured components and imports of test helpers fail the check. Deep scanning also checks local dependency injection through interfaces.
 
 Database's manager-backed owner, ACL grantee, default-creator and historical cleanup dependencies use a cached composite index of the canonical PostgresCluster namespace/name and effective SQL role name. Indexing bounds ordinary dependency candidate lookup; authoritative ownership conflicts retain their separate uncached check. Standalone reconciler fixtures keep their direct/fake-client behavior without sending synthetic cache selectors to the API server. Periodic reconciliation discovers PostgreSQL-only DDL and ACL drift. ACL checkpoints use optimistic status writes before SQL and catalog confirmation afterward; retries reconcile current desired state rather than replaying journal commands. Confirmed lifecycle ownership is recorded before full ACL readiness. These choices follow [Kubebuilder Good Practices](https://book.kubebuilder.io/reference/good-practices.html) and the [controller-runtime v0.25.0 FAQ](https://github.com/kubernetes-sigs/controller-runtime/blob/v0.25.0/FAQ.md).
 
@@ -37,21 +32,23 @@ Cleanup confirms a cached missing or different-UID historical output through API
 
 Publication also confirms a cached output whose UID disagrees with a nonempty recorded UID before rebinding history, so an older cached incarnation cannot overwrite the current cleanup identity. Retained adoption checkpoints the exact Secret UID and former Database UID before updating ownership. Pending adoption cleanup uses conditional UID/resourceVersion DELETE against that claimed former/current owner; it never retires intent solely because a GET after an uncertain UPDATE still observes the former owner. A late UPDATE either changes resourceVersion before DELETE or cannot recreate a deleted Secret. Other provenance or owner changes stay conflicts.
 
-Architecture checks include generated API Go sources and exclude `_test.go` files. Root directories `test/`, `bin/`, `artifacts/`, `tools/`, `.agent-plans/` and `.git/` belong to a separate support component with unrestricted imports and no deep scanning. Production components cannot import support packages. These exact root-relative mappings avoid go-arch-lint v1.19.0 directory exclusions, which also skip unrelated packages sharing an excluded directory's prefix. `ignoreNotFoundComponents` permits declared directory globs to be absent in fresh checkouts; Go sources outside mapped components still fail, including new packages such as `testhelper/` and `toolshed/`. `mise run test-architecture` exercises allowed and forbidden imports in temporary copies using the real checker; it also runs within `mise run test-unit`.
+Architecture checks include generated API Go sources and exclude `_test.go` files. Root directories `test/`, `bin/`, `artifacts/`, `tools/`, `.agent-plans/` and `.git/` belong to a separate support component with unrestricted imports and no deep scanning. Production components cannot import support packages. These exact root-relative mappings avoid go-arch-lint v1.19.0 directory exclusions, which also skip unrelated packages sharing an excluded directory's prefix. `ignoreNotFoundComponents` permits declared directory globs to be absent in fresh checkouts; Go sources outside mapped components still fail, including new packages such as `testhelper/` and `toolshed/`. The private `test-architecture` suite exercises allowed and forbidden imports in temporary copies using the real checker; it also runs within private `test-unit`.
 
-## Test suites
+## Private validation
 
-| Task | Coverage and requirements |
-| --- | --- |
-| `test-unit` | Fast unit/race tests, randomized specs, runner tests, and architecture-policy tests; no container runtime or envtest assets |
-| `test-envtest` | CRD admission/defaults, real manager/dependency-watch tests, generated-source, ACL dependency watches, extension ownership/output/status recovery and Database status conflicts on an isolated API server; no workload controllers or garbage collection |
-| [test-integration](../test/integration/README.md) | PostgreSQL client/role/database/schema/extension/ACL/default behavior, application connection exports with actual libpq/pgJDBC consumption, TLS, restricted-administrator fixtures, and composed envtest recovery; requires a Docker-compatible runtime, a C compiler, and the pinned Java tool |
-| [test-e2e](../test/e2e/README.md) | Installed manager health, metrics, CRD CRUD, SQL/credential recovery, real application migrations and CRUD, separate owner/migrator/runtime permissions, defaults/named-table access, two namespaces, paused finalizers and leader takeover; PostgreSQL 15-18 selectable, Docker-compatible runtime required |
-| `check-generated` | Regenerate in a temporary copy and compare derived files without changing the checkout |
+Implementation tests, envtest harnesses, PostgreSQL fixtures, installed E2E scenarios and runner/architecture tests live in the private `vterdunov/external-postgres-control-operator-test-suite` repository. `test-suite.lock.json` pins an immutable full suite commit. Public code, API, generated files and the minimum generation consistency check remain here. Old public Git history is unchanged.
 
-On macOS, the integration and e2e suites use OrbStack's Docker-compatible runtime. Suite-specific fixture APIs, image pins, build modes, and runtime coverage belong in their linked READMEs. Real RDS verification remains separate work.
+With access to the private repository, create clean disposable source and suite checkouts at their exact commits. Verify the suite revision against the source lock and hydrate it with:
 
-Each runner prints its random seed. Set `EPCO_TEST_SEED` to replay it and `EPCO_ARTIFACTS_DIR` to choose the report directory (default under ignored `artifacts/`). Failure diagnostics are retained before teardown; runners handle SIGINT/SIGTERM and clean only resources owned by that run. CI separates unit/race, envtest, generation, PostgreSQL 15/16 integration, and installed PostgreSQL 15-18 e2e. Scheduled/manual integration covers PostgreSQL 15-18 and repeated seeds. Reports and diagnostics are uploaded even on failure. Installed artifacts distinguish expected image pins from measured server/client versions; the stable E2E gate requires all server majors to pass.
+```sh
+python3 tools/test-suite.py hydrate --source "$PWD" --suite /path/to/private-suite --ref <full-suite-commit>
+```
+
+Hydration validates both clean repositories, the pinned revision, complete manifest, path allowlist, SHA256 values, modes, symlinks and collisions before copying. It permits only `test/` and `*_test.go` destinations, preserving Go package/internal access. Existing destinations and pre-existing ignored test payload are refused; use a new checkout for another hydration. The private repository README documents bootstrap, fixtures and captured diagnostics.
+
+After hydration, `mise run test-unit`, `test-architecture`, `test-envtest`, `test-integration`, `test-e2e`, `lint-private` and `check-private` retain the existing suite behavior. Missing private tests fail explicitly. `check-private` preserves build, unit/race, full lint, generated consistency and rendering. Unit/race and envtest remain separate from PostgreSQL integration and installed Kind validation. Integration covers PostgreSQL 15/16 on pushes and 15-18 plus repeated seeds on scheduled/manual runs; installed E2E covers 15-18. Real RDS verification remains separate work.
+
+All PRs run public build, vet, production lint/architecture, generated consistency, workflow validation and manifest rendering. Private suites run only for trusted same-repository push/schedule/manual events with exact source and locked suite refs. Private checkout prefers a dedicated read-only deploy key stored as `EPCO_TEST_SUITE_SSH_KEY`; a fine-grained `EPCO_TEST_SUITE_TOKEN` scoped to the suite is the fallback. Credentials are passed only to checkout with strict SSH host checking and credential persistence disabled; the workflow fails clearly if neither is configured. No private PR execution, cache sharing, detailed public logs or artifact uploads are enabled. The private capture wrapper reports generic status, exact refs and replay seed, retains detailed local diagnostics outside the public checkout, strips Actions controls/credentials, prevents Python bytecode, and verifies the exact hydrated manifest file set/hashes/modes and source identity before and after execution.
 
 ## API changes and generation
 

@@ -6,7 +6,7 @@ The [API baseline](api-proposal.md) was accepted on 2026-10-07. Its filename is 
 
 | Area | Current checkout |
 | --- | --- |
-| PostgresCluster, DatabaseRole, Database | Go types, generated CRDs, defaults, and admission rules; CRD admission tests are in [test/envtest/crd_test.go](../test/envtest/crd_test.go) |
+| PostgresCluster, DatabaseRole, Database | Go types, generated CRDs, defaults, and admission rules; CRD admission tests are in the [private validation suite](development.md#private-validation) |
 | PostgresCluster runtime | Implemented authentication/writable-state check, TLS, local Secret watches, bounded retries, and Ready status |
 | DatabaseRole runtime | Implemented role attributes, both membership policies, targeted parameter cleanup, supplied/generated password application, observation, and retain/delete reclaim |
 | Database runtime | Implemented database/schema/extension lifecycle, observation, reclaim, database/schema/table/sequence ACLs, named-table allowlists, creator-specific global/schema defaults, and application connection Secrets |
@@ -33,7 +33,7 @@ ACL recovery is scoped to the live CR UID and selected endpoint. Journal checkpo
 | [SQL object ownership](sql-object-ownership.md) | SQL-name management keys, recorded-manager conflicts, retry behavior, endpoint changes, and leadership |
 | [Examples](examples.md) | Resource-set selection and prerequisites |
 | [Development](development.md) | Tooling, architecture, test workflow, and generation/deployment commands |
-| [Integration suite](../test/integration/README.md), [e2e suite](../test/e2e/README.md) | Suite-specific fixtures, runtime prerequisites, options, and coverage |
+| [Private validation](development.md#private-validation) | Pinned suite access, fixtures, runtime prerequisites, options, and coverage |
 
 ## Keeping docs current
 

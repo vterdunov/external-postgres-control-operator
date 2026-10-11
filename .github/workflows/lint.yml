@@ -1,36 +1,38 @@
-name: Lint
+name: Public checks
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
-  lint:
-    permissions:
-      contents: read
-    name: Run on Ubuntu
+  public:
+    name: Build and static checks
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - name: Clone the code
+      - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-
       - name: Set up mise and pinned tools
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: 2026.9.15
-      - name: Setup Go
+      - name: Set up Go without shared caches
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          cache: true
-          cache-dependency-path: |
-            go.mod
-            go.sum
-            .custom-gcl.yml
-      - name: Lint Go and suite runners
-        run: mise run lint
+          go-version-file: go.mod
+          cache: false
+      - name: Build, vet, lint, check generation and render manifests
+        run: mise run check
       - name: Validate workflows
         run: mise exec -- actionlint
+      - name: Verify checks left tracked sources unchanged
+        if: always()
+        run: git diff --exit-code

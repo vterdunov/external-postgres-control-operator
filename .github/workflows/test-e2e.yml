@@ -1,54 +1,106 @@
-name: E2E Tests
+name: Private E2E tests
 
 on:
   push:
-  pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
 
 permissions:
   contents: read
 
 jobs:
   e2e:
-    name: E2E PostgreSQL ${{ matrix.postgres }}
+    name: Private E2E PostgreSQL ${{ matrix.postgres }}
+    if: ${{ github.repository == 'vterdunov/external-postgres-control-operator' && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: operator
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
         postgres: [15, 16, 17, 18]
-    env:
-      EPCO_PG_VERSION: ${{ matrix.postgres }}
-      EPCO_ARTIFACTS_DIR: artifacts/e2e/pg${{ matrix.postgres }}
     steps:
-      - name: Checkout
+      - name: Checkout exact operator revision
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ github.sha }}
+          path: operator
           persist-credentials: false
-      - name: Setup mise
+      - name: Read immutable suite lock
+        id: suite
+        run: |
+          python3 - <<'PYTHON'
+          import json, os, re
+          from pathlib import Path
+          lock = json.loads(Path('test-suite.lock.json').read_text())
+          assert lock['version'] == 1
+          assert re.fullmatch(r'[0-9a-f]{40}', lock['revision'])
+          assert lock['repository'] == 'vterdunov/external-postgres-control-operator-test-suite'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('repository=' + lock['repository'] + '\n')
+              output.write('revision=' + lock['revision'] + '\n')
+          PYTHON
+      - name: Select read-only private checkout authentication
+        id: authentication
+        env:
+          HAS_SSH_KEY: ${{ secrets.EPCO_TEST_SUITE_SSH_KEY != '' }}
+          HAS_TOKEN: ${{ secrets.EPCO_TEST_SUITE_TOKEN != '' }}
+        run: |
+          if [ "$HAS_SSH_KEY" = true ]; then
+            echo "method=ssh" >> "$GITHUB_OUTPUT"
+          elif [ "$HAS_TOKEN" = true ]; then
+            echo "method=token" >> "$GITHUB_OUTPUT"
+          else
+            echo "Private checkout requires EPCO_TEST_SUITE_SSH_KEY or EPCO_TEST_SUITE_TOKEN" >&2
+            exit 1
+          fi
+      - name: Checkout pinned private suite with read-only SSH key
+        if: steps.authentication.outputs.method == 'ssh'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ steps.suite.outputs.repository }}
+          ref: ${{ steps.suite.outputs.revision }}
+          ssh-key: ${{ secrets.EPCO_TEST_SUITE_SSH_KEY }}
+          ssh-strict: true
+          path: private-suite
+          persist-credentials: false
+      - name: Checkout pinned private suite with read-only token
+        if: steps.authentication.outputs.method == 'token'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ steps.suite.outputs.repository }}
+          ref: ${{ steps.suite.outputs.revision }}
+          token: ${{ secrets.EPCO_TEST_SUITE_TOKEN }}
+          path: private-suite
+          persist-credentials: false
+      - name: Verify and hydrate pinned private suite
+        env:
+          SUITE_REVISION: ${{ steps.suite.outputs.revision }}
+        run: python3 tools/test-suite.py hydrate --source "$PWD" --suite ../private-suite --ref "$SUITE_REVISION"
+      - name: Set up mise and pinned tools
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: 2026.9.15
-      - name: Setup Go
+          working_directory: operator
+      - name: Set up Go without shared caches
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          cache: true
-          cache-dependency-path: |
-            go.mod
-            go.sum
-      - name: Run tests
-        run: mise run test-e2e
-      - name: Check sources
-        if: always()
-        run: git diff --exit-code
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: e2e-pg${{ matrix.postgres }}
-          path: artifacts/
-          if-no-files-found: warn
+          go-version-file: operator/go.mod
+          cache: false
+      - name: Run private checks with captured diagnostics
+        env:
+          TASK: test-e2e
+          EXTENDED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+          EPCO_PG_VERSION: ${{ matrix.postgres }}
+        run: |
+          runs=1
+          for run in $(seq 1 "$runs"); do
+            python3 ../private-suite/tools/run_ci.py --source "$PWD" --task "$TASK" --seed "$(( $(date +%s) + run ))" --logs "$RUNNER_TEMP/private-checks/$TASK/$run"
+          done
   e2e-required:
     name: E2E
     if: always()

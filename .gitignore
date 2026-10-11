@@ -33,3 +33,7 @@ go.work
 
 # Suite reports and sanitized diagnostics
 /artifacts/
+
+# Private test overlay must never enter public commits
+/test/
+*_test.go
