@@ -34,6 +34,12 @@ before `Server.Close`. Clients can be closed repeatedly. Cleanup deletes the exa
 labelled container and fixture database/role names. It leaves unrelated Docker
 resources untouched. The runner also handles failed startup, SIGINT and SIGTERM.
 
+Fixture SQL cleanup uses a separate pinned administrator connection bounded by
+its cleanup context. Its shorter statement timeout is disabled only on that
+disposable connection because database drops can wait for storage checkpoints.
+Normal fixture/production deadlines stay unchanged, and every owned cleanup
+step is attempted with close/drop errors retained in the final result.
+
 Unit fixture tests do not start Docker. Runtime specs require the `integration`
 build tag. Production DatabaseRole SQL tests cover attributes, memberships/grantors, parameters, passwords, restricted administration, and dependency-blocked deletion. Database tests cover creation-only/versioned locale capabilities, changed-only mutable properties, owner transfer without table reassignment, target connections, schema owners/absence, protected objects, connected-session deletion blocks and cancellation. Restricted fixtures explicitly provision CREATEDB, SET/INHERIT and object CREATE only where needed; production never grants missing capabilities. Composed tests use a real API and SQL server to cover status/checkpoint failures, ordinary retry after committed or unknown database creation, never-recorded deletion safety, restart cleanup, rotation during Apply, absent-name reservations and endpoint A -> B -> A recovery. PostgreSQL 15-18 is a test matrix;
 Amazon RDS requires testing against a real RDS instance separately.

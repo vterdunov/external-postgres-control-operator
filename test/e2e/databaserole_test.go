@@ -212,6 +212,7 @@ var _ = Describe("Installed DatabaseRole controller", func() {
 		DeferCleanup(func() {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
+			restoredAt := time.Now()
 			Expect(retry.RetryOnConflict(retry.DefaultRetry, func() error {
 				latest, getErr := kubeClient.AppsV1().Deployments(operatorNamespace).Get(
 					cleanupCtx, deployment.Name, metav1.GetOptions{})
@@ -223,14 +224,7 @@ var _ = Describe("Installed DatabaseRole controller", func() {
 					cleanupCtx, latest, metav1.UpdateOptions{})
 				return updateErr
 			})).To(Succeed())
-			Eventually(func() int {
-				pods, listErr := kubeClient.CoreV1().Pods(operatorNamespace).List(cleanupCtx,
-					metav1.ListOptions{LabelSelector: installedManagerSelector})
-				if listErr != nil {
-					return 0
-				}
-				return len(pods.Items)
-			}).WithContext(cleanupCtx).WithTimeout(50 * time.Second).Should(Equal(int(originalReplicas)))
+			installedManagerRestored(cleanupCtx, originalReplicas, restoredAt)
 		})
 		role := &epco.DatabaseRole{
 			Namespace: operatorNamespace,
@@ -252,7 +246,8 @@ var _ = Describe("Installed DatabaseRole controller", func() {
 			}
 			return latest.Status.ReadyReplicas
 		}).WithContext(ctx).WithTimeout(60 * time.Second).Should(Equal(int32(2)))
-		lease, err := kubeClient.CoordinationV1().Leases(operatorNamespace).Get(ctx, "ccd893cc.epco.io", metav1.GetOptions{})
+		lease, err := kubeClient.CoordinationV1().Leases(operatorNamespace).Get(
+			ctx, installedManagerLeaseName, metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(lease.Spec.HolderIdentity).NotTo(BeNil())
 		oldHolder := *lease.Spec.HolderIdentity

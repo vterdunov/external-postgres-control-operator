@@ -258,8 +258,9 @@ var _ = Describe("DatabaseRole manager watches", func() {
 		Expect(secondScope.Create(ctx, competitor)).To(Succeed())
 		expectRoleStatus(ctx, competitor, metav1.ConditionFalse, "OwnershipConflict")
 		owner = expectRoleStatus(ctx, owner, metav1.ConditionTrue, "Ready")
+		previous := owner.DeepCopy()
 		owner.Spec.ManagementPolicy = epco.ManagementObserve
-		Expect(environment.Client.Update(ctx, owner)).To(Succeed())
+		Expect(environment.Client.Patch(ctx, owner, client.MergeFrom(previous))).To(Succeed())
 		owner = expectRoleStatus(ctx, owner, metav1.ConditionTrue, "Observed")
 		Expect(owner.Status.HasManagedSQL).To(BeTrue())
 		expectRoleStatus(ctx, competitor, metav1.ConditionFalse, "OwnershipConflict")

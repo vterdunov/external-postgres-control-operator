@@ -285,29 +285,7 @@ var _ = Describe("Installed Database controller", func() {
 			Expect(rolloutErr).NotTo(HaveOccurred())
 			// Scale-down can remove the leader. Probe readiness alone does not
 			// establish that the surviving manager can process the next fixture.
-			Eventually(func(g Gomega) {
-				pods, listErr := kubeClient.CoreV1().Pods(operatorNamespace).List(cleanup,
-					metav1.ListOptions{LabelSelector: installedManagerSelector})
-				g.Expect(listErr).NotTo(HaveOccurred())
-				g.Expect(pods.Items).To(HaveLen(int(originalReplicas)))
-				lease, getErr := kubeClient.CoordinationV1().Leases(operatorNamespace).Get(
-					cleanup, "ccd893cc.epco.io", metav1.GetOptions{})
-				g.Expect(getErr).NotTo(HaveOccurred())
-				g.Expect(lease.Spec.HolderIdentity).NotTo(BeNil())
-				g.Expect(lease.Spec.RenewTime).NotTo(BeNil())
-				g.Expect(lease.Spec.RenewTime.Time).To(BeTemporally(">=", restoredAt))
-				holderPresent := false
-				for _, pod := range pods.Items {
-					g.Expect(pod.DeletionTimestamp).To(BeNil())
-					g.Expect(pod.Status.Phase).To(Equal(corev1.PodRunning))
-					g.Expect(pod.Status.ContainerStatuses).NotTo(BeEmpty())
-					for _, status := range pod.Status.ContainerStatuses {
-						g.Expect(status.Ready).To(BeTrue())
-					}
-					holderPresent = holderPresent || strings.HasPrefix(*lease.Spec.HolderIdentity, pod.Name+"_")
-				}
-				g.Expect(holderPresent).To(BeTrue(), "The restored manager must hold the renewed Lease")
-			}).WithContext(cleanup).WithTimeout(50 * time.Second).WithPolling(200 * time.Millisecond).Should(Succeed())
+			installedManagerRestored(cleanup, originalReplicas, restoredAt)
 		})
 		setReplicas(ctx, 2)
 		Eventually(func() int32 {
@@ -317,7 +295,8 @@ var _ = Describe("Installed Database controller", func() {
 			}
 			return latest.Status.ReadyReplicas
 		}).WithContext(ctx).WithTimeout(60 * time.Second).Should(Equal(int32(2)))
-		lease, err := kubeClient.CoordinationV1().Leases(operatorNamespace).Get(ctx, "ccd893cc.epco.io", metav1.GetOptions{})
+		lease, err := kubeClient.CoordinationV1().Leases(operatorNamespace).Get(
+			ctx, installedManagerLeaseName, metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(lease.Spec.HolderIdentity).NotTo(BeNil())
 		oldHolder := *lease.Spec.HolderIdentity

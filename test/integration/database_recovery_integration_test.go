@@ -152,8 +152,7 @@ func recoveryDatabaseCleanup(server *Server, name string) {
 	DeferCleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		_, err := server.Admin.ExecContext(ctx, "DROP DATABASE IF EXISTS "+quoteIdentifier(name)+" WITH (FORCE)")
-		Expect(err).NotTo(HaveOccurred())
+		Expect(server.cleanupOwnedSQL(ctx, []string{name}, nil)).To(Succeed())
 	})
 }
 

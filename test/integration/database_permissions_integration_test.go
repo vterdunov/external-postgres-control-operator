@@ -46,6 +46,20 @@ type r3SQLFixture struct {
 	version       int
 }
 
+func (f *r3SQLFixture) cleanup(ctx context.Context) error {
+	errs := []error{f.scope.Cleanup(ctx)}
+	if f.target != nil {
+		errs = append(errs, f.target.Close())
+		f.target = nil
+	}
+	var databases []string
+	if f.database != nil {
+		databases = append(databases, string(f.database.Spec.Name))
+	}
+	errs = append(errs, f.Server.cleanupOwnedSQL(ctx, databases, f.roles), f.Close(ctx))
+	return errors.Join(errs...)
+}
+
 func (f *r3SQLFixture) role(ctx context.Context) string {
 	name, err := randomName("r3_role_")
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
@@ -212,19 +226,7 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 		DeferCleanup(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 			defer cancel()
-			Expect(scope.Cleanup(ctx)).To(Succeed())
-			if fixture.target != nil {
-				Expect(fixture.target.Close()).To(Succeed())
-			}
-			if fixture.database != nil {
-				_, err := fixture.Server.Admin.ExecContext(ctx,
-					"DROP DATABASE IF EXISTS "+quoteIdentifier(string(fixture.database.Spec.Name))+" WITH (FORCE)")
-				Expect(err).NotTo(HaveOccurred())
-			}
-			for _, role := range fixture.roles {
-				roleSQL(ctx, base, "DROP ROLE IF EXISTS "+quoteIdentifier(role))
-			}
-			Expect(base.Close(ctx)).To(Succeed())
+			Expect(fixture.cleanup(ctx)).To(Succeed())
 		})
 		Expect(base.Admin.QueryRowContext(ctx, "SHOW server_version_num").Scan(&fixture.version)).To(Succeed())
 		roleSQL(ctx, base, "ALTER ROLE "+quoteIdentifier(base.Role)+" CREATEDB")

@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os/exec"
 	"strings"
 	"time"
@@ -31,6 +32,30 @@ type databaseSQLFixture struct {
 	*Fixture
 	databases, owners []string
 	version           int
+}
+
+func (f *databaseSQLFixture) cleanup(ctx context.Context) error {
+	err := f.Server.withCleanupConnection(ctx, roleSQLAdmin, func(connection *sql.Conn) error {
+		var errs []error
+		for _, name := range f.databases {
+			var isTemplate bool
+			queryErr := connection.QueryRowContext(ctx,
+				"SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname=$1 AND datistemplate)", name).Scan(&isTemplate)
+			errs = append(errs, queryErr)
+			if isTemplate {
+				_, alterErr := connection.ExecContext(ctx, "ALTER DATABASE "+quoteIdentifier(name)+" IS_TEMPLATE FALSE")
+				errs = append(errs, alterErr)
+			}
+			_, dropErr := connection.ExecContext(ctx, "DROP DATABASE IF EXISTS "+quoteIdentifier(name)+" WITH (FORCE)")
+			errs = append(errs, dropErr)
+		}
+		for _, owner := range f.owners {
+			_, dropErr := connection.ExecContext(ctx, "DROP ROLE IF EXISTS "+quoteIdentifier(owner))
+			errs = append(errs, dropErr)
+		}
+		return errors.Join(errs...)
+	})
+	return errors.Join(err, f.Close(ctx))
 }
 
 func (f *databaseSQLFixture) name() string {
@@ -133,24 +158,7 @@ var _ = Describe("Database PostgreSQL reconciliation", func() {
 		DeferCleanup(func() {
 			cleanup, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 			defer cancel()
-			for _, name := range fixture.databases {
-				var isTemplate bool
-				Expect(fixture.Server.Admin.QueryRowContext(cleanup,
-					"SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname=$1 AND datistemplate)", name).
-					Scan(&isTemplate)).To(Succeed())
-				if isTemplate {
-					_, err := fixture.Server.Admin.ExecContext(cleanup,
-						"ALTER DATABASE "+quoteIdentifier(name)+" IS_TEMPLATE FALSE")
-					Expect(err).NotTo(HaveOccurred())
-				}
-				_, err := fixture.Server.Admin.ExecContext(cleanup,
-					"DROP DATABASE IF EXISTS "+quoteIdentifier(name)+" WITH (FORCE)")
-				Expect(err).NotTo(HaveOccurred())
-			}
-			for _, owner := range fixture.owners {
-				roleSQL(cleanup, fixture.Fixture, "DROP ROLE IF EXISTS "+quoteIdentifier(owner))
-			}
-			Expect(fixture.Close(cleanup)).To(Succeed())
+			Expect(fixture.cleanup(cleanup)).To(Succeed())
 		})
 		Expect(fixture.Admin.QueryRowContext(ctx, "SHOW server_version_num").Scan(&fixture.version)).To(Succeed())
 		roleSQL(ctx, fixture.Fixture, "ALTER ROLE "+quoteIdentifier(fixture.Role)+" CREATEDB NOINHERIT")
@@ -520,11 +528,15 @@ var _ = Describe("Database PostgreSQL reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 			// Registered before target cleanup, so databases are removed before tablespace disposal.
 			fixture.databases = append(fixture.databases, name)
-			DeferCleanup(func(ctx SpecContext) {
-				_, err := fixture.Server.Admin.ExecContext(ctx, "DROP DATABASE IF EXISTS "+quoteIdentifier(name)+" WITH (FORCE)")
-				Expect(err).NotTo(HaveOccurred())
-				_, err = fixture.Server.Admin.ExecContext(ctx, "DROP TABLESPACE "+quoteIdentifier(space))
-				Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				cleanup, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+				defer cancel()
+				Expect(fixture.Server.withCleanupConnection(cleanup, roleSQLAdmin, func(connection *sql.Conn) error {
+					_, databaseErr := connection.ExecContext(cleanup,
+						"DROP DATABASE IF EXISTS "+quoteIdentifier(name)+" WITH (FORCE)")
+					_, spaceErr := connection.ExecContext(cleanup, "DROP TABLESPACE "+quoteIdentifier(space))
+					return errors.Join(databaseErr, spaceErr)
+				})).To(Succeed())
 			})
 			session := fixture.session(ctx, true, 5*time.Second)
 			desired := databaseDesired(name, owner)

@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json/v2"
 	"errors"
 	"os"
@@ -419,10 +420,13 @@ var _ = Describe("R3 Database ACL durable recovery", Ordered, ContinueOnFailure,
 		DeferCleanup(func() {
 			cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			roleSQL(cleanup, otherFixture, "REVOKE CONNECT ON DATABASE "+
-				quoteIdentifier(otherFixture.Database)+" FROM "+quoteIdentifier(fixture.Role))
-			roleSQL(cleanup, otherFixture, "DROP ROLE IF EXISTS "+quoteIdentifier(grantee))
-			roleSQL(cleanup, otherFixture, "DROP ROLE IF EXISTS "+quoteIdentifier(fixture.Role))
+			Expect(otherFixture.Server.withCleanupConnection(cleanup, roleSQLAdmin, func(connection *sql.Conn) error {
+				_, revokeErr := connection.ExecContext(cleanup, "REVOKE CONNECT ON DATABASE "+
+					quoteIdentifier(otherFixture.Database)+" FROM "+quoteIdentifier(fixture.Role))
+				_, granteeErr := connection.ExecContext(cleanup, "DROP ROLE IF EXISTS "+quoteIdentifier(grantee))
+				_, roleErr := connection.ExecContext(cleanup, "DROP ROLE IF EXISTS "+quoteIdentifier(fixture.Role))
+				return errors.Join(revokeErr, granteeErr, roleErr)
+			})).To(Succeed())
 		})
 		// Advance B's catalog independently: coincidental A identities must never
 		// authorize cleanup of an unrelated role/object on the selected endpoint.

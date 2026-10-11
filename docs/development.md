@@ -14,7 +14,7 @@ mise run test-unit # Fast unit tests, race detection and randomization
 mise run test-architecture # Verify architecture policy against isolated fixtures
 mise run test-envtest # CRD contracts and real manager/watch tests
 mise run test-integration # Isolated PostgreSQL fixtures (Docker)
-mise run test-e2e # Deployment smoke tests in disposable Kind
+mise run test-e2e # Installed application/recovery scenarios in disposable Kind
 mise run check-generated # Compare generated output in a temporary copy
 mise run lint # Verify linter configuration and run the configured linters
 mise run lint-architecture # Check production package dependency boundaries
@@ -46,12 +46,12 @@ Architecture checks include generated API Go sources and exclude `_test.go` file
 | `test-unit` | Fast unit/race tests, randomized specs, runner tests, and architecture-policy tests; no container runtime or envtest assets |
 | `test-envtest` | CRD admission/defaults, real manager/dependency-watch tests, generated-source, ACL dependency watches, extension ownership/output/status recovery and Database status conflicts on an isolated API server; no workload controllers or garbage collection |
 | [test-integration](../test/integration/README.md) | PostgreSQL client/role/database/schema/extension/ACL/default behavior, application connection exports with actual libpq/pgJDBC consumption, TLS, restricted-administrator fixtures, and composed envtest recovery; requires a Docker-compatible runtime, a C compiler, and the pinned Java tool |
-| [test-e2e](../test/e2e/README.md) | Installed manager health, metrics, CRD CRUD, connection/role/database/schema/extension recovery, grants/defaults and named-table removal, credential lifecycle, authorization, and leader takeover in disposable Kind; a Docker-compatible runtime is required |
+| [test-e2e](../test/e2e/README.md) | Installed manager health, metrics, CRD CRUD, SQL/credential recovery, real application migrations and CRUD, separate owner/migrator/runtime permissions, defaults/named-table access, two namespaces, paused finalizers and leader takeover; PostgreSQL 15-18 selectable, Docker-compatible runtime required |
 | `check-generated` | Regenerate in a temporary copy and compare derived files without changing the checkout |
 
 On macOS, the integration and e2e suites use OrbStack's Docker-compatible runtime. Suite-specific fixture APIs, image pins, build modes, and runtime coverage belong in their linked READMEs. Real RDS verification remains separate work.
 
-Each runner prints its random seed. Set `EPCO_TEST_SEED` to replay it and `EPCO_ARTIFACTS_DIR` to choose the report directory (default under ignored `artifacts/`). Failure diagnostics are retained before teardown; runners handle SIGINT/SIGTERM and clean only resources owned by that run. CI separates unit/race, envtest, generation, PostgreSQL 15/16 integration, and PostgreSQL 16 e2e. Scheduled/manual integration covers PostgreSQL 15-18 and repeated seeds. Reports and diagnostics are uploaded even on failure.
+Each runner prints its random seed. Set `EPCO_TEST_SEED` to replay it and `EPCO_ARTIFACTS_DIR` to choose the report directory (default under ignored `artifacts/`). Failure diagnostics are retained before teardown; runners handle SIGINT/SIGTERM and clean only resources owned by that run. CI separates unit/race, envtest, generation, PostgreSQL 15/16 integration, and installed PostgreSQL 15-18 e2e. Scheduled/manual integration covers PostgreSQL 15-18 and repeated seeds. Reports and diagnostics are uploaded even on failure. Installed artifacts distinguish expected image pins from measured server/client versions; the stable E2E gate requires all server majors to pass.
 
 ## API changes and generation
 
