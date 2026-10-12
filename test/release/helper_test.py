@@ -1,7 +1,6 @@
 """Observed runtime evidence must describe the bytes actually tested."""
 
 import copy
-import datetime
 import io
 import json
 from pathlib import Path
@@ -176,7 +175,7 @@ class DraftRecoveryTests(unittest.TestCase):
 
     def publish(self):
         self.fixture.save()
-        return subprocess.run([sys.executable, str(ROOT / "tools/release.py"), "chart", "--manifest",
+        return subprocess.run([sys.executable, str(ROOT / "tools/release.py"), self.fixture.stream, "--manifest",
                                str(self.fixture.manifest_path), "--phase", "publish"],
                               env=self.fixture.env, text=True, capture_output=True, timeout=30)
 
@@ -195,12 +194,19 @@ class DraftRecoveryTests(unittest.TestCase):
         self.assertEqual(before, {path.name: path.read_bytes() for path in snapshot.iterdir()})
         self.assertFalse(any("--clobber" in call["args"] for call in self.fixture.calls()))
 
-    def test_owner_checkpoint_must_still_be_recent_at_actual_publication(self):
-        self.fixture.manifest["owner_preflight"]["checked_at"] = (
-            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)).isoformat()
-        result = self.publish()
-        self.assertNotEqual(result.returncode, 0, "Stale preparation checkpoint authorized actual publication")
-        self.assertFalse([call for call in self.fixture.calls() if call["mutation"]], "Reject stale owner checkpoint before signing or publication")
+    def test_both_streams_publish_without_owner_precheck_variable_or_metadata(self):
+        for stream in ("image", "chart"):
+            with self.subTest(stream=stream):
+                self.fixture = ReleaseFixture(self.fixture.root / stream, stream)
+                self.assertNotIn("owner_preflight", self.fixture.manifest)
+                self.assertNotIn("EPCO_RELEASE_IMMUTABILITY_PRECHECK", self.fixture.env)
+                result = self.publish()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(json.loads(result.stdout)["completed"])
+                record = json.loads(self.fixture.state_path.read_text())["releases"][self.fixture.manifest["tag"]]
+                self.assertTrue(record["immutable"])
+                self.assertFalse(record["draft"])
+                self.assertTrue(any(call["tool"] == "gh" and call["args"][:2] == ["release", "verify-asset"] for call in self.fixture.calls()))
 
     def test_tag_movement_during_proof_signing_and_upload_blocks_final_publish(self):
         self.fixture.state["move_own_tag_after_reads"] = 1
@@ -350,13 +356,12 @@ class RuntimePersistenceTests(unittest.TestCase):
         self.fixture.state["releases"][self.fixture.manifest["tag"]] = self.fixture.release(self.fixture.manifest, snapshot, immutable=False, draft=True)
         return snapshot
 
-    def test_current_owner_refresh_allows_historical_finalized_draft_without_rewriting_assets(self):
-        fresh = copy.deepcopy(self.fixture.manifest["owner_preflight"])
-        self.fixture.manifest["owner_preflight"]["checked_at"] = (
-            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)).isoformat()
+    def test_historical_owner_metadata_does_not_block_signed_draft_or_rewrite_assets(self):
+        self.fixture.manifest["owner_preflight"] = {"repository": "historical/owner", "enabled": False,
+            "actor": "historical-owner", "checked_at": "2000-01-01T00:00:00Z", "source_sha": "f" * 40}
         snapshot = self.save_finalized_draft()
         original = {path.name: path.read_bytes() for path in snapshot.iterdir()}
-        self.fixture.env["EPCO_RELEASE_IMMUTABILITY_PRECHECK"] = json.dumps(fresh)
+        self.assertNotIn("EPCO_RELEASE_IMMUTABILITY_PRECHECK", self.fixture.env)
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(json.loads(result.stdout)["completed"])
@@ -365,14 +370,19 @@ class RuntimePersistenceTests(unittest.TestCase):
                           (call["tool"] == "cosign" and call["args"][0] in ("sign", "sign-blob")) or
                           (call["tool"] == "gh" and call["args"][:2] == ["release", "upload"])])
 
-    def test_stale_current_owner_checkpoint_blocks_even_fresh_historical_finalized_draft(self):
-        stale = copy.deepcopy(self.fixture.manifest["owner_preflight"])
-        stale["checked_at"] = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)).isoformat()
-        self.save_finalized_draft()
-        self.fixture.env["EPCO_RELEASE_IMMUTABILITY_PRECHECK"] = json.dumps(stale)
+    def test_historical_owner_metadata_is_opaque_during_immutable_release_reverification(self):
+        self.fixture.manifest["owner_preflight"] = {"checked_at": "2000-01-01T00:00:00Z", "source_sha": "f" * 40}
+        snapshot = self.save_finalized_draft()
+        record = self.fixture.state["releases"][self.fixture.manifest["tag"]]
+        record.update(draft=False, immutable=True)
+        original = {path.name: path.read_bytes() for path in snapshot.iterdir()}
         result = self.invoke()
-        self.assertNotEqual(result.returncode, 0, "Fresh historical evidence overrode stale current owner authorization")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(result.stdout)["completed"])
         self.assertFalse([call for call in self.fixture.calls() if call["mutation"]])
+        self.assertEqual(original, {path.name: path.read_bytes() for path in snapshot.iterdir()})
+        self.assertTrue(any(call["tool"] == "gh" and call["args"][:2] == ["release", "verify"] for call in self.fixture.calls()))
+        self.assertTrue(any(call["tool"] == "gh" and call["args"][:2] == ["release", "verify-asset"] for call in self.fixture.calls()))
 
     def test_complete_finalized_draft_reuses_recorded_successful_attempt_after_a_later_failure(self):
         self.save_finalized_draft()
@@ -424,6 +434,19 @@ class PreparationBehaviorTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, "Nonempty output was archived into the signed release checkpoint")
         self.assertEqual(unrelated.read_text(), "unrelated content must never enter a release checkpoint")
         self.assertFalse([call for call in self.fixture.calls() if call["mutation"] or call["tool"] == "docker"])
+
+    def test_both_streams_prepare_signed_checkpoint_without_owner_precheck(self):
+        for stream in ("image", "chart"):
+            with self.subTest(stream=stream):
+                self.fixture = PreparationFixture(self.directory / (stream + "-no-owner"), stream)
+                self.assertNotIn("EPCO_RELEASE_IMMUTABILITY_PRECHECK", self.fixture.env)
+                self.assertNotIn("owner_preflight", self.fixture.manifest)
+                path, manifest = self.prepare()
+                self.assertNotIn("owner_preflight", manifest)
+                self.assertNotIn("owner_preflight", json.loads((path.parent / "release-evidence.json").read_text()))
+                record = self.fixture.state["releases"][manifest["tag"]]
+                self.assertTrue(record["draft"])
+                self.assertEqual({asset["name"] for asset in record["assets"]}, {"release-candidate.tar.gz", "release-candidate.sigstore.json"})
 
     def test_chart_prepare_materializes_old_signed_inputs_and_actual_independent_defaults(self):
         path, manifest = self.prepare()

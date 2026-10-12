@@ -15,7 +15,6 @@ concurrency:
 
 env:
   GH_TOKEN: ${{ github.token }}
-  EPCO_RELEASE_IMMUTABILITY_PRECHECK: ${{ vars.EPCO_RELEASE_IMMUTABILITY_PRECHECK }}
 
 jobs:
   preflight:

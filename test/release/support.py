@@ -1,7 +1,6 @@
 """Owned, offline command fixtures for release behavior tests."""
 
 import base64
-import datetime
 import hashlib
 import io
 import json
@@ -94,6 +93,7 @@ class ReleaseFixture:
             "GITHUB_REF": "refs/tags/" + self.manifest["tag"], "GITHUB_EVENT_NAME": "push",
             "GITHUB_RUN_ID": "900", "GITHUB_RUN_ATTEMPT": "1",
         }
+        self.env.pop("EPCO_RELEASE_IMMUTABILITY_PRECHECK", None)
         self.save()
 
     def make_manifest(self, directory, stream):
@@ -102,8 +102,6 @@ class ReleaseFixture:
         manifest = {
             "schema_version": 1, "stream": stream, "repository": REPOSITORY,
             "tag": tag, "source_sha": source, "required_workflows": GATES,
-            "owner_preflight": {"repository": REPOSITORY, "enabled": True, "actor": "fixture-owner",
-                                "source_sha": source, "checked_at": datetime.datetime.now(datetime.timezone.utc).isoformat()},
             "image": {
                 "repository": IMAGE, "version": "0.1.0", "release_tag": "v0.1.0",
                 "source_sha": IMAGE_SHA, "index_digest": INDEX, "bundle": "image-index.sigstore.json",
