@@ -208,7 +208,7 @@ run 240 kind create cluster --name "$cluster" --image "$node_image" --kubeconfig
 chmod 600 "$kubeconfig"
 if [[ $build_mode != prebuilt ]]; then image_owned=true; fi
 case $build_mode in
-  docker) run 900 docker build --build-arg BASE_IMAGE=public.ecr.aws/docker/library/golang:1.27.1 -t "$image" . ;;
+  docker) run 900 docker build -t "$image" . ;;
   local)
     arch=$(go env GOARCH)
     run 300 env CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o "$run_dir/manager" ./cmd/main.go

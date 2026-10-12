@@ -50,17 +50,17 @@ case "$name $*" in
     mkdir -p "$diagnostic_dir"
     printf 'password=e2e-secret postgresql://user:e2e-secret@localhost/test Authorization: Bearer aaa.bbb.ccc\n' > "$diagnostic_dir/fixture.log" ;;
   'docker build'*)
-    mirror_arg=false
+    builder_override=false
     previous=''
     for argument in "$@"; do
-      if [[ $previous == --build-arg && $argument == BASE_IMAGE=public.ecr.aws/docker/library/golang:1.27.1 ||
-        $argument == --build-arg=BASE_IMAGE=public.ecr.aws/docker/library/golang:1.27.1 ]]; then
-        mirror_arg=true
+      if [[ $previous == --build-arg && $argument == BASE_IMAGE=* ||
+        $argument == --build-arg=BASE_IMAGE=* ]]; then
+        builder_override=true
       fi
       previous=$argument
     done
-    if [[ ${!#} == . && $mirror_arg != true ]]; then
-      printf 'FAIL Docker fixture build requires the mirrored Go BASE_IMAGE argument\n' >&2
+    if [[ ${!#} == . && $builder_override == true ]]; then
+      printf 'FAIL Docker fixture build must use the checked-in Dockerfile builder default\n' >&2
       exit 95
     fi ;;
   'git '*rev-parse*) printf '%s\n' "$E2E_FAKE_REVISION" ;;
