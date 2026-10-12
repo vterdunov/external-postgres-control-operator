@@ -86,7 +86,6 @@ class PreparationFixture(ReleaseFixture):
             executable.write_text(f"#!{sys.executable}\nfrom helper_support import helper_command_main\nhelper_command_main()\n")
             executable.chmod(0o755)
         self.state["real_helm"] = helm
-        self.env["EPCO_RELEASE_IMMUTABILITY_PRECHECK"] = json.dumps(self.manifest["owner_preflight"])
         self.output = self.root / "prepared"
         self.helper = self.source / "tools/release_ci.py"
         self.save()

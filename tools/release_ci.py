@@ -2,8 +2,6 @@
 """Materialize release candidates and observed CI evidence using pinned tools.
 
 Publication remains in release.py. Chart preparation has no image-write path.
-The owner checkpoint records a recent administration read outside GITHUB_TOKEN;
-it is handoff evidence, not a live cryptographic assertion about GitHub settings.
 """
 
 import argparse
@@ -37,11 +35,6 @@ def yaml_scalar(text, key):
     match = re.search(r'^' + re.escape(key) + r':\s*[\"\']?([^\"\'\s]+)[\"\']?\s*$', text, re.M)
     release.require(match is not None, 'missing YAML scalar: ' + key)
     return match[1]
-
-
-def owner_checkpoint(manifest):
-    checkpoint = json.loads(os.environ.get('EPCO_RELEASE_IMMUTABILITY_PRECHECK', '{}'))
-    return release.owner_checkpoint({**manifest, 'owner_preflight': checkpoint})
 
 
 def seed(stream, output):
@@ -177,7 +170,6 @@ def prepare(preflight, directory):
     release.require(manifest.get('completed') is False, 'completed immutable release needs no build')
     release.coordinates(manifest, manifest['stream'])
     release.source_gates(manifest)
-    manifest['owner_preflight'] = owner_checkpoint(manifest)
     directory.mkdir(parents=True, exist_ok=True)
     release.require(not any(directory.iterdir()), 'candidate output directory must be empty; unrelated files cannot become release assets')
     record = release.release(manifest['tag'])
@@ -229,7 +221,6 @@ def save_checkpoint(manifest, directory):
     run('cosign', 'sign-blob', '--yes', '--bundle', str(directory / release.CHECKPOINT_BUNDLE), str(archive_path))
     release.command('cosign', 'verify-blob', *release.policy(manifest['stream'], manifest['tag'], manifest['source_sha']),
                     '--bundle', str(directory / release.CHECKPOINT_BUNDLE), str(archive_path))
-    owner_checkpoint(manifest)
     release.tag_source(manifest)
     release.require(release.release(manifest['tag']) is None, 'release appeared during candidate preparation; refusing overwrite')
     release.command('gh', 'release', 'create', manifest['tag'], '--repo', release.REPOSITORY, '--verify-tag', '--draft',

@@ -7,7 +7,6 @@ All external commands use argument arrays and bounded execution.
 """
 
 import argparse
-import datetime
 import hashlib
 import io
 import json
@@ -61,19 +60,6 @@ def digest(value):
 
 def checksum(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def owner_checkpoint(manifest):
-    current = os.environ.get('EPCO_RELEASE_IMMUTABILITY_PRECHECK')
-    checkpoint = json.loads(current) if current is not None else manifest.get('owner_preflight', {})
-    require(checkpoint.get('repository') == REPOSITORY and checkpoint.get('enabled') is True
-            and isinstance(checkpoint.get('actor'), str) and checkpoint['actor'], 'recent owner immutability precheck is required')
-    checked = datetime.datetime.fromisoformat(checkpoint.get('checked_at', '').replace('Z', '+00:00'))
-    require(checked.tzinfo is not None, 'owner checkpoint requires an explicit timezone')
-    age = datetime.datetime.now(datetime.timezone.utc) - checked
-    require(datetime.timedelta() <= age <= datetime.timedelta(hours=24), 'owner immutability precheck is stale')
-    require(checkpoint.get('source_sha') == manifest['source_sha'], 'owner checkpoint source does not match selected release')
-    return checkpoint
 
 
 def asset_path(directory, name):
@@ -535,7 +521,6 @@ def publish(manifest, directory, existing, canonical=False):
             # Finalized runtime coordinates and signatures are a durable record.
             # A rerun's freshly bound artifact cannot replace attached bytes.
             return publish(saved, Path(temporary), existing, canonical=True)
-    owner_checkpoint(manifest)
     measured = runtime_proof(manifest)
     tag_source(manifest)
     stream = manifest['stream']
@@ -584,7 +569,6 @@ def publish(manifest, directory, existing, canonical=False):
     with tempfile.TemporaryDirectory(prefix='epco-release-draft-') as temporary:
         download_release(release(manifest['tag']), Path(temporary), expected=manifest, locked=False)
     tag_source(manifest)
-    owner_checkpoint(manifest)
     edit = ['gh', 'release', 'edit', manifest['tag'], '--repo', REPOSITORY, '--draft=false', '--latest', str(manifest['make_latest']).lower(), '--prerelease=' + str(manifest['prerelease']).lower()]
     command(*edit)
     with tempfile.TemporaryDirectory(prefix='epco-release-locked-') as temporary:

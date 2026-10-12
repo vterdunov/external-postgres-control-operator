@@ -127,6 +127,13 @@ class WorkflowReleaseContractTests(unittest.TestCase):
         self.assertNotRegex(delivery, r"(?m)^\s*packages:")
         self.assertNotRegex(delivery, r"GH_TOKEN|docker login|registry login")
 
+    def test_release_workflows_do_not_require_manual_owner_precheck(self):
+        for stream, workflow in self.workflows().items():
+            with self.subTest(stream=stream):
+                encoded = json.dumps(workflow)
+                self.assertNotIn("EPCO_RELEASE_IMMUTABILITY_PRECHECK", encoded)
+                self.assertNotIn("owner_preflight", encoded)
+
 
 if __name__ == "__main__":
     unittest.main()
