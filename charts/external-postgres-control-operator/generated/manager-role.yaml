@@ -1,0 +1,61 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - postgresql.epco.io
+  resources:
+  - databaseroles
+  - databases
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - postgresql.epco.io
+  resources:
+  - databaseroles/finalizers
+  - databases/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - postgresql.epco.io
+  resources:
+  - databaseroles/status
+  - databases/status
+  - postgresclusters/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - postgresql.epco.io
+  resources:
+  - postgresclusters
+  verbs:
+  - get
+  - list
+  - watch

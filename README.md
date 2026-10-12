@@ -28,3 +28,5 @@ mise run check
 ```
 
 [Development](docs/development.md) lists the individual suites and runtime prerequisites. Cluster operations require an explicit `KUBE_CONTEXT`; the [API examples](docs/examples.md) describe the accepted target behavior and are not a complete working application deployment yet.
+
+The [delivery guide](docs/development.md#delivery-and-releases) describes independently versioned images and Helm OCI charts, immutable GitHub releases, keyless signatures, verified installation and controller-only removal. Development chart defaults are not a published release.

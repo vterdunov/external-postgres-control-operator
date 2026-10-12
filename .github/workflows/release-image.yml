@@ -1,0 +1,286 @@
+name: image release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: epco-release-${{ github.repository }}
+  queue: max
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  EPCO_RELEASE_IMMUTABILITY_PRECHECK: ${{ vars.EPCO_RELEASE_IMMUTABILITY_PRECHECK }}
+
+jobs:
+  preflight:
+    name: Read-only preflight
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      completed: ${{ steps.gates.outputs.completed }}
+      image_source_sha: ${{ steps.gates.outputs.image_source_sha }}
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Pinned tools
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.9.15
+      - name: Authenticate read-only registry checks
+        env:
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+      - name: Verify immutable recovery or exact-source gates before writes
+        id: gates
+        run: |
+          mkdir candidate
+          mise exec -- python3 tools/release_ci.py seed --stream image --output candidate/seed.json
+          mise exec -- python3 tools/release.py image --manifest candidate/seed.json --phase preflight > candidate/preflight.json
+          python3 - <<'SCRIPT'
+          import json, os
+          record = json.load(open('candidate/preflight.json'))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('completed=' + str(record['completed']).lower() + '\n')
+              output.write('image_source_sha=' + record.get('image', {}).get('source_sha', record['source_sha']) + '\n')
+          SCRIPT
+      - name: Retain preflight coordinates
+        if: steps.gates.outputs.completed != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-preflight-${{ github.run_attempt }}
+          path: candidate/preflight.json
+          if-no-files-found: error
+          retention-days: 7
+  prepare:
+    name: Prepare image candidate
+    needs: preflight
+    if: needs.preflight.outputs.completed != 'true'
+    permissions:
+      contents: write
+      actions: read
+      packages: write
+      id-token: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Pinned tools
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.9.15
+      - name: Download verified preflight
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-preflight-${{ github.run_attempt }}
+          path: preflight
+      - name: Set up image buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Set up both image build platforms
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+      - name: Authenticate this repository token to GHCR
+        env:
+          ACTOR: ${{ github.actor }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+          printf '%s' "$GH_TOKEN" | mise exec -- helm registry login ghcr.io --username "$ACTOR" --password-stdin
+      - name: Materialize and sign only image subjects
+        run: mise exec -- python3 tools/release_ci.py prepare --manifest preflight/preflight.json --output candidate
+      - name: Retain exact candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-candidate-${{ github.run_attempt }}
+          path: candidate/
+          if-no-files-found: error
+          retention-days: 7
+  runtime:
+    name: Runtime ${{ matrix.platform.architecture }} PostgreSQL ${{ matrix.postgres }}
+    needs: [preflight, prepare]
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        postgres: [15, 16, 17, 18]
+        platform:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      EPCO_PG_VERSION: ${{ matrix.postgres }}
+      EPCO_E2E_PROJECT_DIR: ${{ github.workspace }}/application-source
+      EPCO_ARTIFACTS_DIR: ${{ github.workspace }}/reports/installed
+    steps:
+      - name: Checkout release orchestration
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Checkout original application behavior
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.preflight.outputs.image_source_sha }}
+          path: application-source
+          persist-credentials: false
+      - name: Pinned tools
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.9.15
+      - name: Download exact candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-candidate-${{ github.run_attempt }}
+          path: candidate
+      - name: Bind released inputs and image
+        run: |
+          mise exec -- python3 tools/release_ci.py workspace --manifest candidate/manifest.json --application application-source
+          mise exec -- python3 tools/release_ci.py environment --manifest candidate/manifest.json
+      - name: Verify and start public native image
+        env:
+          IMAGE_VERSION: ${{ github.ref_name }}
+        run: |
+          docker pull "$EPCO_E2E_IMAGE_REFERENCE"
+          version=$(python3 -c 'import json; print(json.load(open("candidate/manifest.json"))["image"]["version"])')
+          mise exec -- python3 tools/platform_check.py --image "$EPCO_E2E_IMAGE_REFERENCE" --version "$version" --source "$EPCO_DELIVERY_IMAGE_SOURCE_SHA"
+      - name: Run original application PG acceptance with digest pulls
+        run: mise exec -- bash test/e2e/run.sh
+      - name: Retain observed acceptance
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-installed-${{ github.run_attempt }}-${{ matrix.platform.architecture }}-pg${{ matrix.postgres }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: 7
+  lifecycle:
+    name: Delivery lifecycle
+    needs: [preflight, prepare]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EPCO_E2E_SUITE: delivery
+      EPCO_E2E_PROJECT_DIR: ${{ github.workspace }}/application-source
+      EPCO_DELIVERY_PROJECT_DIR: ${{ github.workspace }}/application-source
+      EPCO_ARTIFACTS_DIR: ${{ github.workspace }}/reports/lifecycle
+    steps:
+      - name: Checkout release orchestration
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Checkout original application source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.preflight.outputs.image_source_sha }}
+          path: application-source
+          persist-credentials: false
+      - name: Pinned tools
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.9.15
+      - name: Download exact candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-candidate-${{ github.run_attempt }}
+          path: candidate
+      - name: Bind selected generated inputs and package
+        run: |
+          mise exec -- python3 tools/release_ci.py workspace --manifest candidate/manifest.json --application application-source
+          mise exec -- python3 tools/release_ci.py environment --manifest candidate/manifest.json
+      - name: Run installed delivery lifecycle
+        run: mise exec -- bash test/e2e/run.sh
+      - name: Retain observed lifecycle
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-lifecycle-${{ github.run_attempt }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: 7
+  acceptance:
+    name: Runtime acceptance
+    needs: [prepare, runtime, lifecycle]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      artifact_id: ${{ steps.evidence.outputs.artifact-id }}
+    steps:
+      - name: Checkout orchestration
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Download candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-candidate-${{ github.run_attempt }}
+          path: candidate
+      - name: Download installed observations
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: release-installed-${{ github.run_attempt }}-*
+          path: reports
+      - name: Download lifecycle observations
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-lifecycle-${{ github.run_attempt }}
+          path: reports/lifecycle
+      - name: Verify observations and assemble bound runtime record
+        run: python3 tools/release_ci.py aggregate --manifest candidate/manifest.json --reports reports --output runtime/release-runtime.json
+      - name: Upload trusted runtime record
+        id: evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-runtime-${{ github.run_attempt }}
+          path: runtime/release-runtime.json
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    name: Publish immutable image release
+    needs: [prepare, acceptance]
+    permissions:
+      contents: write
+      actions: read
+      packages: write
+      id-token: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Pinned tools
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.9.15
+      - name: Download candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-candidate-${{ github.run_attempt }}
+          path: candidate
+      - name: Bind current trusted runtime artifact
+        env:
+          ARTIFACT_ID: ${{ needs.acceptance.outputs.artifact_id }}
+        run: mise exec -- python3 tools/release_ci.py bind-runtime --manifest candidate/manifest.json --artifact-id "$ARTIFACT_ID"
+      - name: Authenticate stream signing with repository token
+        env:
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+      - name: Verify complete draft, publish last, verify immutable attestation
+        run: mise exec -- python3 tools/release.py image --manifest candidate/manifest.json --phase publish

@@ -1,0 +1,10 @@
+# actionlint 1.7.12 predates GitHub's supported concurrency.queue property.
+# https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency#example-queueing-multiple-pending-runs
+# test/release/workflow_test.py validates the queue field and shared release lock.
+paths:
+  .github/workflows/release-image.yml:
+    ignore:
+      - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'
+  .github/workflows/release-chart.yml:
+    ignore:
+      - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'

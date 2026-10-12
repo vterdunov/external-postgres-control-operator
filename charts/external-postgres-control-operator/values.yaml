@@ -1,0 +1,30 @@
+image:
+  repository: ghcr.io/vterdunov/external-postgres-control-operator
+  tag: dev
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+replicaCount: 1
+serviceAccount:
+  create: true
+  name: epco-controller-manager
+podAnnotations: {}
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+nodeSelector: {}
+tolerations: []
+affinity: {}
+metrics:
+  enabled: true
+networkPolicy:
+  enabled: true
+  metricsIngressPeers:
+    - podSelector: {}
+  egress:
+    enabled: false
+    rules: []
