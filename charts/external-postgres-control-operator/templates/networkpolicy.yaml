@@ -1,0 +1,40 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- range .Values.networkPolicy.egress.rules }}
+{{- range .ports }}
+{{- if and .endPort (lt (int .endPort) (int .port)) }}
+{{- fail "networkPolicy egress endPort must be greater than or equal to port" }}
+{{- end }}
+{{- end }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: epco-controller-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "epco.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: controller-manager
+      app.kubernetes.io/name: epco
+  policyTypes:
+    - Ingress
+    {{- if .Values.networkPolicy.egress.enabled }}
+    - Egress
+    {{- end }}
+  {{- if .Values.metrics.enabled }}
+  ingress:
+    - from:
+        {{- toYaml .Values.networkPolicy.metricsIngressPeers | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: 8443
+  {{- else }}
+  ingress: []
+  {{- end }}
+  {{- if .Values.networkPolicy.egress.enabled }}
+  egress:
+    {{- toYaml .Values.networkPolicy.egress.rules | nindent 4 }}
+  {{- end }}
+{{- end }}

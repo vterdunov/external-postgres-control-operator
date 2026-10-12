@@ -2,19 +2,37 @@
 set -euo pipefail
 suite_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/epco-e2e-runner-test.XXXXXX")
+fixture=$(cd "$fixture" && pwd)
 trap 'rm -rf "$fixture"' EXIT
 mkdir -p "$fixture/bin" "$fixture/source/config/default"
 printf 'original manifest\n' > "$fixture/source/config/default/kustomization.yaml"
 source_checksum=$(cksum "$fixture/source/config/default/kustomization.yaml")
 unset EPCO_PG_VERSION EPCO_E2E_BUILD_MODE EPCO_E2E_CLIENT_IMAGE EPCO_E2E_POSTGRES_IMAGE
+unset EPCO_E2E_IMAGE_REFERENCE EPCO_E2E_SUITE EPCO_DELIVERY_CHART_PACKAGE EPCO_DELIVERY_IMAGE_REFERENCE
+unset EPCO_DELIVERY_IMAGE_SOURCE_SHA EPCO_DELIVERY_CHART_SOURCE_SHA EPCO_DELIVERY_LOCAL_IMAGE
+unset EPCO_E2E_INSTALL_MODE
+export E2E_FAKE_REAL_PYTHON
+E2E_FAKE_REAL_PYTHON=$(command -v python3)
 export EPCO_TEST_SEED=60211015
 export E2E_FAKE_REVISION=0123456789abcdef0123456789abcdef01234567
 cat > "$fixture/bin/fake" <<'MOCK'
 #!/usr/bin/env bash
 set -eu
 name=${0##*/}
+if [[ $name == python3 && ${1:-} != */delivery/lifecycle.py && ${1:-} != */tools/chart.py ]]; then
+  exec "$E2E_FAKE_REAL_PYTHON" "$@"
+fi
 printf '%s %s\n' "$name" "$*" >> "$E2E_FAKE_LOG"
 case "$name $*" in
+  'python3 '*'/tools/chart.py install '*)
+    printf '%s\n' "$PWD" > "$E2E_FAKE_LOG.chart-cwd" ;;
+  'python3 '*'/delivery/lifecycle.py'*)
+    [[ ${1:-} == */delivery/lifecycle.py ]] || exit 94
+    printf '%s\n' "${EPCO_E2E_CONTEXT:-}" "${KUBECONFIG:-}" \
+      "${EPCO_DELIVERY_CHART_PACKAGE:-}" "${EPCO_DELIVERY_IMAGE_REFERENCE:-}" \
+      "${EPCO_DELIVERY_IMAGE_SOURCE_SHA:-}" "${EPCO_DELIVERY_CHART_SOURCE_SHA:-}" \
+      > "$E2E_FAKE_LOG.delivery-env"
+    [[ ${E2E_FAKE_FAIL:-} != delivery ]] || exit 37 ;;
   'kind create cluster'*)
     if [[ ${E2E_FAKE_FAIL:-} == kind ]]; then exit 17; fi
     while [[ $# -gt 0 ]]; do
@@ -68,6 +86,7 @@ case "$name $*" in
       shift
     done ;;
   'go test'*)
+    printf '%s\n' "$PWD" > "$E2E_FAKE_LOG.behavior-cwd"
     compile_only=false
     previous=''
     for argument in "$@"; do
@@ -99,7 +118,106 @@ case "$name $*" in
 esac
 MOCK
 chmod +x "$fixture/bin/fake"
-for cli in kind kubectl kustomize docker go git; do ln -s fake "$fixture/bin/$cli"; done
+for cli in kind kubectl kustomize docker go git python3; do ln -s fake "$fixture/bin/$cli"; done
+
+release_runner_cases() {
+  local mode status expected reference package application_source chart_source
+  reference="ghcr.io/vterdunov/external-postgres-control-operator:0.1.0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  application_source=1111111111111111111111111111111111111111
+  chart_source=2222222222222222222222222222222222222222
+  package="$fixture/external-postgres-control-operator-0.2.1.tgz"
+  printf 'fixture archive dispatched to the lifecycle fake\n' > "$package"
+  for mode in prebuilt chart-operator delivery delivery-failure invalid-reference missing-package invalid-image-source invalid-chart-source; do
+    export E2E_FAKE_LOG="$fixture/release-$mode.log" E2E_FAKE_FAIL=none
+    export EPCO_E2E_PROJECT_DIR="$fixture/source" EPCO_ARTIFACTS_DIR="$fixture/artifacts/release-$mode"
+    export EPCO_E2E_BUILD_MODE=prebuilt EPCO_E2E_IMAGE_REFERENCE="$reference"
+    export EPCO_DELIVERY_IMAGE_REFERENCE="$reference" EPCO_DELIVERY_CHART_PACKAGE="$package"
+    export EPCO_DELIVERY_IMAGE_SOURCE_SHA="$application_source" EPCO_DELIVERY_CHART_SOURCE_SHA="$chart_source"
+    unset EPCO_E2E_SUITE EPCO_PG_VERSION E2E_FAKE_POSTGRES_IMAGE EPCO_E2E_INSTALL_MODE
+    : > "$E2E_FAKE_LOG"
+    expected=0
+    case $mode in
+      chart-operator) export EPCO_E2E_INSTALL_MODE=chart ;;
+      delivery) export EPCO_E2E_SUITE=delivery ;;
+      delivery-failure) export EPCO_E2E_SUITE=delivery E2E_FAKE_FAIL=delivery; expected=37 ;;
+      invalid-reference) export EPCO_E2E_IMAGE_REFERENCE=ghcr.io/vterdunov/external-postgres-control-operator:0.1.0; expected=2 ;;
+      missing-package) export EPCO_E2E_SUITE=delivery EPCO_DELIVERY_CHART_PACKAGE="$fixture/missing.tgz"; expected=2 ;;
+      invalid-image-source) export EPCO_E2E_SUITE=delivery EPCO_DELIVERY_IMAGE_SOURCE_SHA=main; expected=2 ;;
+      invalid-chart-source) export EPCO_E2E_SUITE=delivery EPCO_DELIVERY_CHART_SOURCE_SHA=main; expected=2 ;;
+    esac
+    set +e
+    PATH="$fixture/bin:$PATH" bash "$suite_dir/run.sh" > "$E2E_FAKE_LOG.output" 2>&1
+    status=$?
+    set -e
+    if [[ $status != "$expected" ]]; then
+      cat "$E2E_FAKE_LOG.output"
+      printf 'FAIL e2e runner: %s expected %s, got %s\n' "$mode" "$expected" "$status" >&2
+      return 1
+    fi
+    if grep -Eq '^docker (build|push|tag|image rm)|^go build |^kind load docker-image' "$E2E_FAKE_LOG"; then
+      printf 'FAIL e2e runner: %s rebuilt, loaded or removed a reused public image\n' "$mode" >&2
+      return 1
+    fi
+    if [[ $expected == 2 ]]; then
+      if grep -Eq '^(kind|docker|kubectl) ' "$E2E_FAKE_LOG"; then
+        printf 'FAIL e2e runner: %s acquired resources before validating release inputs\n' "$mode" >&2
+        return 1
+      fi
+    else
+      [[ $(grep -c '^kind delete cluster --name epco-e2e-' "$E2E_FAKE_LOG") == 1 ]] || return 1
+      grep -q 'kubectl .* --context kind-epco-e2e-.*postgres.yaml' "$E2E_FAKE_LOG" || return 1
+      if [[ $mode == prebuilt || $mode == chart-operator ]]; then
+        grep -q '^go test ' "$E2E_FAKE_LOG" || return 1
+        grep -Fq -- "$reference" "$EPCO_ARTIFACTS_DIR/fixture-expected.txt" || return 1
+        if [[ $mode == chart-operator ]]; then
+          local chart_command
+          chart_command=$(awk '/^python3 .*tools\/chart.py install / { print; exit }' "$E2E_FAKE_LOG")
+          for value in "--package $package" '--release epco' '--namespace epco-system' '--context kind-epco-e2e-' "--image-reference $reference"; do
+            [[ $chart_command == *"$value"* ]] || { printf 'FAIL e2e runner: chart operator matrix omitted %s\n' "$value" >&2; return 1; }
+          done
+          if grep -Eq '^kustomize build|kubectl .*operator.yaml' "$E2E_FAKE_LOG"; then
+            printf 'FAIL e2e runner: chart operator matrix silently installed Kustomize\n' >&2
+            return 1
+          fi
+          [[ $(cat "$E2E_FAKE_LOG.behavior-cwd") == "$fixture/source" ]] || return 1
+        fi
+      else
+        if grep -Eq '^go test |^kustomize build|kubectl .*operator.yaml' "$E2E_FAKE_LOG"; then
+          printf 'FAIL e2e runner: %s installed the default manager or ran the Go suite\n' "$mode" >&2
+          return 1
+        fi
+        [[ -f "$E2E_FAKE_LOG.delivery-env" ]] || return 1
+        local recorded=()
+        while IFS= read -r value; do recorded+=("$value"); done < "$E2E_FAKE_LOG.delivery-env"
+        [[ ${recorded[0]} == kind-epco-e2e-* && -n ${recorded[1]} ]] || return 1
+        [[ ${recorded[2]} == "$package" && ${recorded[3]} == "$reference" ]] || return 1
+        [[ ${recorded[4]} == "$application_source" && ${recorded[5]} == "$chart_source" ]] || return 1
+        local postgres_line lifecycle_line
+        postgres_line=$(awk '/kubectl .*rollout status deployment\/postgres/ { print NR; exit }' "$E2E_FAKE_LOG")
+        lifecycle_line=$(awk '/^python3 .*delivery\/lifecycle.py/ { print NR; exit }' "$E2E_FAKE_LOG")
+        [[ -n $postgres_line && -n $lifecycle_line && $postgres_line -lt $lifecycle_line ]] || return 1
+        if [[ $mode == delivery-failure ]]; then
+          local diagnostic_line cleanup_line
+          diagnostic_line=$(awk '/^kind export logs/ { print NR; exit }' "$E2E_FAKE_LOG")
+          cleanup_line=$(awk '/^kind delete cluster/ { print NR; exit }' "$E2E_FAKE_LOG")
+          [[ -n $diagnostic_line && $diagnostic_line -lt $cleanup_line ]] || return 1
+          grep -Fq 'Exit status 37' "$EPCO_ARTIFACTS_DIR/runner-junit.xml" || return 1
+        fi
+      fi
+    fi
+    [[ $(cksum "$fixture/source/config/default/kustomization.yaml") == "$source_checksum" ]] || return 1
+    printf 'PASS e2e runner: release %s\n' "$mode"
+  done
+  unset EPCO_E2E_BUILD_MODE EPCO_E2E_IMAGE_REFERENCE EPCO_E2E_SUITE
+  unset EPCO_E2E_INSTALL_MODE
+  unset EPCO_DELIVERY_IMAGE_REFERENCE EPCO_DELIVERY_CHART_PACKAGE
+  unset EPCO_DELIVERY_IMAGE_SOURCE_SHA EPCO_DELIVERY_CHART_SOURCE_SHA
+}
+
+if [[ ${EPCO_E2E_RUNNER_TEST_SCOPE:-all} == release ]]; then
+  release_runner_cases
+  exit
+fi
 for failure in none kind apply test signal interrupt diagnostics cleanup test-cleanup; do
   export E2E_FAKE_LOG="$fixture/$failure.log" E2E_FAKE_FAIL=$failure
   export EPCO_E2E_PROJECT_DIR="$fixture/source" EPCO_ARTIFACTS_DIR="$fixture/artifacts/$failure"
@@ -319,3 +437,4 @@ for compilation in success failure; do
   fi
 done
 [[ $compile_failures == 0 ]]
+release_runner_cases

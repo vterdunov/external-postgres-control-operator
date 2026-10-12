@@ -4,8 +4,11 @@ package integration
 
 import (
 	"bytes"
+	"errors"
+	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -72,8 +75,29 @@ var _ = Describe("R4 actual libpq and pgJDBC application consumers", Ordered, Co
 			path := consumers.publicCA(ctx, fixture)
 			cluster := &epco.PostgresCluster{}
 			Expect(fixture.api.Get(ctx, client.ObjectKeyFromObject(fixture.cluster), cluster)).To(Succeed())
-			cluster.Spec.Connection.Host = "2001:db8::1"
-			cluster.Spec.Connection.Port = 6543
+			// Own a local IPv6 endpoint that immediately rejects SQL startup.
+			// An external documentation address can blackhole until the operator's
+			// connection deadline, obscuring this parser and early-export contract.
+			listener, err := net.Listen("tcp6", "[::1]:0")
+			Expect(err).NotTo(HaveOccurred())
+			var connections sync.WaitGroup
+			connections.Go(func() {
+				defer GinkgoRecover()
+				for {
+					connection, acceptErr := listener.Accept()
+					if errors.Is(acceptErr, net.ErrClosed) {
+						return
+					}
+					Expect(acceptErr).NotTo(HaveOccurred())
+					Expect(connection.Close()).To(Succeed())
+				}
+			})
+			DeferCleanup(func() {
+				Expect(listener.Close()).To(Succeed())
+				connections.Wait()
+			})
+			cluster.Spec.Connection.Host = "::1"
+			cluster.Spec.Connection.Port = int32(listener.Addr().(*net.TCPAddr).Port)
 			Expect(fixture.api.Update(ctx, cluster)).To(Succeed())
 			output := fixture.published(ctx, fixture.database, r4OutputName)
 			Expect(string(output.Data["sslrootcert"])).To(Equal(path))

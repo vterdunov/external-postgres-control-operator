@@ -1,0 +1,73 @@
+name: Delivery
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validation:
+    name: Release validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Pinned tools
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.9.15
+      - name: Release and delivery contracts
+        run: |
+          mise exec -- python3 -B -m unittest discover -s test/release -p '*_test.py' -v
+          mise exec -- python3 -B -m unittest discover -s test/delivery -p '*_test.py' -v
+          mise exec -- bash test/e2e/runner_test.sh
+          mise run check-chart
+          mise exec -- shellcheck tools/*.sh test/e2e/run.sh test/e2e/runner_test.sh
+          mise exec -- actionlint
+          git diff --exit-code
+  native:
+    name: Native ${{ matrix.architecture }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Pinned tools
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.9.15
+      - name: Build and start native manager
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          docker build --platform "linux/$ARCHITECTURE" --build-arg VERSION=0.0.0-validation --build-arg "REVISION=$SOURCE_SHA" -t epco/platform-validation:current .
+          mise exec -- python3 tools/platform_check.py --image epco/platform-validation:current --version 0.0.0-validation --source "$SOURCE_SHA"
+  platforms:
+    name: Platforms
+    if: always()
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require both native platforms
+        env:
+          RESULT: ${{ needs.native.result }}
+        run: test "$RESULT" = success

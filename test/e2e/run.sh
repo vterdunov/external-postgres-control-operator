@@ -12,15 +12,50 @@ case $major in
 esac
 build_mode=${EPCO_E2E_BUILD_MODE:-docker}
 case $build_mode in
-  docker|local) ;;
+  docker|local|prebuilt) ;;
   *) printf 'Unsupported EPCO_E2E_BUILD_MODE\n' >&2; exit 2 ;;
 esac
+suite=${EPCO_E2E_SUITE:-operator}
+install_mode=${EPCO_E2E_INSTALL_MODE:-kustomize}
+case $install_mode in
+  kustomize|chart) ;;
+  *) printf 'Unsupported EPCO_E2E_INSTALL_MODE\n' >&2; exit 2 ;;
+esac
+case $suite in
+  operator|delivery) ;;
+  *) printf 'Unsupported EPCO_E2E_SUITE\n' >&2; exit 2 ;;
+esac
+if [[ $build_mode == prebuilt ]]; then
+  image_reference=${EPCO_E2E_IMAGE_REFERENCE:-}
+  if [[ ! $image_reference =~ ^ghcr\.io/vterdunov/external-postgres-control-operator:[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?@sha256:[a-f0-9]{64}$ ]]; then
+    printf 'Prebuilt mode requires the public application tag and sha256 digest\n' >&2
+    exit 2
+  fi
+  image_tag=${image_reference#*:}
+  image_tag=${image_tag%%@*}
+fi
+if [[ $suite == delivery || $install_mode == chart ]]; then
+  if [[ ! -f ${EPCO_DELIVERY_CHART_PACKAGE:-} || ${EPCO_DELIVERY_CHART_PACKAGE:-} != *.tgz
+      || ! ${EPCO_DELIVERY_IMAGE_SOURCE_SHA:-} =~ ^[a-f0-9]{40}$
+      || ! ${EPCO_DELIVERY_CHART_SOURCE_SHA:-} =~ ^[a-f0-9]{40}$ ]]; then
+    printf 'Delivery requires a local chart archive and separate image/chart source SHAs\n' >&2
+    exit 2
+  fi
+  if [[ $build_mode == prebuilt && ${EPCO_DELIVERY_IMAGE_REFERENCE:-} != "$image_reference" ]]; then
+    printf 'Delivery image reference must match the selected prebuilt image\n' >&2
+    exit 2
+  fi
+fi
 run_dir=$(mktemp -d "${TMPDIR:-/tmp}/epco-e2e.XXXXXX")
 suffix=$(printf '%s' "${run_dir##*.}" | tr '[:upper:]' '[:lower:]')
 run_id="$(date +%s)-$$-$suffix"
 cluster="epco-e2e-$run_id"
 context="kind-$cluster"
 image="epco/e2e:$run_id"
+if [[ $build_mode == prebuilt ]]; then image=$image_reference; fi
+if [[ $suite == delivery && ${EPCO_DELIVERY_LOCAL_IMAGE:-false} == true ]]; then
+  export EPCO_DELIVERY_IMAGE_REFERENCE="$image"
+fi
 kubeconfig="$run_dir/kubeconfig"
 artifacts=${EPCO_ARTIFACTS_DIR:-"$project_dir/artifacts/e2e/$run_id"}
 case $artifacts in
@@ -166,12 +201,12 @@ if (($# > 0)); then
   printf 'suite argument: %s\n' "$@" | redact >> "$artifacts/fixture-expected.txt"
 fi
 
-run 600 go test -tags=e2e ./test/e2e/ -race -run '^$'
+if [[ $suite == operator ]]; then run 600 go test -tags=e2e ./test/e2e/ -race -run '^$'; fi
 
 kind_owned=true
 run 240 kind create cluster --name "$cluster" --image "$node_image" --kubeconfig "$kubeconfig" --wait 180s
 chmod 600 "$kubeconfig"
-image_owned=true
+if [[ $build_mode != prebuilt ]]; then image_owned=true; fi
 case $build_mode in
   docker) run 900 docker build --build-arg BASE_IMAGE=public.ecr.aws/docker/library/golang:1.27.1 -t "$image" . ;;
   local)
@@ -185,9 +220,17 @@ ENTRYPOINT ["/manager"]
 DOCKERFILE
     run 120 docker build -t "$image" "$run_dir"
     ;;
+  prebuilt) ;;
   *) printf 'Unsupported EPCO_E2E_BUILD_MODE\n' >&2; exit 2 ;;
 esac
-run 120 kind load docker-image "$image" --name "$cluster"
+if [[ $build_mode != prebuilt ]]; then run 120 kind load docker-image "$image" --name "$cluster"; fi
+if [[ $suite == operator ]]; then
+if [[ $install_mode == chart ]]; then
+  kubectl_run 30 create namespace epco-system
+  run 240 python3 "$suite_dir/../../tools/chart.py" install \
+    --package "$EPCO_DELIVERY_CHART_PACKAGE" --release epco --namespace epco-system \
+    --context "$context" --image-reference "$image"
+else
 cp -R "$project_dir/config" "$run_dir/config"
 mkdir -p "$run_dir/overlay"
 cat > "$run_dir/overlay/kustomization.yaml" <<OVERLAY
@@ -200,9 +243,24 @@ images:
   newName: epco/e2e
   newTag: $run_id
 OVERLAY
+if [[ $build_mode == prebuilt ]]; then
+  cat > "$run_dir/overlay/kustomization.yaml" <<OVERLAY
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../config/default
+images:
+- name: controller
+  newName: ghcr.io/vterdunov/external-postgres-control-operator
+  newTag: $image_tag
+  digest: ${image_reference##*@}
+OVERLAY
+fi
 run 30 kustomize build "$run_dir/overlay" -o "$run_dir/operator.yaml"
 kubectl_run 60 apply -f "$run_dir/operator.yaml"
+fi
 kubectl_run 180 -n epco-system rollout status deployment/epco-controller-manager --timeout=150s
+fi
 password=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
 cat > "$run_dir/postgres.yaml" <<POSTGRES
 apiVersion: v1
@@ -277,5 +335,13 @@ spec:
 POSTGRES
 kubectl_run 60 apply -f "$run_dir/postgres.yaml"
 kubectl_run 240 -n epco-postgres rollout status deployment/postgres --timeout=210s
-run 600 go test -tags=e2e ./test/e2e/ -race -count=1 -v \
-  -ginkgo.randomize-all -ginkgo.seed="$seed" -ginkgo.junit-report="$artifacts/junit.xml" "$@"
+if [[ $suite == delivery ]]; then
+  run 1200 python3 "$suite_dir/../delivery/lifecycle.py"
+else
+  run 600 go test -tags=e2e ./test/e2e/ -race -count=1 -v \
+    -ginkgo.randomize-all -ginkgo.seed="$seed" -ginkgo.junit-report="$artifacts/junit.xml" "$@"
+  if [[ ${EPCO_E2E_RUNTIME_REPORT:-false} == true ]]; then
+    run 60 python3 "$suite_dir/../../tools/release_ci.py" observe \
+      --manifest "$EPCO_RELEASE_MANIFEST" --output "$artifacts/release-installed.json"
+  fi
+fi

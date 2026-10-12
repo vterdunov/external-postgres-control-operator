@@ -17,6 +17,7 @@ shutil.copytree(root, target, dirs_exist_ok=True,
                 ignore=shutil.ignore_patterns('.git', 'bin', 'artifacts', '.agent-plans'))
 PY
 (cd "$target" && "$controller_gen" rbac:roleName=manager-role crd webhook paths='./...' output:crd:artifacts:config=config/crd/bases && "$controller_gen" object paths='./...')
+python3 tools/chart.py check
 python3 - "$root" "$target" <<'PY'
 from pathlib import Path
 import sys
