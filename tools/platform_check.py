@@ -4,6 +4,7 @@
 import argparse
 import json
 import platform
+import re
 import subprocess
 import sys
 
@@ -21,7 +22,13 @@ def check(image, version, source):
         raise ValueError('native platform, nonroot user or image metadata mismatch')
     result = subprocess.run(['docker', 'run', '--rm', '--network=none', image, '--help'],
                             capture_output=True, text=True, timeout=30, check=True)
-    if '--leader-elect' not in result.stdout + result.stderr or '--health-probe-bind-address' not in result.stdout + result.stderr:
+    declared = set()
+    for line in (result.stdout + '\n' + result.stderr).splitlines():
+        for token in line.split():
+            if not re.fullmatch(r'--?[a-zA-Z][a-zA-Z0-9-]*', token):
+                break
+            declared.add(token.lstrip('-'))
+    if not {'leader-elect', 'health-probe-bind-address'}.issubset(declared):
         raise ValueError('native manager startup did not expose expected manager flags')
     print(json.dumps({'architecture': expected_arch, 'image': image, 'version': version, 'source_sha': source, 'user': config['User'], 'startup': 'success'}))
 
