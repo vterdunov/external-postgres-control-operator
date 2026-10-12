@@ -3,7 +3,7 @@ name: external-postgres-control-operator
 description: Manage roles and databases on external PostgreSQL servers
 type: application
 version: 0.1.0
-appVersion: "dev"
+appVersion: "0.1.0"
 home: https://github.com/vterdunov/external-postgres-control-operator
 sources:
   - https://github.com/vterdunov/external-postgres-control-operator
