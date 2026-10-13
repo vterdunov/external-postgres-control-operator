@@ -4,9 +4,11 @@ suite_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/epco-e2e-runner-test.XXXXXX")
 fixture=$(cd "$fixture" && pwd)
 trap 'rm -rf "$fixture"' EXIT
-mkdir -p "$fixture/bin" "$fixture/source/config/default"
+mkdir -p "$fixture/bin" "$fixture/source/config/default" "$fixture/source/test/e2e"
 printf 'original manifest\n' > "$fixture/source/config/default/kustomization.yaml"
 source_checksum=$(cksum "$fixture/source/config/default/kustomization.yaml")
+cp "$suite_dir/database_connections_test.go" "$fixture/source/test/e2e/database_connections_test.go"
+go_source_checksum=$(cksum "$fixture/source/test/e2e/database_connections_test.go")
 unset EPCO_PG_VERSION EPCO_E2E_BUILD_MODE EPCO_E2E_CLIENT_IMAGE EPCO_E2E_POSTGRES_IMAGE
 unset EPCO_E2E_IMAGE_REFERENCE EPCO_E2E_SUITE EPCO_DELIVERY_CHART_PACKAGE EPCO_DELIVERY_IMAGE_REFERENCE
 unset EPCO_DELIVERY_IMAGE_SOURCE_SHA EPCO_DELIVERY_CHART_SOURCE_SHA EPCO_DELIVERY_LOCAL_IMAGE
@@ -105,12 +107,28 @@ PY
     printf '%s\n' "$PWD" > "$E2E_FAKE_LOG.behavior-cwd"
     compile_only=false
     previous=''
+    overlay=''
     for argument in "$@"; do
       if [[ $previous == -run && $argument == '^$' || $argument == '-run=^$' ]]; then
         compile_only=true
       fi
+      if [[ $previous == -overlay ]]; then overlay=$argument; fi
+      if [[ $argument == -overlay=* ]]; then overlay=${argument#-overlay=}; fi
       previous=$argument
     done
+    if [[ -n $overlay ]]; then
+      phase=runtime
+      if [[ $compile_only == true ]]; then phase=compile; fi
+      cp "$overlay" "$E2E_FAKE_LOG.overlay-$phase"
+      "$E2E_FAKE_REAL_PYTHON" - "$overlay" "$E2E_FAKE_LOG.derived-$phase" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+replacement = next(iter(json.loads(Path(sys.argv[1]).read_text())["Replace"].values()))
+Path(sys.argv[2]).write_bytes(Path(replacement).read_bytes())
+PY
+    fi
     if [[ $compile_only == true ]]; then
       printf '%s\0' "$@" > "$E2E_FAKE_LOG.compile-argv"
       printf '%s\n' "$KUBECONFIG" > "$E2E_FAKE_LOG.compile-kubeconfig"
@@ -241,6 +259,7 @@ release_runner_cases() {
       fi
     fi
     [[ $(cksum "$fixture/source/config/default/kustomization.yaml") == "$source_checksum" ]] || return 1
+    [[ $(cksum "$fixture/source/test/e2e/database_connections_test.go") == "$go_source_checksum" ]] || return 1
     printf 'PASS e2e runner: release %s\n' "$mode"
   done
   unset EPCO_E2E_BUILD_MODE EPCO_E2E_IMAGE_REFERENCE EPCO_E2E_SUITE
@@ -327,7 +346,8 @@ fixture_runner_cases() {
     done
     if [[ $(grep -c '^kind delete cluster --name epco-e2e-' "$E2E_FAKE_LOG") != 1 ]] ||
         grep -REq 'e2e-secret|aaa[.]bbb[.]ccc' "$EPCO_ARTIFACTS_DIR" ||
-        [[ $(cksum "$fixture/source/config/default/kustomization.yaml") != "$source_checksum" ]]; then
+        [[ $(cksum "$fixture/source/config/default/kustomization.yaml") != "$source_checksum" ||
+          $(cksum "$fixture/source/test/e2e/database_connections_test.go") != "$go_source_checksum" ]]; then
       printf 'FAIL fixture %s: cleanup, sanitization, or source immutability\n' "$mode" >&2
       failures=$((failures + 1))
     fi
@@ -338,6 +358,71 @@ fixture_runner_cases() {
   [[ $failures == 0 ]]
 }
 
+overlay_runner_cases() {
+  local source="$fixture/source/test/e2e/database_connections_test.go" source_hash status
+  local failures=0
+  mkdir -p "${source%/*}"
+  source_hash=$go_source_checksum
+  export E2E_FAKE_LOG="$fixture/overlay-valid.log" E2E_FAKE_FAIL=none E2E_FAKE_PG_SETTING=100
+  export EPCO_E2E_PROJECT_DIR="$fixture/source" EPCO_ARTIFACTS_DIR="$fixture/artifacts/overlay-valid"
+  unset EPCO_E2E_BUILD_MODE EPCO_E2E_IMAGE_REFERENCE EPCO_E2E_INSTALL_MODE EPCO_E2E_SUITE
+  : > "$E2E_FAKE_LOG"
+  set +e
+  PATH="$fixture/bin:$PATH" bash "$suite_dir/run.sh" > "$E2E_FAKE_LOG.output" 2>&1
+  status=$?
+  set -e
+  if [[ $status != 0 ]]; then
+    printf 'FAIL overlay runner: valid profile returned %s\n' "$status" >&2
+    failures=$((failures + 1))
+  else
+    for phase in compile runtime; do
+      if [[ ! -f $E2E_FAKE_LOG.overlay-$phase || ! -f $E2E_FAKE_LOG.derived-$phase ]]; then
+        printf 'FAIL overlay runner: %s Go invocation omitted overlay\n' "$phase" >&2
+        failures=$((failures + 1))
+      fi
+    done
+    if [[ -f $E2E_FAKE_LOG.overlay-compile && -f $E2E_FAKE_LOG.overlay-runtime ]]; then
+      cmp -s "$E2E_FAKE_LOG.overlay-compile" "$E2E_FAKE_LOG.overlay-runtime" ||
+        { printf 'FAIL overlay runner: compile and runtime used different maps\n' >&2; failures=$((failures + 1)); }
+    fi
+    if [[ ! -f $EPCO_ARTIFACTS_DIR/fixture-overlay.json ]] ||
+        ! grep -Fq 'application_source_sha' "$EPCO_ARTIFACTS_DIR/fixture-overlay.json" ||
+        ! grep -Fq 'fixture_source_sha' "$EPCO_ARTIFACTS_DIR/fixture-overlay.json"; then
+      printf 'FAIL overlay runner: source provenance record missing\n' >&2
+      failures=$((failures + 1))
+    fi
+  fi
+  [[ $(cksum "$source") == "$source_hash" ]] ||
+    { printf 'FAIL overlay runner: original Go fixture source changed\n' >&2; failures=$((failures + 1)); }
+  [[ $(grep -c '^kind delete cluster --name epco-e2e-' "$E2E_FAKE_LOG") == 1 ]] ||
+    { printf 'FAIL overlay runner: owned Kind cleanup missing\n' >&2; failures=$((failures + 1)); }
+
+  # Reject a stale or ambiguous source profile before acquiring Kind resources.
+  cat >> "$source" <<'DUPLICATE'
+
+func installedConnectionJob(namespace, output string) *batchv1.Job {
+	const script = `duplicate`
+DUPLICATE
+  export E2E_FAKE_LOG="$fixture/overlay-invalid.log" EPCO_ARTIFACTS_DIR="$fixture/artifacts/overlay-invalid"
+  : > "$E2E_FAKE_LOG"
+  set +e
+  PATH="$fixture/bin:$PATH" bash "$suite_dir/run.sh" > "$E2E_FAKE_LOG.output" 2>&1
+  status=$?
+  set -e
+  if [[ $status == 0 ]] || grep -Eq '^kind create cluster|^go test .* -count=1' "$E2E_FAKE_LOG"; then
+    printf 'FAIL overlay runner: ambiguous profile reached Kind or behavior suite (status %s)\n' "$status" >&2
+    failures=$((failures + 1))
+  fi
+  cp "$suite_dir/database_connections_test.go" "$source"
+  [[ $(cksum "$source") == "$source_hash" ]] ||
+    { printf 'FAIL overlay runner: original source was not restored\n' >&2; failures=$((failures + 1)); }
+  [[ $failures == 0 ]]
+}
+
+if [[ ${EPCO_E2E_RUNNER_TEST_SCOPE:-all} == overlay ]]; then
+  overlay_runner_cases
+  exit
+fi
 if [[ ${EPCO_E2E_RUNNER_TEST_SCOPE:-all} == fixture ]]; then
   fixture_runner_cases
   exit
@@ -369,8 +454,9 @@ for failure in none kind apply test signal interrupt diagnostics cleanup test-cl
     exit 1
   fi
   if [[ $status -ne 0 ]]; then [[ -f "$EPCO_ARTIFACTS_DIR/runner-junit.xml" ]]; fi
-  [[ $(find "$fixture/source" -type f | wc -l | tr -d ' ') == 1 ]]
+  [[ $(find "$fixture/source" -type f | wc -l | tr -d ' ') == 2 ]]
   [[ $(cksum "$fixture/source/config/default/kustomization.yaml") == "$source_checksum" ]]
+  [[ $(cksum "$fixture/source/test/e2e/database_connections_test.go") == "$go_source_checksum" ]]
   created=$(awk '/^kind create cluster/ { print $5 }' "$E2E_FAKE_LOG")
   deleted=$(awk '/^kind delete cluster/ { print $5 }' "$E2E_FAKE_LOG")
   [[ $created == "$deleted" ]]
@@ -458,6 +544,8 @@ for selection in default 15 16 17 18 local; do
     fail "$selection artifacts leaked credentials"
   fi
   [[ $(cksum "$fixture/source/config/default/kustomization.yaml") == "$source_checksum" ]] || fail "$selection modified project sources"
+  [[ $(cksum "$fixture/source/test/e2e/database_connections_test.go") == "$go_source_checksum" ]] ||
+    fail "$selection modified original Go fixture"
   previous_context=$context previous_image=$manager_image previous_kubeconfig=$kubeconfig
   printf 'PASS e2e runner: version %s (%s)\n' "$selection" "$patch"
 done
@@ -529,11 +617,19 @@ for compilation in success failure; do
     compile_args=()
     while IFS= read -r -d '' argument; do compile_args+=("$argument"); done < "$E2E_FAKE_LOG.compile-argv"
     expected_compile_args=(test -tags=e2e ./test/e2e/ -race -run '^$')
-    if ((${#compile_args[@]} != ${#expected_compile_args[@]})); then
+    base_compile_args=()
+    skip_overlay_value=false
+    for argument in "${compile_args[@]}"; do
+      if [[ $skip_overlay_value == true ]]; then skip_overlay_value=false; continue; fi
+      if [[ $argument == -overlay ]]; then skip_overlay_value=true; continue; fi
+      if [[ $argument == -overlay=* ]]; then continue; fi
+      base_compile_args+=("$argument")
+    done
+    if ((${#base_compile_args[@]} != ${#expected_compile_args[@]})); then
       problems+=("compile-only invocation changed literal argv or selected behaviors")
     else
       for ((index=0; index<${#expected_compile_args[@]}; index++)); do
-        [[ ${compile_args[index]} == "${expected_compile_args[index]}" ]] ||
+        [[ ${base_compile_args[index]} == "${expected_compile_args[index]}" ]] ||
           problems+=("compile-only argument $index differs from required literal argv")
       done
     fi
@@ -547,7 +643,9 @@ for compilation in success failure; do
   fi
   [[ $(cksum "$fixture/source/config/default/kustomization.yaml") == "$source_checksum" ]] ||
     problems+=("compilation changed tracked project source")
-  [[ $(find "$fixture/source" -type f | wc -l | tr -d ' ') == 1 ]] ||
+  [[ $(cksum "$fixture/source/test/e2e/database_connections_test.go") == "$go_source_checksum" ]] ||
+    problems+=("compilation changed original Go fixture")
+  [[ $(find "$fixture/source" -type f | wc -l | tr -d ' ') == 2 ]] ||
     problems+=("compilation created project files")
   if grep -REq 'e2e-secret|aaa[.]bbb[.]ccc' "$EPCO_ARTIFACTS_DIR"; then
     problems+=("compile-only artifacts leaked credentials")
@@ -562,3 +660,7 @@ done
 [[ $compile_failures == 0 ]]
 release_runner_cases
 fixture_runner_cases
+overlay_runner_cases
+"$E2E_FAKE_REAL_PYTHON" -m unittest discover -s "$suite_dir" -p fixture_overlay_test.py
+"$E2E_FAKE_REAL_PYTHON" -m unittest discover -s "$suite_dir" -p migration_fixture_test.py
+shellcheck "$suite_dir/fixtures/migration.sh"
