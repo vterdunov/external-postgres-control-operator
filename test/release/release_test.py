@@ -225,8 +225,32 @@ class ReleaseBehaviorTests(unittest.TestCase):
 
     def test_api_permission_failure_is_not_absence(self):
         self.before_new_version()
-        self.fixture.fail("gh", ["api", "releases/tags/chart-v0.2.1"], "HTTP 403: Forbidden")
-        self.rejected("preflight", seed=True)
+        for message in ("gh: Resource not accessible by integration (HTTP 403)",
+                        "gh: Requires authentication (HTTP 401)", "DENIED: requested access to the resource is denied",
+                        "gh: Service Unavailable (HTTP 503)", "error connecting to api.github.com"):
+            with self.subTest(error=message):
+                self.fixture.state["failures"] = []
+                self.fixture.fail("gh", ["api", "releases/tags/chart-v0.2.1"], message)
+                self.rejected("preflight", seed=True)
+
+    def test_actual_gh_404_is_absence_for_new_release_preflight_in_both_streams(self):
+        for stream in ("image", "chart"):
+            with self.subTest(stream=stream):
+                self.fixture = ReleaseFixture(self.directory / (stream + "-gh404"), stream)
+                self.before_new_version()
+                output = self.accepted("preflight", seed=True)
+                self.assertFalse(output["completed"])
+                self.assertEqual(output["stream"], stream)
+                self.assert_write_free()
+
+    def test_actual_gh_404_for_required_source_lookup_remains_failure(self):
+        self.image_fixture()
+        self.before_new_version()
+        # Required main ancestry is not an optional resource. The same real gh
+        # error must fail here even when the first-release lookup was absent.
+        self.fixture.fail("gh", ["api", "compare/"], "gh: Not Found (HTTP 404)")
+        result = self.rejected("preflight", seed=True)
+        self.assertIn("compare/", result.stderr, "Failure must come from the required source lookup, not the optional release")
 
     def test_chart_requires_original_immutable_image_release(self):
         self.before_new_version()
