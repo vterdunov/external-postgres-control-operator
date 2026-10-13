@@ -4,8 +4,10 @@ package e2e
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json/v2"
+	"fmt"
 	"maps"
 	"os"
 	"strings"
@@ -25,25 +27,100 @@ import (
 )
 
 const (
-	installedConnectionMigrationGate      = "migration-gate"
-	installedConnectionHostKey            = "host"
-	installedConnectionPortKey            = "port"
-	installedConnectionUserKey            = "user"
-	installedConnectionSSLModeKey         = "sslmode"
-	installedConnectionDatabase           = "epco_e2e_connections"
-	installedConnectionService            = "epco_e2e_connections_service"
-	installedConnectionAdmin              = "epco_e2e_connections_reader"
-	installedConnectionServiceOutput      = "service-connection"
-	installedConnectionAdminOutput        = "reader-connection"
-	installedConnectionRetryMessage       = "Waiting for application connection"
-	installedConnectionEstablishedMessage = "Application connection established"
+	installedConnectionMigrationGate       = "migration-gate"
+	installedConnectionHostKey             = "host"
+	installedConnectionPortKey             = "port"
+	installedConnectionUserKey             = "user"
+	installedConnectionSSLModeKey          = "sslmode"
+	installedConnectionDatabase            = "epco_e2e_connections"
+	installedConnectionService             = "epco_e2e_connections_service"
+	installedConnectionAdmin               = "epco_e2e_connections_reader"
+	installedConnectionServiceOutput       = "service-connection"
+	installedConnectionAdminOutput         = "reader-connection"
+	installedConnectionRetryMessage        = "Waiting for application connection"
+	installedConnectionEstablishedMessage  = "Application connection established"
+	installedConnectionGateObservedMessage = "Migration gate observed"
 )
 
 func installedClientImage() string {
-	if image := os.Getenv("EPCO_E2E_CLIENT_IMAGE"); image != "" {
-		return image
+	return cmp.Or(os.Getenv("EPCO_E2E_CLIENT_IMAGE"), "docker.io/library/postgres:16.15-bookworm")
+}
+
+func installedRefreshMigrationGate(
+	ctx context.Context, kubeClient client.Client, job *batchv1.Job, revision string,
+) error {
+	if job.UID == "" || revision == "" {
+		return fmt.Errorf("migration gate refresh requires a Job UID and gate revision")
 	}
-	return "public.ecr.aws/docker/library/postgres:16.15-bookworm"
+	pods := &corev1.PodList{}
+	if err := kubeClient.List(ctx, pods, client.InNamespace(job.Namespace),
+		client.MatchingLabels{batchv1.JobNameLabel: job.Name}); err != nil {
+		return err
+	}
+	var owned *corev1.Pod
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		owner := metav1.GetControllerOf(pod)
+		if owner == nil || owner.APIVersion != "batch/v1" || owner.Kind != r6MigrationJobKind ||
+			owner.Name != job.Name || owner.UID != job.UID || !pod.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if owned != nil {
+			return fmt.Errorf("migration Job %s has multiple owned Pods", job.Name)
+		}
+		owned = pod
+	}
+	if owned == nil {
+		return fmt.Errorf("migration Job %s has no owned Pod", job.Name)
+	}
+	const annotation = "testing.epco.io/migration-gate"
+	if owned.Annotations[annotation] == revision {
+		return nil
+	}
+	before := owned.DeepCopy()
+	if owned.Annotations == nil {
+		owned.Annotations = make(map[string]string)
+	}
+	owned.Annotations[annotation] = revision
+	return kubeClient.Patch(ctx, owned, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{}))
+}
+
+func installedConnectionJobDiagnostics(ctx context.Context, job *batchv1.Job, gate *corev1.ConfigMap) {
+	latest, err := kubeClient.BatchV1().Jobs(job.Namespace).Get(ctx, job.Name, metav1.GetOptions{})
+	if err != nil {
+		GinkgoWriter.Printf("Migration Job diagnostics unavailable: %v\n", err)
+		return
+	}
+	GinkgoWriter.Printf("Migration Job uid=%s active=%d succeeded=%d failed=%d gate_revision=%s\n",
+		latest.UID, latest.Status.Active, latest.Status.Succeeded, latest.Status.Failed, gate.ResourceVersion)
+	logs := installedConnectionJobLogs(ctx, job)
+	GinkgoWriter.Printf("Migration gate_observed=%t completion_observed=%t\n",
+		strings.Contains(logs, installedConnectionGateObservedMessage), strings.Contains(logs, "Migration completed"))
+	pods, err := kubeClient.CoreV1().Pods(job.Namespace).List(ctx,
+		metav1.ListOptions{LabelSelector: batchv1.JobNameLabel + "=" + job.Name})
+	if err != nil {
+		GinkgoWriter.Printf("Migration Pod diagnostics unavailable: %v\n", err)
+		return
+	}
+	for _, pod := range pods.Items {
+		if !metav1.IsControlledBy(&pod, latest) {
+			continue
+		}
+		GinkgoWriter.Printf("Migration Pod name=%s uid=%s phase=%s gate_annotation=%s\n",
+			pod.Name, pod.UID, pod.Status.Phase, pod.Annotations["testing.epco.io/migration-gate"])
+		for _, status := range pod.Status.ContainerStatuses {
+			if status.Name != r6MigrationContainer {
+				continue
+			}
+			if waiting := status.State.Waiting; waiting != nil {
+				GinkgoWriter.Printf("Migration container waiting_reason=%s\n", waiting.Reason)
+			}
+			if terminated := status.State.Terminated; terminated != nil {
+				GinkgoWriter.Printf("Migration container exit=%d reason=%s started=%s finished=%s\n",
+					terminated.ExitCode, terminated.Reason, terminated.StartedAt, terminated.FinishedAt)
+			}
+		}
+	}
 }
 
 // Credentials stay in private stdin/password files, outside local and remote argv.
@@ -132,6 +209,7 @@ until load_connection && psql -X -v ON_ERROR_STOP=1 -Atc 'SELECT 1' >/dev/null 2
 done
 echo "Application connection established"
 until [ -f /migration-gate/ready ]; do sleep 1; done
+echo "Migration gate observed"
 load_connection
 psql -X -v ON_ERROR_STOP=1 -Atc \
   'CREATE TABLE app.orders(value integer); INSERT INTO app.orders VALUES (42)' >/dev/null 2>&1
@@ -244,6 +322,11 @@ var _ = Describe("R4 Installed application connection Secrets", func() {
 		DeferCleanup(func() {
 			cleanup, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 			defer cancel()
+			if CurrentSpecReport().Failed() {
+				diagnostics, cancelDiagnostics := context.WithTimeout(cleanup, 10*time.Second)
+				installedConnectionJobDiagnostics(diagnostics, job, gate)
+				cancelDiagnostics()
+			}
 			installedConnectionServiceSelector(cleanup, originalSelector)
 			Expect(retry.RetryOnConflict(retry.DefaultRetry, func() error {
 				latest := &corev1.Namespace{}
@@ -266,8 +349,9 @@ var _ = Describe("R4 Installed application connection Secrets", func() {
 		for _, object := range []client.Object{serviceSource, serviceRole, readerRole, database, gate} {
 			Expect(apiClient.Create(ctx, object)).To(Succeed())
 		}
-		_, err = kubeClient.BatchV1().Jobs(job.Namespace).Create(ctx, job, metav1.CreateOptions{})
+		createdJob, err := kubeClient.BatchV1().Jobs(job.Namespace).Create(ctx, job, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred())
+		job = createdJob
 		serviceOutput := installedConnectionOutput(ctx, appNamespace.Name, installedConnectionServiceOutput)
 		readerOutput := installedConnectionOutput(ctx, appNamespace.Name, installedConnectionAdminOutput)
 		Expect(bytes.Equal(serviceOutput.Data["password"], serviceSource.Data["password"])).To(BeTrue())
@@ -302,6 +386,13 @@ var _ = Describe("R4 Installed application connection Secrets", func() {
 		Expect(apiClient.Get(ctx, client.ObjectKeyFromObject(gate), gate)).To(Succeed())
 		gate.Data = map[string]string{"ready": "yes"}
 		Expect(apiClient.Update(ctx, gate)).To(Succeed())
+		Eventually(func() error {
+			return installedRefreshMigrationGate(ctx, apiClient, job, gate.ResourceVersion)
+		}).WithContext(ctx).WithTimeout(20 * time.Second).WithPolling(200 * time.Millisecond).Should(Succeed())
+		Eventually(func() bool {
+			return strings.Contains(installedConnectionJobLogs(ctx, job), installedConnectionGateObservedMessage)
+		}).WithContext(ctx).WithTimeout(3*time.Minute).WithPolling(200*time.Millisecond).Should(BeTrue(),
+			"migration Pod must observe the opened ConfigMap gate before its completion budget starts")
 		Eventually(func() bool {
 			latest, err := kubeClient.BatchV1().Jobs(job.Namespace).Get(ctx, job.Name, metav1.GetOptions{})
 			return err == nil && latest.Status.Succeeded == 1

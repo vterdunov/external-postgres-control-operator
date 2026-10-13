@@ -73,7 +73,7 @@ case "$name $*" in
       if [[ $1 == -f && $2 == */postgres.yaml ]]; then
         postgres_image=$(awk '/^[[:space:]]*image:/ { print $2 }' "$2")
         printf '%s\n' "$postgres_image" > "$E2E_FAKE_LOG.server-image"
-        if [[ $postgres_image != "${E2E_FAKE_POSTGRES_IMAGE:-public.ecr.aws/docker/library/postgres:16.15-bookworm}" ]]; then
+        if [[ $postgres_image != "${E2E_FAKE_POSTGRES_IMAGE:-docker.io/library/postgres:16.15-bookworm}" ]]; then
           printf 'FAIL PostgreSQL fixture image: %s\n' "$postgres_image" >&2
           exit 95
         fi
@@ -121,7 +121,7 @@ chmod +x "$fixture/bin/fake"
 for cli in kind kubectl kustomize docker go git python3; do ln -s fake "$fixture/bin/$cli"; done
 
 release_runner_cases() {
-  local mode status expected reference package application_source chart_source
+  local mode status expected reference package application_source chart_source major patch server_image client_image
   reference="ghcr.io/vterdunov/external-postgres-control-operator:0.1.0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   application_source=1111111111111111111111111111111111111111
   chart_source=2222222222222222222222222222222222222222
@@ -145,6 +145,17 @@ release_runner_cases() {
       invalid-image-source) export EPCO_E2E_SUITE=delivery EPCO_DELIVERY_IMAGE_SOURCE_SHA=main; expected=2 ;;
       invalid-chart-source) export EPCO_E2E_SUITE=delivery EPCO_DELIVERY_CHART_SOURCE_SHA=main; expected=2 ;;
     esac
+    if [[ $expected != 2 ]]; then
+      case $mode in
+        prebuilt) major=15; patch=15.19 ;;
+        chart-operator) major=17; patch=17.11 ;;
+        delivery) major=18; patch=18.6 ;;
+        delivery-failure) major=16; patch=16.15 ;;
+      esac
+      server_image="docker.io/library/postgres:$patch-bookworm"
+      client_image=docker.io/library/postgres:16.15-bookworm
+      export EPCO_PG_VERSION=$major E2E_FAKE_POSTGRES_IMAGE=$server_image
+    fi
     set +e
     PATH="$fixture/bin:$PATH" bash "$suite_dir/run.sh" > "$E2E_FAKE_LOG.output" 2>&1
     status=$?
@@ -166,8 +177,16 @@ release_runner_cases() {
     else
       [[ $(grep -c '^kind delete cluster --name epco-e2e-' "$E2E_FAKE_LOG") == 1 ]] || return 1
       grep -q 'kubectl .* --context kind-epco-e2e-.*postgres.yaml' "$E2E_FAKE_LOG" || return 1
+      [[ $(cat "$E2E_FAKE_LOG.server-image") == "$server_image" ]] || return 1
+      grep -Fqx "server expected version: $patch" "$EPCO_ARTIFACTS_DIR/fixture-expected.txt" || return 1
+      grep -Fqx "server expected image: $server_image" "$EPCO_ARTIFACTS_DIR/fixture-expected.txt" || return 1
+      grep -Fqx 'client expected version: 16.15' "$EPCO_ARTIFACTS_DIR/fixture-expected.txt" || return 1
+      grep -Fqx "client expected image: $client_image" "$EPCO_ARTIFACTS_DIR/fixture-expected.txt" || return 1
       if [[ $mode == prebuilt || $mode == chart-operator ]]; then
         grep -q '^go test ' "$E2E_FAKE_LOG" || return 1
+        [[ $(cat "$E2E_FAKE_LOG.major") == "$major" ]] || return 1
+        [[ $(cat "$E2E_FAKE_LOG.server-env") == "$server_image" ]] || return 1
+        [[ $(cat "$E2E_FAKE_LOG.client-env") == "$client_image" ]] || return 1
         grep -Fq -- "$reference" "$EPCO_ARTIFACTS_DIR/fixture-expected.txt" || return 1
         if [[ $mode == chart-operator ]]; then
           local chart_command
@@ -303,7 +322,7 @@ for selection in default 15 16 17 18 local; do
     local) major=17; patch=17.11; build_mode=local; export EPCO_E2E_BUILD_MODE=local ;;
   esac
   if [[ $selection != default ]]; then export EPCO_PG_VERSION=$major; fi
-  export E2E_FAKE_POSTGRES_IMAGE="public.ecr.aws/docker/library/postgres:$patch-bookworm"
+  export E2E_FAKE_POSTGRES_IMAGE="docker.io/library/postgres:$patch-bookworm"
   prepare_case "version-$selection"
   run_case
   if [[ $status != 0 ]]; then
@@ -314,13 +333,8 @@ for selection in default 15 16 17 18 local; do
   [[ $(cat "$E2E_FAKE_LOG.major") == "$major" ]] || fail "$selection selected major was not propagated to suite"
   [[ $(cat "$E2E_FAKE_LOG.server-env") == "$E2E_FAKE_POSTGRES_IMAGE" ]] || fail "$selection server image was not propagated to suite"
   client_image=$(cat "$E2E_FAKE_LOG.client-env")
-  case $client_image in
-    public.ecr.aws/docker/library/postgres:15.19-bookworm) client_version=15.19 ;;
-    public.ecr.aws/docker/library/postgres:16.15-bookworm) client_version=16.15 ;;
-    public.ecr.aws/docker/library/postgres:17.11-bookworm) client_version=17.11 ;;
-    public.ecr.aws/docker/library/postgres:18.6-bookworm) client_version=18.6 ;;
-    *) fail "$selection suite client image is absent or unpinned" ;;
-  esac
+  client_version=16.15
+  [[ $client_image == docker.io/library/postgres:16.15-bookworm ]] || fail "$selection suite client image is not the pinned Docker Hub PostgreSQL 16.15 fixture"
   context=$(cat "$E2E_FAKE_LOG.context")
   kubeconfig=$(cat "$E2E_FAKE_LOG.kubeconfig")
   manager_image=$(awk '/^kind load docker-image/ { print $4 }' "$E2E_FAKE_LOG")
