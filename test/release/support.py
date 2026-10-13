@@ -334,7 +334,13 @@ def command_main():
             elif "/git/tags/" in endpoint:
                 emit({"object": state["annotated_tag_objects"][endpoint.rsplit("/", 1)[-1]]})
             elif "/compare/" in endpoint:
-                emit({"status": "ahead" if state["on_main"] else "diverged", "merge_base_commit": {"sha": state["tag_sha"]}})
+                comparison = endpoint.split("/compare/", 1)[1].split("?", 1)[0]
+                if comparison in state.get("comparisons", {}):
+                    emit(state["comparisons"][comparison])
+                elif comparison.endswith("...main"):
+                    emit({"status": "ahead" if state["on_main"] else "diverged", "merge_base_commit": {"sha": state["tag_sha"]}})
+                else:
+                    fail("gh: Not Found (HTTP 404)")
             else:
                 fail("Unsupported fixture gh API: " + endpoint)
         elif args[:2] == ["release", "download"]:

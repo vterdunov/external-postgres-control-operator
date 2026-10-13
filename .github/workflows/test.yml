@@ -2,7 +2,28 @@ name: Tests
 
 on:
   push:
+    branches: ['**']
+    paths-ignore:
+      - 'tools/release.py'
+      - 'tools/release_ci.py'
+      - 'test/release/**'
+      - 'charts/**'
+      - 'docs/**'
+      - '.github/workflows/release-image.yml'
+      - '.github/workflows/release-chart.yml'
+      - '.github/workflows/test.yml'
+      - '.github/workflows/test-e2e.yml'
   pull_request:
+    paths-ignore:
+      - 'tools/release.py'
+      - 'tools/release_ci.py'
+      - 'test/release/**'
+      - 'charts/**'
+      - 'docs/**'
+      - '.github/workflows/release-image.yml'
+      - '.github/workflows/release-chart.yml'
+      - '.github/workflows/test.yml'
+      - '.github/workflows/test-e2e.yml'
   workflow_dispatch:
   schedule:
     - cron: '0 3 * * 1'
