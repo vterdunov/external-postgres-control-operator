@@ -236,6 +236,12 @@ class ReleaseBehaviorTests(unittest.TestCase):
         self.assertFalse(self.accepted("preflight", seed=True)["completed"])
         self.assert_write_free()
 
+    def test_owned_migration_fixture_change_reuses_packaging_ancestor(self):
+        self.packaging_only_ancestor(files=["test/e2e/fixture_overlay.py", "test/e2e/fixtures/migration.sh",
+                                             "test/e2e/fixture_overlay_test.py", "test/e2e/migration_fixture_test.py"])
+        self.assertFalse(self.accepted("preflight", seed=True)["completed"])
+        self.assert_write_free()
+
     def test_cancelled_or_skipped_exact_gate_can_reuse_packaging_ancestor(self):
         for outcome in ("cancelled", "skipped"):
             with self.subTest(outcome=outcome):

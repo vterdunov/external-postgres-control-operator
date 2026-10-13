@@ -202,7 +202,15 @@ if (($# > 0)); then
   printf 'suite argument: %s\n' "$@" | redact >> "$artifacts/fixture-expected.txt"
 fi
 
-if [[ $suite == operator ]]; then run 600 go test -tags=e2e ./test/e2e/ -race -run '^$'; fi
+if [[ $suite == operator ]]; then
+  fixture_revision=$(git -C "$suite_dir/../.." rev-parse HEAD)
+  run 30 python3 "$suite_dir/fixture_overlay.py" \
+    --source "$project_dir/test/e2e/database_connections_test.go" \
+    --script "$suite_dir/fixtures/migration.sh" --output "$run_dir/fixture" \
+    --record "$artifacts/fixture-overlay.json" \
+    --application-source "$source_revision" --fixture-source "$fixture_revision"
+  run 600 go test -overlay "$run_dir/fixture/go-overlay.json" -tags=e2e ./test/e2e/ -race -run '^$'
+fi
 
 kind_owned=true
 run 240 kind create cluster --name "$cluster" --image "$node_image" --kubeconfig "$kubeconfig" --wait 180s
@@ -349,7 +357,7 @@ printf 'server client connection check interval ms: %s\n' "$interval_ms" > "$art
 if [[ $suite == delivery ]]; then
   run 1200 python3 "$suite_dir/../delivery/lifecycle.py"
 else
-  run 600 go test -tags=e2e ./test/e2e/ -race -count=1 -v \
+  run 600 go test -overlay "$run_dir/fixture/go-overlay.json" -tags=e2e ./test/e2e/ -race -count=1 -v \
     -ginkgo.randomize-all -ginkgo.seed="$seed" -ginkgo.junit-report="$artifacts/junit.xml" "$@"
   if [[ ${EPCO_E2E_RUNTIME_REPORT:-false} == true ]]; then
     run 60 python3 "$suite_dir/../../tools/release_ci.py" observe \
