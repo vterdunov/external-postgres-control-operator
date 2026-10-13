@@ -46,7 +46,9 @@ func installedClientImage() string {
 	return cmp.Or(os.Getenv("EPCO_E2E_CLIENT_IMAGE"), "docker.io/library/postgres:16.15-bookworm")
 }
 
-func installedRefreshMigrationGate(ctx context.Context, kubeClient client.Client, job *batchv1.Job, revision string) error {
+func installedRefreshMigrationGate(
+	ctx context.Context, kubeClient client.Client, job *batchv1.Job, revision string,
+) error {
 	if job.UID == "" || revision == "" {
 		return fmt.Errorf("migration gate refresh requires a Job UID and gate revision")
 	}
@@ -59,7 +61,7 @@ func installedRefreshMigrationGate(ctx context.Context, kubeClient client.Client
 	for i := range pods.Items {
 		pod := &pods.Items[i]
 		owner := metav1.GetControllerOf(pod)
-		if owner == nil || owner.APIVersion != "batch/v1" || owner.Kind != "Job" ||
+		if owner == nil || owner.APIVersion != "batch/v1" || owner.Kind != r6MigrationJobKind ||
 			owner.Name != job.Name || owner.UID != job.UID || !pod.DeletionTimestamp.IsZero() {
 			continue
 		}

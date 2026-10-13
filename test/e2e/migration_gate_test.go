@@ -16,7 +16,7 @@ import (
 )
 
 func migrationGateJob() *batchv1.Job {
-	return &batchv1.Job{Namespace: "app", Name: "application-migration", UID: types.UID("job-uid")}
+	return &batchv1.Job{Namespace: "migration-gate-fixture", Name: "application-migration", UID: types.UID("job-uid")}
 }
 
 func migrationGatePod(job *batchv1.Job, name string) *corev1.Pod {
@@ -27,9 +27,11 @@ func migrationGatePod(job *batchv1.Job, name string) *corev1.Pod {
 		},
 		Annotations: map[string]string{"fixture": "keep"},
 		OwnerReferences: []metav1.OwnerReference{{
-			APIVersion: "batch/v1", Kind: "Job", Name: job.Name, UID: job.UID, Controller: new(true),
+			APIVersion: "batch/v1", Kind: r6MigrationJobKind, Name: job.Name, UID: job.UID, Controller: new(true),
 		}},
-		Spec:   corev1.PodSpec{Containers: []corev1.Container{{Name: "migration", Image: "docker.io/library/postgres:16.15-bookworm"}}},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{
+			Name: "migration", Image: "docker.io/library/postgres:16.15-bookworm",
+		}}},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning},
 	}
 }
@@ -43,7 +45,8 @@ func migrationGateClient(t *testing.T, job *batchv1.Job, pods ...*corev1.Pod) cl
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	objects := []client.Object{job}
+	objects := make([]client.Object, 0, len(pods)+1)
+	objects = append(objects, job)
 	for _, pod := range pods {
 		objects = append(objects, pod)
 	}
@@ -78,7 +81,8 @@ func TestInstalledRefreshMigrationGate(t *testing.T) {
 			t.Fatal(err)
 		}
 		actual := migrationGateReadPod(t, kubeClient, owned)
-		if actual.Annotations[annotation] != "gate-revision-2" || actual.Annotations["fixture"] != "keep" || len(actual.Annotations) != 2 {
+		if actual.Annotations[annotation] != "gate-revision-2" ||
+			actual.Annotations["fixture"] != "keep" || len(actual.Annotations) != 2 {
 			t.Fatalf("unexpected Pod annotations: %v", actual.Annotations)
 		}
 		if actual.UID != beforeOwned.UID || !reflect.DeepEqual(actual.Spec, beforeOwned.Spec) ||

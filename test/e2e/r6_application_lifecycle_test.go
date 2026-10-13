@@ -5,7 +5,6 @@ package e2e
 import (
 	"bytes"
 	"context"
-	"encoding/json/v2"
 	"maps"
 	"strconv"
 	"strings"
@@ -18,9 +17,10 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+const r6MigrationJobKind = "Job"
 
 func r6RetainedCredentials(ctx context.Context, app *r6Application) {
 	previousDatabase := app.database.DeepCopy()
@@ -204,23 +204,9 @@ func r6ServiceDisconnected(ctx context.Context, app *r6Application) {
 }
 
 func r6RefreshMigrationGate(ctx context.Context, job *batchv1.Job, revision string) {
-	pods, err := kubeClient.CoreV1().Pods(job.Namespace).List(ctx,
-		metav1.ListOptions{LabelSelector: "job-name=" + job.Name})
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	ExpectWithOffset(1, pods.Items).To(HaveLen(1))
-	pod := pods.Items[0]
-	owned := false
-	for _, owner := range pod.OwnerReferences {
-		owned = owned || owner.Kind == "Job" && owner.Name == job.Name && owner.UID == job.UID &&
-			owner.Controller != nil && *owner.Controller
-	}
-	ExpectWithOffset(1, owned).To(BeTrue(), "only this migration Job's actual Pod may receive the refresh signal")
-	patch, err := json.Marshal(map[string]any{"metadata": map[string]any{
-		"uid": pod.UID, "annotations": map[string]string{"postgresql.epco.io/r6-migration-gate": revision}}})
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	_, err = kubeClient.CoreV1().Pods(job.Namespace).
-		Patch(ctx, pod.Name, types.MergePatchType, patch, metav1.PatchOptions{})
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	EventuallyWithOffset(1, func() error {
+		return installedRefreshMigrationGate(ctx, apiClient, job, revision)
+	}).WithContext(ctx).WithTimeout(20 * time.Second).WithPolling(200 * time.Millisecond).Should(Succeed())
 }
 
 func (app *r6Application) passwordAuthenticationControl(ctx context.Context, output *corev1.Secret) {
