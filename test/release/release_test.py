@@ -79,6 +79,20 @@ class ReleaseBehaviorTests(unittest.TestCase):
         reference = CHART + ":0.2.1" if self.fixture.stream == "chart" else IMAGE + ":0.1.0"
         self.fixture.state["versions"].pop(reference, None)
 
+    def packaging_only_ancestor(self, files=None):
+        self.before_new_version()
+        ancestor = "3" * 40
+        for run in self.fixture.state["runs"]:
+            if run["path"] in (".github/workflows/test.yml", ".github/workflows/test-e2e.yml"):
+                run["head_sha"] = ancestor
+        if files is None:
+            files = ["tools/release.py", "test/release/release_test.py", "charts/external-postgres-control-operator/Chart.yaml",
+                     "docs/roadmap.md", ".github/workflows/release-image.yml", ".github/workflows/test.yml"]
+        comparison = {"status": "ahead", "merge_base_commit": {"sha": ancestor}, "ahead_by": 1, "behind_by": 0,
+                      "total_commits": 1, "files": [{"filename": path, "status": "modified"} for path in files]}
+        self.fixture.state["comparisons"] = {ancestor + "..." + self.fixture.manifest["source_sha"]: comparison}
+        return ancestor, comparison
+
     def prepared_image_checkpoint(self):
         self.fixture = PreparationFixture(self.directory / "prepared-image", "image")
         seed = self.fixture.seed_path()
@@ -208,6 +222,79 @@ class ReleaseBehaviorTests(unittest.TestCase):
         self.fixture.state["runs"].append(latest)
         self.fixture.state["jobs"]["500"] = [{"name": name, "status": "completed", "conclusion": "failure"} for name in GATES["test.yml"]]
         self.rejected("preflight", seed=True)
+
+    def test_packaging_only_ancestor_source_gates_reuse_green_main(self):
+        ancestor, _ = self.packaging_only_ancestor()
+        output = self.accepted("preflight", seed=True)
+        self.assertFalse(output["completed"])
+        self.assertTrue(any(call["tool"] == "gh" and ancestor + "..." + CHART_SHA in " ".join(call["args"])
+                            for call in self.fixture.calls()), "Reuse must verify the complete ancestor-to-source diff")
+        self.assert_write_free()
+
+    def test_cancelled_or_skipped_exact_gate_can_reuse_packaging_ancestor(self):
+        for outcome in ("cancelled", "skipped"):
+            with self.subTest(outcome=outcome):
+                self.fixture = ReleaseFixture(self.directory / ("packaging-" + outcome))
+                self.packaging_only_ancestor()
+                exact = {**self.fixture.state["runs"][0], "id": 500, "head_sha": CHART_SHA,
+                         "created_at": "2026-10-12T01:00:00Z", "status": "completed", "conclusion": outcome}
+                self.fixture.state["runs"].append(exact)
+                self.assertFalse(self.accepted("preflight", seed=True)["completed"])
+                self.assert_write_free()
+
+    def test_failed_exact_gate_cannot_be_masked_by_packaging_ancestor(self):
+        self.packaging_only_ancestor()
+        exact = {**self.fixture.state["runs"][0], "id": 500, "head_sha": CHART_SHA,
+                 "created_at": "2026-10-12T01:00:00Z", "status": "completed", "conclusion": "failure"}
+        self.fixture.state["runs"].append(exact)
+        self.rejected("preflight", seed=True)
+
+    def test_runtime_or_renamed_runtime_file_requires_exact_source_gates(self):
+        for index, files in enumerate(([{"filename": "internal/controller/database_controller.go", "status": "modified"}],
+                                       [{"filename": "docs/renamed.md", "previous_filename": "test/e2e/run.sh", "status": "renamed"}])):
+            with self.subTest(files=files):
+                self.fixture = ReleaseFixture(self.directory / f"unsafe-diff-{index}")
+                _, comparison = self.packaging_only_ancestor()
+                comparison["files"] = files
+                self.rejected("preflight", seed=True)
+
+    def test_ancestor_run_and_current_attempt_jobs_must_be_trusted(self):
+        for defect in ("fork", "wrong_branch", "failed_job", "wrong_attempt"):
+            with self.subTest(defect=defect):
+                self.fixture = ReleaseFixture(self.directory / ("untrusted-" + defect))
+                self.packaging_only_ancestor()
+                run = self.fixture.state["runs"][0]
+                if defect == "fork":
+                    run["head_repository"] = {"full_name": "attacker/fork"}
+                elif defect == "wrong_branch":
+                    run["head_branch"] = "feature"
+                elif defect == "failed_job":
+                    self.fixture.state["jobs"]["100"][0]["conclusion"] = "failure"
+                else:
+                    run["run_attempt"] = 2
+                    self.fixture.state["jobs_by_attempt"] = {"100:1": copy.deepcopy(self.fixture.state["jobs"]["100"]),
+                                                             "100:2": [{"name": "test-unit", "status": "completed", "conclusion": "failure"}]}
+                self.rejected("preflight", seed=True)
+
+    def test_ancestor_comparison_must_be_complete_bounded_and_unambiguous(self):
+        for defect in ("missing_files", "empty_files", "duplicate_file", "truncated", "diverged", "wrong_merge_base"):
+            with self.subTest(defect=defect):
+                self.fixture = ReleaseFixture(self.directory / ("bad-comparison-" + defect))
+                _, comparison = self.packaging_only_ancestor()
+                if defect == "missing_files":
+                    comparison.pop("files")
+                elif defect == "empty_files":
+                    comparison["files"] = []
+                elif defect == "duplicate_file":
+                    comparison["files"].append(copy.deepcopy(comparison["files"][0]))
+                elif defect == "truncated":
+                    comparison["files"] = [{"filename": f"docs/change-{index}.md", "status": "modified"}
+                                           for index in range(300)]
+                elif defect == "diverged":
+                    comparison["status"] = "diverged"
+                else:
+                    comparison["merge_base_commit"]["sha"] = "f" * 40
+                self.rejected("preflight", seed=True)
 
     def test_current_attempt_failure_cannot_reuse_old_attempt(self):
         self.before_new_version()

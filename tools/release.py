@@ -7,6 +7,7 @@ All external commands use argument arrays and bounded execution.
 """
 
 import argparse
+from fnmatch import fnmatchcase
 import hashlib
 import io
 import json
@@ -31,6 +32,11 @@ GATES = {
     'lint.yml': ['Run on Ubuntu'], 'test-e2e.yml': ['E2E'],
     'delivery.yml': ['Release validation', 'Platforms'],
 }
+PACKAGING_PATHS = (
+    'tools/release.py', 'tools/release_ci.py', 'test/release/**', 'charts/**', 'docs/**',
+    '.github/workflows/release-image.yml', '.github/workflows/release-chart.yml',
+    '.github/workflows/test.yml', '.github/workflows/test-e2e.yml',
+)
 SEMVER = re.compile(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?')
 CLIENT_VERSION_LINE = re.compile(r'(?m)^client (?:(?:observed|actual) )?version:\s*(?:psql \(PostgreSQL\) )?([0-9]+\.[0-9]+)(?:[ \t]+\([^()\r\n]+\))?\s*$')
 
@@ -225,6 +231,28 @@ def tag_source(manifest):
     require(tag.get('type') == 'commit' and tag.get('sha') == manifest['source_sha'], 'tag no longer resolves to release source')
 
 
+def packaging_only_diff(base, source):
+    comparison = api('compare/' + base + '...' + source)
+    files = comparison.get('files')
+    if (comparison.get('status') != 'ahead' or comparison.get('merge_base_commit', {}).get('sha') != base
+            or not isinstance(files, list) or not 0 < len(files) < 300):
+        return False
+    names = set()
+    for entry in files:
+        if not isinstance(entry, dict):
+            return False
+        name = entry.get('filename')
+        previous = entry.get('previous_filename')
+        if (not isinstance(name, str) or name in names
+                or entry.get('status') == 'renamed' and not previous):
+            return False
+        names.add(name)
+        for path in [name] + ([previous] if previous is not None else []):
+            if not isinstance(path, str) or not any(fnmatchcase(path, pattern) for pattern in PACKAGING_PATHS):
+                return False
+    return True
+
+
 def source_gates(manifest):
     tag_source(manifest)
     compare = api('compare/' + manifest['source_sha'] + '...main')
@@ -233,11 +261,32 @@ def source_gates(manifest):
     for workflow, jobs in GATES.items():
         data = api('actions/workflows/' + workflow + '/runs?head_sha=' + manifest['source_sha'] + '&branch=main&event=push&per_page=100')
         runs = data.get('workflow_runs', [])
-        require(runs, 'missing trusted gate: ' + workflow)
-        newest = max(runs, key=lambda run: (run.get('created_at', ''), run['id']))
-        trusted_run(newest, manifest['source_sha'], workflow, 'main')
-        require(newest.get('status') == 'completed' and newest.get('conclusion') == 'success', 'latest gate run did not pass: ' + workflow)
-        successful_jobs(newest, jobs)
+        reusable = workflow in ('test.yml', 'test-e2e.yml')
+        if runs:
+            newest = max(runs, key=lambda run: (run.get('created_at', ''), run['id']))
+            trusted_run(newest, manifest['source_sha'], workflow, 'main')
+            if newest.get('status') == 'completed' and newest.get('conclusion') == 'success':
+                successful_jobs(newest, jobs)
+                continue
+            require(reusable and newest.get('status') == 'completed'
+                    and newest.get('conclusion') in ('cancelled', 'skipped'), 'latest gate run did not pass: ' + workflow)
+        require(reusable, 'missing trusted gate: ' + workflow)
+        previous = api('actions/workflows/' + workflow + '/runs?branch=main&event=push&per_page=100').get('workflow_runs', [])
+        seen = {manifest['source_sha']}
+        for run in sorted(previous, key=lambda run: (run.get('created_at', ''), run['id']), reverse=True):
+            base = sha(run.get('head_sha'))
+            if base in seen:
+                continue
+            seen.add(base)
+            if run.get('status') != 'completed' or run.get('conclusion') != 'success':
+                continue
+            trusted_run(run, base, workflow, 'main')
+            if packaging_only_diff(base, manifest['source_sha']):
+                successful_jobs(run, jobs)
+                print(f'Reusing {workflow} run {run["id"]} at {base}: packaging-only diff to {manifest["source_sha"]}', file=sys.stderr)
+                break
+        else:
+            raise ValueError('missing trusted unchanged-operator gate: ' + workflow)
 
 
 def policy(stream, tag, source):
