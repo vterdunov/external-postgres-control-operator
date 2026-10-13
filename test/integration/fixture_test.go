@@ -39,7 +39,7 @@ var _ = Describe("PostgreSQL fixture support", func() {
 		for _, major := range []string{"15", "16", "17", "18"} {
 			image, err := ImageForVersion(major)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(image).To(Equal("public.ecr.aws/docker/library/postgres:" + patches[major] + "-bookworm"))
+			Expect(image).To(Equal("docker.io/library/postgres:" + patches[major] + "-bookworm"))
 			Expect(image).NotTo(ContainSubstring("latest"))
 		}
 		_, err := ImageForVersion("14")

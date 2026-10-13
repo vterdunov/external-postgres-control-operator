@@ -38,7 +38,7 @@ func ImageForVersion(major string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("unsupported PostgreSQL version %q (supported: 15-18)", major)
 	}
-	return "public.ecr.aws/docker/library/" + image, nil
+	return "docker.io/library/" + image, nil
 }
 
 // Options configures an isolated PostgreSQL suite. RunID is the runner's ownership label.
