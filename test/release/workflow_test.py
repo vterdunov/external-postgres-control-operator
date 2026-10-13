@@ -68,17 +68,19 @@ class WorkflowReleaseContractTests(unittest.TestCase):
                     self.assertIn("github.run_attempt", selection,
                                   f"{stream} rerun can collide with or select stale artifacts: {selection}")
 
-    def test_durable_checkpoint_prepare_can_write_draft_but_preflight_and_runtime_are_read_only(self):
+    def test_durable_checkpoint_jobs_can_access_draft_but_runtime_stays_read_only(self):
         for stream, workflow in self.workflows().items():
             inherited = workflow.get("permissions", {})
             prepare = workflow["jobs"]["prepare"].get("permissions", inherited)
             self.assertEqual(prepare.get("contents"), "write", f"{stream} preparation must checkpoint candidate draft/assets before runtime")
             self.assertEqual(inherited.get("contents"), "read", "Keep default workflow token read-only")
-            for name in ("preflight", "runtime", "lifecycle"):
+            preflight = workflow["jobs"]["preflight"].get("permissions", inherited)
+            self.assertEqual(preflight.get("contents"), "write", f"{stream} preflight must be able to list draft checkpoints")
+            for name in ("runtime", "lifecycle"):
                 permissions = workflow["jobs"][name].get("permissions", inherited)
                 self.assertEqual(permissions.get("contents"), "read", f"{stream} {name} must not write release contents")
 
-    def test_trusted_tag_preflight_can_read_private_registry_without_write_authority(self):
+    def test_trusted_tag_preflight_can_read_private_registry_and_draft_checkpoint(self):
         for stream, workflow in self.workflows().items():
             with self.subTest(stream=stream):
                 self.assertEqual(set(workflow["on"]), {"push"}, "Registry credentials belong only to trusted tag publication")
@@ -86,7 +88,7 @@ class WorkflowReleaseContractTests(unittest.TestCase):
                 self.assertEqual(workflow["on"]["push"]["tags"], [expected])
                 permissions = workflow["jobs"]["preflight"].get("permissions", workflow["permissions"])
                 self.assertEqual(permissions.get("packages"), "read", "Anonymous DENIED cannot establish whether a version exists")
-                self.assertEqual(permissions.get("contents"), "read")
+                self.assertEqual(permissions.get("contents"), "write", "Draft releases can be hidden from read-only tokens")
                 self.assertEqual(permissions.get("actions"), "read")
                 self.assertNotEqual(permissions.get("id-token"), "write")
 
@@ -104,7 +106,7 @@ class WorkflowReleaseContractTests(unittest.TestCase):
                 self.assertEqual(login.get("env", {}).get("ACTOR"), "${{ github.actor }}")
                 self.assertEqual(workflow.get("env", {}).get("GH_TOKEN"), "${{ github.token }}")
                 commands = "\n".join(step.get("run", "") for step in steps)
-                self.assertIsNone(re.search(r"\b(?:docker\s+(?:build|push)|buildx\s+build|crane\s+(?:push|copy|tag)|cosign\s+sign(?:-blob)?|gh\s+release\s+(?:create|upload|edit)|helm\s+push)\b", commands),
+                self.assertIsNone(re.search(r"\b(?:docker\s+(?:build|push)|buildx\s+build|crane\s+(?:push|copy|tag)|cosign\s+sign(?:-blob)?|gh\s+release\s+(?:create|upload|edit)|helm\s+push|git\s+push)\b", commands),
                                   "Preflight must never build, sign or publish candidate/release artifacts")
                 with tempfile.TemporaryDirectory(prefix="epco-preflight-login-") as temporary:
                     directory = Path(temporary)

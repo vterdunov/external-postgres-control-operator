@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 
+from helper_support import PreparationFixture, measured_runtime
 from support import (
     AMD64, ARM64, CHART, CHART_DIGEST, CHART_SHA, GATES, IMAGE, IMAGE_SHA,
     INDEX, ISSUER, ReleaseFixture,
@@ -77,6 +78,21 @@ class ReleaseBehaviorTests(unittest.TestCase):
     def before_new_version(self):
         reference = CHART + ":0.2.1" if self.fixture.stream == "chart" else IMAGE + ":0.1.0"
         self.fixture.state["versions"].pop(reference, None)
+
+    def prepared_image_checkpoint(self):
+        self.fixture = PreparationFixture(self.directory / "prepared-image", "image")
+        seed = self.fixture.seed_path()
+        self.fixture.save()
+        result = subprocess.run(
+            [sys.executable, str(self.fixture.helper), "prepare", "--manifest", str(seed),
+             "--output", str(self.fixture.output)],
+            cwd=self.fixture.source, env=self.fixture.env, text=True, capture_output=True, timeout=45,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.fixture.state = json.loads(self.fixture.state_path.read_text())
+        prepared = self.fixture.output / "manifest.json"
+        self.assertTrue(prepared.is_file())
+        return prepared, json.loads(prepared.read_text())
 
     def test_independent_chart_patch_keeps_original_application(self):
         output = self.accepted()
@@ -252,6 +268,83 @@ class ReleaseBehaviorTests(unittest.TestCase):
         result = self.rejected("preflight", seed=True)
         self.assertIn("compare/", result.stderr, "Failure must come from the required source lookup, not the optional release")
 
+    def test_hidden_draft_is_found_by_exact_tag_on_later_release_page(self):
+        self.image_fixture()
+        tag = self.fixture.manifest["tag"]
+        draft = self.fixture.release(self.fixture.manifest, self.fixture.manifest_path.parent,
+                                     immutable=False, draft=True)
+        unrelated = {}
+        for index in range(100):
+            other = "v0.1.0-rc.1" if index == 0 else f"v9.0.{index}"
+            unrelated[other] = {"id": 1000 + index, "tag_name": other, "draft": False,
+                                "immutable": True, "assets": []}
+        self.fixture.state["releases"] = {**unrelated, tag: draft}
+        output = self.accepted("preflight", seed=True)
+        self.assertFalse(output["completed"])
+        self.assertEqual(output["tag"], tag)
+        self.assertTrue(any(call["tool"] == "gh" and any("/releases?" in arg for arg in call["args"])
+                            for call in self.fixture.calls()), "A draft hidden by the tag endpoint needs the release list")
+        self.assert_write_free()
+
+    def test_duplicate_exact_draft_tags_in_release_list_fail_closed(self):
+        self.image_fixture()
+        tag = self.fixture.manifest["tag"]
+        draft = self.fixture.release(self.fixture.manifest, self.fixture.manifest_path.parent,
+                                     immutable=False, draft=True)
+        self.fixture.state["releases"] = {tag: draft, "duplicate-list-record": {**draft, "id": 799}}
+        result = self.rejected("preflight", seed=True)
+        self.assertRegex(result.stderr.lower(), r"ambig|duplicate|multiple|non-unique")
+
+    def test_release_list_authentication_and_transport_failures_are_not_absence(self):
+        for index, message in enumerate(("gh: Requires authentication (HTTP 401)",
+                                         "gh: Resource not accessible by integration (HTTP 403)",
+                                         "gh: Service Unavailable (HTTP 503)",
+                                         "error connecting to api.github.com")):
+            with self.subTest(error=message):
+                self.fixture = ReleaseFixture(self.directory / f"list-failure-{index}", "image")
+                self.before_new_version()
+                self.fixture.state["release_list_failure"] = message
+                result = self.rejected("preflight", seed=True)
+                self.assertIn(message, result.stderr)
+
+    def test_hidden_checkpoint_draft_recovers_and_publishes_same_release(self):
+        prepared_path, prepared = self.prepared_image_checkpoint()
+        tag = prepared["tag"]
+        draft = self.fixture.state["releases"][tag]
+        self.assertTrue(draft["draft"])
+        self.assertEqual({entry["name"] for entry in draft["assets"]},
+                         {"release-candidate.tar.gz", "release-candidate.sigstore.json"})
+        original_id = draft["id"]
+        checkpoint_digests = {entry["name"]: entry["digest"] for entry in draft["assets"]}
+        before_preflight = len(self.fixture.calls())
+        recovered = self.accepted("preflight", seed=True)
+        self.assertFalse(recovered["completed"])
+        self.assertEqual(recovered["image"], prepared["image"])
+        self.assertFalse([call for call in self.fixture.calls()[before_preflight:] if call["mutation"]],
+                         "Preflight must recover the signed candidate without new writes")
+
+        self.fixture.state = json.loads(self.fixture.state_path.read_text())
+        self.fixture.manifest_path = prepared_path
+        self.fixture.manifest = prepared
+        self.fixture.manifest["runtime_evidence"] = {"run_id": 900, "run_attempt": 1, "artifact_id": 901}
+        self.fixture.state["runtime_payload"] = measured_runtime(prepared, prepared_path.parent)
+        before_publish = len(self.fixture.calls())
+        output = self.accepted("publish")
+        self.assertTrue(output["completed"])
+        state = json.loads(self.fixture.state_path.read_text())
+        published = state["releases"][tag]
+        self.assertEqual(published["id"], original_id, "Publication must reuse the one prepared draft")
+        self.assertFalse(published["draft"])
+        final_digests = {entry["name"]: entry["digest"] for entry in published["assets"]}
+        self.assertEqual({name: final_digests.get(name) for name in checkpoint_digests}, checkpoint_digests)
+        new_calls = self.fixture.calls()[before_publish:]
+        self.assertFalse([call for call in new_calls if call["tool"] == "gh" and call["args"][:2] == ["release", "create"]],
+                         "Publication must not create another draft")
+        self.assertFalse([call for call in new_calls if call["tool"] == "cosign" and call["args"][0] == "sign"],
+                         "Checkpoint recovery must not re-sign the image")
+        self.assertFalse([call for call in new_calls if call["tool"] == "docker" and call["mutation"]],
+                         "Checkpoint recovery must not rebuild the image")
+
     def test_chart_requires_original_immutable_image_release(self):
         self.before_new_version()
         image = self.fixture.state["releases"]["v0.1.0"]
@@ -369,6 +462,8 @@ class ReleaseBehaviorTests(unittest.TestCase):
         output = self.accepted("preflight", seed=True)
         self.assertTrue(output["completed"])
         self.assert_write_free()
+        self.assertFalse(any(call["tool"] == "gh" and any("/releases?" in arg for arg in call["args"])
+                             for call in self.fixture.calls()), "Published release should resolve through the by-tag API")
 
     def test_published_immutable_rerun_is_read_only(self):
         self.own_immutable_release()

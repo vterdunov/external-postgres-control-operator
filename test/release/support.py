@@ -291,9 +291,34 @@ def command_main():
             elif "/releases/tags/" in endpoint:
                 tag = endpoint.split("/releases/tags/", 1)[1]
                 release = state["releases"].get(tag)
-                if release is None:
+                if release is None or release["draft"]:
                     fail("gh: Not Found (HTTP 404)")
                 emit({key: val for key, val in release.items() if not key.startswith("_")})
+            elif urlparse(endpoint).path == "repos/" + REPOSITORY + "/releases":
+                if state.get("release_list_failure"):
+                    fail(state["release_list_failure"])
+                query = parse_qs(urlparse(endpoint).query)
+                for index, argument in enumerate(args):
+                    if argument in ("-f", "-F", "--field", "--raw-field") and index + 1 < len(args) and "=" in args[index + 1]:
+                        key, val = args[index + 1].split("=", 1)
+                        query[key] = [val]
+                page = int(query.get("page", ["1"])[0])
+                per_page = int(query.get("per_page", ["30"])[0])
+                if page < 1 or not 1 <= per_page <= 100:
+                    fail("gh: Unprocessable Entity (HTTP 422)")
+                releases = list(state["releases"].values())
+                visible = [{key: val for key, val in release.items() if not key.startswith("_")}
+                           for release in releases]
+                if "--paginate" in args:
+                    pages = [visible[start:start + per_page]
+                             for start in range((page - 1) * per_page, len(visible), per_page)]
+                    if "--slurp" in args:
+                        emit(pages)
+                    else:
+                        print("".join(json.dumps(batch) for batch in pages))
+                else:
+                    start = (page - 1) * per_page
+                    emit(visible[start:start + per_page])
             elif "/git/ref" in endpoint:
                 tag = unquote(endpoint.split("/tags/", 1)[-1])
                 own_tag = os.environ["GITHUB_REF"].removeprefix("refs/tags/")
@@ -324,6 +349,8 @@ def command_main():
                     shutil.copyfile(path, destination / path.name)
         elif args[:2] == ["release", "create"]:
             tag = args[2]
+            if tag in state["releases"]:
+                fail("gh: Validation Failed: release already exists (HTTP 422)")
             directory = state_path.parent / "draft-assets"
             directory.mkdir(exist_ok=True)
             state["releases"][tag] = {"id": 701, "tag_name": tag, "target_commitish": state["tag_sha"], "draft": True,

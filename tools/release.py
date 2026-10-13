@@ -183,7 +183,17 @@ def api(endpoint, allow_absent=False, binary=False):
 
 
 def release(tag):
-    return api('releases/tags/' + quote(tag, safe=''), allow_absent=True)
+    record = api('releases/tags/' + quote(tag, safe=''), allow_absent=True)
+    if record is not None:
+        return record
+    # The tag endpoint omits drafts. Listing needs push access to see them.
+    pages = json.loads(command('gh', 'api', 'repos/' + REPOSITORY + '/releases?per_page=100', '--paginate', '--slurp'))
+    require(isinstance(pages, list) and all(isinstance(page, list) for page in pages), 'invalid GitHub release list')
+    records = [item for page in pages for item in page]
+    require(all(isinstance(item, dict) for item in records), 'invalid GitHub release record')
+    matches = [item for item in records if item.get('tag_name') == tag]
+    require(len(matches) <= 1, 'ambiguous GitHub releases for tag: ' + tag)
+    return matches[0] if matches else None
 
 
 def trusted_run(run, source, workflow, branch):
