@@ -20,7 +20,7 @@ jobs:
   preflight:
     name: Read-only preflight
     permissions:
-      contents: read
+      contents: write # Draft visibility requires repository push access.
       actions: read
       packages: read
     runs-on: ubuntu-24.04
