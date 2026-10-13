@@ -365,6 +365,11 @@ def command_main():
                     state["uploads"].append(path.name)
                     release["assets"].append({"name": path.name, "digest": "sha256:" + checksum(path.read_bytes())})
         elif args[:2] == ["release", "edit"]:
+            if "--latest" in args:
+                fail("accepts 1 arg(s), received 2")
+            latest = [argument for argument in args[3:] if argument.startswith("--latest=")]
+            if len(latest) != 1 or latest[0] not in ("--latest=true", "--latest=false"):
+                fail("invalid --latest boolean flag")
             release = state["releases"][args[2]]
             release["draft"], release["immutable"] = False, True
             if state.get("move_tag_after_publish"):

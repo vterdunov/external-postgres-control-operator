@@ -580,7 +580,7 @@ def publish(manifest, directory, existing, canonical=False):
     with tempfile.TemporaryDirectory(prefix='epco-release-draft-') as temporary:
         download_release(release(manifest['tag']), Path(temporary), expected=manifest, locked=False)
     tag_source(manifest)
-    edit = ['gh', 'release', 'edit', manifest['tag'], '--repo', REPOSITORY, '--draft=false', '--latest', str(manifest['make_latest']).lower(), '--prerelease=' + str(manifest['prerelease']).lower()]
+    edit = ['gh', 'release', 'edit', manifest['tag'], '--repo', REPOSITORY, '--draft=false', '--latest=' + str(manifest['make_latest']).lower(), '--prerelease=' + str(manifest['prerelease']).lower()]
     command(*edit)
     with tempfile.TemporaryDirectory(prefix='epco-release-locked-') as temporary:
         download_release(release(manifest['tag']), Path(temporary), expected=manifest)

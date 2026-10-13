@@ -436,9 +436,32 @@ class ReleaseBehaviorTests(unittest.TestCase):
         state = json.loads(self.fixture.state_path.read_text())
         required = {asset["path"] for asset in self.fixture.manifest["assets"]} | {"SHA256SUMS", "SHA256SUMS.sigstore.json"}
         self.assertTrue(required.issubset(set(state["uploads"])), state["uploads"])
-        edits = " ".join(calls[publication]["args"])
-        self.assertIn("--latest", edits)
-        self.assertIn("false", edits)
+        edits = calls[publication]["args"]
+        self.assertIn("--latest=false", edits)
+        self.assertIn("--prerelease=false", edits)
+
+    def test_stable_image_publish_uses_latest_boolean_flag(self):
+        self.image_fixture()
+        output = self.accepted("publish")
+        self.assertTrue(output["completed"])
+        self.assertTrue(output["make_latest"])
+        edits = [call["args"] for call in self.fixture.calls()
+                 if call["tool"] == "gh" and call["args"][:2] == ["release", "edit"]]
+        self.assertEqual(len(edits), 1)
+        self.assertIn("--latest=true", edits[0])
+        self.assertIn("--prerelease=false", edits[0])
+
+    def test_prerelease_chart_publish_does_not_mark_latest(self):
+        self.fixture = ReleaseFixture(self.directory / "prerelease-publish", chart_version="0.2.1-rc.2")
+        output = self.accepted("publish")
+        self.assertTrue(output["completed"])
+        self.assertTrue(output["prerelease"])
+        self.assertFalse(output["make_latest"])
+        edits = [call["args"] for call in self.fixture.calls()
+                 if call["tool"] == "gh" and call["args"][:2] == ["release", "edit"]]
+        self.assertEqual(len(edits), 1)
+        self.assertIn("--latest=false", edits[0])
+        self.assertIn("--prerelease=true", edits[0])
 
     def test_chart_only_partial_retry_never_re_signs_existing_image(self):
         self.fixture.state["releases"][self.fixture.manifest["tag"]] = self.fixture.release(
