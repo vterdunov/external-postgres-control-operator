@@ -190,6 +190,7 @@ source revision: $source_revision
 server expected version: $server_version
 server expected image: $postgres_image
 server expected host authentication: scram-sha-256
+server client connection check interval ms: 100
 client expected version: $client_version
 client expected image: $client_image
 manager image: $image
@@ -294,6 +295,7 @@ spec:
       containers:
       - name: postgres
         image: $postgres_image
+        args: ["postgres", "-c", "client_connection_check_interval=100ms"]
         env:
         - name: POSTGRES_INITDB_ARGS
           value: --auth-host=scram-sha-256
@@ -335,6 +337,15 @@ spec:
 POSTGRES
 kubectl_run 60 apply -f "$run_dir/postgres.yaml"
 kubectl_run 240 -n epco-postgres rollout status deployment/postgres --timeout=210s
+kubectl_run 30 -n epco-postgres exec deployment/postgres -- \
+  psql -X -h 127.0.0.1 -U postgres -Atc \
+  "SELECT (EXTRACT(EPOCH FROM current_setting('client_connection_check_interval')::interval) * 1000)::bigint"
+interval_ms=$(cat "$run_dir/command-output")
+if [[ $interval_ms != 100 ]]; then
+  printf 'Test PostgreSQL client connection check interval must be 100ms\n' >&2
+  exit 2
+fi
+printf 'server client connection check interval ms: %s\n' "$interval_ms" > "$artifacts/fixture-settings.txt"
 if [[ $suite == delivery ]]; then
   run 1200 python3 "$suite_dir/../delivery/lifecycle.py"
 else

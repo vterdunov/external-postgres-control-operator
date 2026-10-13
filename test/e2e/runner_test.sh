@@ -12,7 +12,7 @@ unset EPCO_E2E_IMAGE_REFERENCE EPCO_E2E_SUITE EPCO_DELIVERY_CHART_PACKAGE EPCO_D
 unset EPCO_DELIVERY_IMAGE_SOURCE_SHA EPCO_DELIVERY_CHART_SOURCE_SHA EPCO_DELIVERY_LOCAL_IMAGE
 unset EPCO_E2E_INSTALL_MODE
 export E2E_FAKE_REAL_PYTHON
-E2E_FAKE_REAL_PYTHON=$(command -v python3)
+E2E_FAKE_REAL_PYTHON=$(python3 -c 'import sys; print(sys.executable)')
 export EPCO_TEST_SEED=60211015
 export E2E_FAKE_REVISION=0123456789abcdef0123456789abcdef01234567
 cat > "$fixture/bin/fake" <<'MOCK'
@@ -69,10 +69,26 @@ case "$name $*" in
     [[ " $* " == *' --context kind-epco-e2e-'* ]] || exit 99
     [[ " $* " == *' --kubeconfig '* ]] || exit 98
     if [[ ${E2E_FAKE_FAIL:-} == apply && " $* " == *' apply '* ]]; then exit 19; fi
+    if [[ " $* " == *' exec '* && " $* " == *client_connection_check_interval* ]]; then
+      if [[ ${E2E_FAKE_PG_SETTING:-100} != missing ]]; then
+        printf '%s\n' "${E2E_FAKE_PG_SETTING:-100}"
+      fi
+      exit 0
+    fi
     while [[ $# -gt 0 ]]; do
       if [[ $1 == -f && $2 == */postgres.yaml ]]; then
         postgres_image=$(awk '/^[[:space:]]*image:/ { print $2 }' "$2")
         printf '%s\n' "$postgres_image" > "$E2E_FAKE_LOG.server-image"
+        "$E2E_FAKE_REAL_PYTHON" - "$2" > "$E2E_FAKE_LOG.server-setting" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    args = [json.loads(line.split("args:", 1)[1].strip())
+            for line in source if line.lstrip().startswith("args: [")]
+print("100ms" if args == [["postgres", "-c", "client_connection_check_interval=100ms"]]
+      else "unconfigured")
+PY
         if [[ $postgres_image != "${E2E_FAKE_POSTGRES_IMAGE:-docker.io/library/postgres:16.15-bookworm}" ]]; then
           printf 'FAIL PostgreSQL fixture image: %s\n' "$postgres_image" >&2
           exit 95
@@ -233,6 +249,99 @@ release_runner_cases() {
   unset EPCO_DELIVERY_IMAGE_SOURCE_SHA EPCO_DELIVERY_CHART_SOURCE_SHA
 }
 
+fixture_runner_cases() {
+  local mode status expected reference package chart_source application_source
+  local rollout_line measurement_line behavior_line failures=0 before_failures
+  reference="ghcr.io/vterdunov/external-postgres-control-operator:0.1.0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  package="$fixture/external-postgres-control-operator-0.2.1.tgz"
+  printf 'fixture archive dispatched to the lifecycle fake\n' > "$package"
+  application_source=1111111111111111111111111111111111111111
+  chart_source=2222222222222222222222222222222222222222
+  for mode in docker prebuilt chart delivery zero missing malformed; do
+    before_failures=$failures
+    export E2E_FAKE_LOG="$fixture/fixture-$mode.log" E2E_FAKE_FAIL=none
+    export EPCO_E2E_PROJECT_DIR="$fixture/source" EPCO_ARTIFACTS_DIR="$fixture/artifacts/fixture-$mode"
+    export EPCO_PG_VERSION=18 E2E_FAKE_POSTGRES_IMAGE=docker.io/library/postgres:18.6-bookworm
+    export E2E_FAKE_PG_SETTING=100
+    unset EPCO_E2E_BUILD_MODE EPCO_E2E_IMAGE_REFERENCE EPCO_E2E_INSTALL_MODE EPCO_E2E_SUITE
+    unset EPCO_DELIVERY_CHART_PACKAGE EPCO_DELIVERY_IMAGE_REFERENCE
+    unset EPCO_DELIVERY_IMAGE_SOURCE_SHA EPCO_DELIVERY_CHART_SOURCE_SHA
+    case $mode in
+      prebuilt|chart|delivery|zero|missing|malformed)
+        export EPCO_E2E_BUILD_MODE=prebuilt EPCO_E2E_IMAGE_REFERENCE="$reference" ;;
+    esac
+    case $mode in
+      chart|delivery)
+        export EPCO_DELIVERY_CHART_PACKAGE="$package" EPCO_DELIVERY_IMAGE_REFERENCE="$reference"
+        export EPCO_DELIVERY_IMAGE_SOURCE_SHA="$application_source" EPCO_DELIVERY_CHART_SOURCE_SHA="$chart_source" ;;
+    esac
+    if [[ $mode == chart ]]; then export EPCO_E2E_INSTALL_MODE=chart; fi
+    if [[ $mode == delivery ]]; then export EPCO_E2E_SUITE=delivery; fi
+    case $mode in zero) E2E_FAKE_PG_SETTING=0 ;; missing) E2E_FAKE_PG_SETTING=missing ;;
+      malformed) E2E_FAKE_PG_SETTING="invalid-setting" ;; esac
+    export E2E_FAKE_PG_SETTING
+    : > "$E2E_FAKE_LOG"
+    set +e
+    PATH="$fixture/bin:$PATH" bash "$suite_dir/run.sh" > "$E2E_FAKE_LOG.output" 2>&1
+    status=$?
+    set -e
+    if [[ $mode == zero || $mode == missing || $mode == malformed ]]; then
+      if [[ $status == 0 || -f $E2E_FAKE_LOG.argv || -f $E2E_FAKE_LOG.delivery-env ]]; then
+        printf 'FAIL fixture %s: invalid measured setting reached the behavior suite (status %s)\n' "$mode" "$status" >&2
+        failures=$((failures + 1))
+      fi
+      if [[ $(grep -c '^kind delete cluster --name epco-e2e-' "$E2E_FAKE_LOG") != 1 ||
+            ! -f $EPCO_ARTIFACTS_DIR/runner-junit.xml ]]; then
+        printf 'FAIL fixture %s: owned Kind cleanup or failure report missing\n' "$mode" >&2
+        failures=$((failures + 1))
+      fi
+      continue
+    fi
+    if [[ $status != 0 ]]; then
+      printf 'FAIL fixture %s: expected success, got %s\n' "$mode" "$status" >&2
+      failures=$((failures + 1))
+      continue
+    fi
+    if [[ ! -f $E2E_FAKE_LOG.server-setting || $(cat "$E2E_FAKE_LOG.server-setting") != 100ms ]]; then
+      printf 'FAIL fixture %s: PostgreSQL server args do not configure 100ms\n' "$mode" >&2
+      failures=$((failures + 1))
+    fi
+    rollout_line=$(awk '/kubectl .*rollout status deployment\/postgres/ { print NR; exit }' "$E2E_FAKE_LOG")
+    measurement_line=$(awk '/^kubectl .* exec .*client_connection_check_interval/ { print NR; exit }' "$E2E_FAKE_LOG")
+    if [[ $mode == delivery ]]; then
+      behavior_line=$(awk '/^python3 .*delivery\/lifecycle.py/ { print NR; exit }' "$E2E_FAKE_LOG")
+    else
+      behavior_line=$(awk '/^go test / && !/-run (\^\$|-run=\^\$)/ { print NR; exit }' "$E2E_FAKE_LOG")
+    fi
+    if [[ -z $rollout_line || -z $measurement_line || -z $behavior_line ||
+          $rollout_line -ge $measurement_line || $measurement_line -ge $behavior_line ]]; then
+      printf 'FAIL fixture %s: actual setting must be measured after rollout and before behavior\n' "$mode" >&2
+      failures=$((failures + 1))
+    fi
+    for metadata in "$EPCO_ARTIFACTS_DIR/fixture-expected.txt" "$EPCO_ARTIFACTS_DIR/fixture-settings.txt"; do
+      if [[ ! -f $metadata ]] ||
+          ! grep -Fqx 'server client connection check interval ms: 100' "$metadata"; then
+        printf 'FAIL fixture %s: sanitized setting metadata missing in %s\n' "$mode" "${metadata##*/}" >&2
+        failures=$((failures + 1))
+      fi
+    done
+    if [[ $(grep -c '^kind delete cluster --name epco-e2e-' "$E2E_FAKE_LOG") != 1 ]] ||
+        grep -REq 'e2e-secret|aaa[.]bbb[.]ccc' "$EPCO_ARTIFACTS_DIR" ||
+        [[ $(cksum "$fixture/source/config/default/kustomization.yaml") != "$source_checksum" ]]; then
+      printf 'FAIL fixture %s: cleanup, sanitization, or source immutability\n' "$mode" >&2
+      failures=$((failures + 1))
+    fi
+    if ((failures == before_failures)); then
+      printf 'PASS fixture %s\n' "$mode"
+    fi
+  done
+  [[ $failures == 0 ]]
+}
+
+if [[ ${EPCO_E2E_RUNNER_TEST_SCOPE:-all} == fixture ]]; then
+  fixture_runner_cases
+  exit
+fi
 if [[ ${EPCO_E2E_RUNNER_TEST_SCOPE:-all} == release ]]; then
   release_runner_cases
   exit
@@ -452,3 +561,4 @@ for compilation in success failure; do
 done
 [[ $compile_failures == 0 ]]
 release_runner_cases
+fixture_runner_cases
