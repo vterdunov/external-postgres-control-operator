@@ -2,7 +2,7 @@ apiVersion: v2
 name: external-postgres-control-operator
 description: Manage roles and databases on external PostgreSQL servers
 type: application
-version: 0.1.1
+version: 0.1.2
 appVersion: "0.1.4"
 home: https://github.com/vterdunov/external-postgres-control-operator
 sources:

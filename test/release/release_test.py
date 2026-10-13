@@ -231,6 +231,11 @@ class ReleaseBehaviorTests(unittest.TestCase):
                             for call in self.fixture.calls()), "Reuse must verify the complete ancestor-to-source diff")
         self.assert_write_free()
 
+    def test_fixture_runner_change_reuses_packaging_ancestor(self):
+        self.packaging_only_ancestor(files=["test/e2e/run.sh", "test/e2e/runner_test.sh"])
+        self.assertFalse(self.accepted("preflight", seed=True)["completed"])
+        self.assert_write_free()
+
     def test_cancelled_or_skipped_exact_gate_can_reuse_packaging_ancestor(self):
         for outcome in ("cancelled", "skipped"):
             with self.subTest(outcome=outcome):
@@ -251,7 +256,8 @@ class ReleaseBehaviorTests(unittest.TestCase):
 
     def test_runtime_or_renamed_runtime_file_requires_exact_source_gates(self):
         for index, files in enumerate(([{"filename": "internal/controller/database_controller.go", "status": "modified"}],
-                                       [{"filename": "docs/renamed.md", "previous_filename": "test/e2e/run.sh", "status": "renamed"}])):
+                                       [{"filename": "test/e2e/r6_applications_test.go", "status": "modified"}],
+                                       [{"filename": "docs/renamed.md", "previous_filename": "test/e2e/r6_applications_test.go", "status": "renamed"}])):
             with self.subTest(files=files):
                 self.fixture = ReleaseFixture(self.directory / f"unsafe-diff-{index}")
                 _, comparison = self.packaging_only_ancestor()

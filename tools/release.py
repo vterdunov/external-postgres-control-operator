@@ -34,6 +34,7 @@ GATES = {
 }
 PACKAGING_PATHS = (
     'tools/release.py', 'tools/release_ci.py', 'test/release/**', 'charts/**', 'docs/**',
+    'test/e2e/run.sh', 'test/e2e/runner_test.sh',
     '.github/workflows/release-image.yml', '.github/workflows/release-chart.yml',
     '.github/workflows/test.yml', '.github/workflows/test-e2e.yml',
 )
