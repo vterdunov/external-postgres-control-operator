@@ -34,7 +34,7 @@ func (*databaseFactory) Open(ctx context.Context, config *Config) (DatabaseSessi
 	copyConfig.Connection.RuntimeParams["statement_timeout"] = strconv.FormatInt(max(1, config.StatementTimeout.Milliseconds()), 10)
 	connection, disposal, err := openDatabaseConnection(ctx, &copyConfig)
 	if err != nil {
-		return nil, databaseFailure(err)
+		return nil, databaseFailure(classifyConnectError(ctx, err))
 	}
 	return &databaseSession{connection: connection, disposal: disposal, config: copyConfig}, nil
 }

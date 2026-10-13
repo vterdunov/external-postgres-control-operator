@@ -33,7 +33,7 @@ func (*roleFactory) Open(ctx context.Context, config *Config) (RoleSession, erro
 	defer cancel()
 	connection, err := pgx.ConnectConfig(connectCtx, config.Connection.Copy())
 	if err != nil {
-		return nil, roleFailure(err)
+		return nil, roleFailure(classifyConnectError(ctx, err))
 	}
 	socket := connection.PgConn().Conn()
 	if tlsSocket, ok := socket.(*tls.Conn); ok {
