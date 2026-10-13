@@ -311,7 +311,7 @@ def measured_versions(report):
     server = re.search(r'(?m)^server (?:observed )?version:\s*([0-9]+\.[0-9]+)\s*$', text)
     if server is None:
         server = re.search(r'(?m)^server actual version: PostgreSQL ([0-9]+\.[0-9]+)(?:\s|$)', text)
-    client = re.search(r'(?m)^client (?:(?:observed|actual) )?version:\s*(?:psql \(PostgreSQL\) )?([0-9]+\.[0-9]+)\s*$', text)
+    client = release.CLIENT_VERSION_LINE.search(text)
     release.require(server is not None and server[1].split('.')[0] == report['pg_major']
                     and client is not None and client[1] == '16.15', 'measured server/client versions do not match runtime fixture')
     number = re.search(r'(?m)^server_version_num:\s*([0-9]+)\s*$', text)

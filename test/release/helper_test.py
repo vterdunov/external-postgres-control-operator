@@ -88,6 +88,37 @@ class RuntimeAggregateTests(unittest.TestCase):
         self.assertEqual(output["gates"], {"platforms": "success", "runtime": "success", "lifecycle": "success", "pg15-18": "success"})
         self.assertEqual(self.fixture.calls(), [], "aggregate must not query or mutate registry/cluster")
 
+    def test_packaged_psql_version_is_accepted_across_full_matrix_and_sanitized(self):
+        client = "client actual version: psql (PostgreSQL) 16.15 (Debian 16.15-1.pgdg12+2)"
+        for path in self.paths:
+            self.mutate(path, lambda report: report.update(
+                fixture_observed=report["fixture_observed"].splitlines()[0] + "\n" + client + "\n"))
+        result = self.run_aggregate()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(self.output.read_text())
+        self.assertEqual(len(output["observed_runtime"]), 8)
+        for report in output["observed_runtime"]:
+            self.assertEqual(report["fixture_observed"],
+                             "server observed version: " + {"15": "15.19", "16": "16.15", "17": "17.11", "18": "18.6"}[report["pg_major"]]
+                             + "\nclient observed version: 16.15\n")
+        self.assertNotIn("Debian", self.output.read_text(), "Durable evidence must contain only parsed versions")
+
+    def test_packaged_psql_version_still_requires_exact_valid_client(self):
+        original = self.paths[0].read_text()
+        invalid = (
+            "client actual version: psql (PostgreSQL) 16.16 (Debian 16.16-1.pgdg12+2)",
+            "client actual version: psql (PostgreSQL) 15.19 (Debian 15.19-1.pgdg12+2)",
+            "client actual version: psql (PostgreSQL) 16.15 (Debian 16.15-1.pgdg12+2",
+            "client actual version: psql (PostgreSQL) 16.15 unrelated suffix",
+            "",
+        )
+        for client in invalid:
+            with self.subTest(client=client):
+                self.paths[0].write_text(original)
+                self.mutate(self.paths[0], lambda report: report.update(
+                    fixture_observed=report["fixture_observed"].splitlines()[0] + "\n" + client + "\n"))
+                self.reject()
+
     def test_installed_actual_image_id_must_be_a_selected_signed_subject(self):
         self.mutate(self.paths[0], lambda report: report["observations"][0].update(imageID="ghcr.io/example@sha256:" + "f" * 64))
         self.reject()
@@ -272,6 +303,19 @@ class RuntimePersistenceTests(unittest.TestCase):
         for value in ("pod-amd64-pg15", "pod-arm64-pg18", "lease-amd64-pg16", "lease-arm64-pg17",
                       AMD64, ARM64, IMAGE_SHA, CHART_SHA, "server observed version", "client observed version", "16.15"):
             self.assertIn(value, content, "Expiring Actions coordinates cannot replace durable measured release evidence")
+
+    def test_packaged_psql_version_is_sanitized_in_signed_immutable_evidence(self):
+        for report in self.fixture.state["runtime_payload"]["observed_runtime"]:
+            report["fixture_observed"] = report["fixture_observed"].replace(
+                "client observed version: 16.15",
+                "client actual version: psql (PostgreSQL) 16.15 (Debian 16.15-1.pgdg12+2)")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        observed = self.evidence()["measured_runtime"]["observed_runtime"]
+        self.assertEqual(len(observed), 8)
+        self.assertTrue(all(report["fixture_observed"].endswith("client observed version: 16.15\n")
+                            for report in observed))
+        self.assertNotIn("Debian", json.dumps(self.evidence()))
 
     def test_signed_immutable_runtime_preserves_actual_psa_and_cni_security_observations(self):
         result = self.invoke()

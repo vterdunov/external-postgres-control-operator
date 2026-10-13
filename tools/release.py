@@ -32,6 +32,7 @@ GATES = {
     'delivery.yml': ['Release validation', 'Platforms'],
 }
 SEMVER = re.compile(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?')
+CLIENT_VERSION_LINE = re.compile(r'(?m)^client (?:(?:observed|actual) )?version:\s*(?:psql \(PostgreSQL\) )?([0-9]+\.[0-9]+)(?:[ \t]+\([^()\r\n]+\))?\s*$')
 
 
 def require(condition, message):
@@ -447,7 +448,7 @@ def clean_installed(report, manifest):
     text = report.get('fixture_observed', '')
     require(isinstance(text, str) and len(text) <= 8192, 'bounded measured server/client versions required')
     server = re.search(r'(?m)^server (?:(?:observed|actual) )?version:\s*(?:PostgreSQL )?([0-9]+\.[0-9]+)(?:\s|$)', text)
-    client = re.search(r'(?m)^client (?:(?:observed|actual) )?version:\s*(?:psql \(PostgreSQL\) )?([0-9]+\.[0-9]+)\s*$', text)
+    client = CLIENT_VERSION_LINE.search(text)
     require(server and server[1].split('.')[0] == major and client and client[1] == '16.15', 'measured server/client versions do not match runtime fixture')
     number = re.search(r'(?m)^server_version_num:\s*([0-9]+)\s*$', text)
     require(number is None or int(number[1]) // 10000 == int(major), 'measured server version number mismatch')
