@@ -292,7 +292,7 @@ def command_main():
                 tag = endpoint.split("/releases/tags/", 1)[1]
                 release = state["releases"].get(tag)
                 if release is None:
-                    fail("HTTP 404: Not Found")
+                    fail("gh: Not Found (HTTP 404)")
                 emit({key: val for key, val in release.items() if not key.startswith("_")})
             elif "/git/ref" in endpoint:
                 tag = unquote(endpoint.split("/tags/", 1)[-1])
@@ -316,7 +316,7 @@ def command_main():
             tag = args[2]
             release = state["releases"].get(tag)
             if release is None:
-                fail("HTTP 404: Not Found")
+                fail("gh: Not Found (HTTP 404)")
             destination = Path(value("--dir", value("-D", ".")))
             destination.mkdir(parents=True, exist_ok=True)
             for path in Path(release["_directory"]).iterdir():

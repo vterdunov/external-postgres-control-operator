@@ -170,7 +170,8 @@ def command(*args, env=None, binary=False, allow_absent=False):
     result = subprocess.run(args, capture_output=True, timeout=300, env=env)
     if result.returncode:
         error = result.stderr.decode(errors='replace').strip()
-        if allow_absent and ('HTTP 404:' in error or 'MANIFEST_UNKNOWN:' in error):
+        if allow_absent and ('HTTP 404:' in error or 'gh: Not Found (HTTP 404)' in error
+                             or 'MANIFEST_UNKNOWN:' in error):
             return None
         raise ValueError(' '.join(args[:3]) + ': ' + error)
     return result.stdout if binary else result.stdout.decode().strip()
