@@ -354,6 +354,49 @@ if [[ $interval_ms != 100 ]]; then
   exit 2
 fi
 printf 'server client connection check interval ms: %s\n' "$interval_ms" > "$artifacts/fixture-settings.txt"
+if [[ $suite == operator ]]; then
+  cat > "$run_dir/client-image-cache.yaml" <<CLIENT_CACHE
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: client-image-cache
+  namespace: epco-postgres
+spec:
+  selector:
+    matchLabels:
+      testing.epco.io/client-image-cache: "$run_id"
+  template:
+    metadata:
+      labels:
+        testing.epco.io/client-image-cache: "$run_id"
+    spec:
+      automountServiceAccountToken: false
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: client-image-cache
+        image: $client_image
+        imagePullPolicy: IfNotPresent
+        command: ["sleep", "infinity"]
+CLIENT_CACHE
+  kubectl_run 60 apply -f "$run_dir/client-image-cache.yaml"
+  kubectl_run 180 -n epco-postgres rollout status daemonset/client-image-cache --timeout=150s
+  kubectl_run 30 -n epco-postgres get daemonset/client-image-cache \
+    -o 'jsonpath={.status.desiredNumberScheduled} {.status.numberReady}{"\n"}'
+  coverage=$(cat "$run_dir/command-output")
+  if [[ ! $coverage =~ ^([0-9]+)[[:space:]]+([0-9]+)$ ]]; then
+    printf 'Client image readiness coverage is unavailable\n' >&2
+    exit 2
+  fi
+  desired=${BASH_REMATCH[1]}
+  ready=${BASH_REMATCH[2]}
+  if ((10#$desired == 0 || 10#$ready != 10#$desired)); then
+    printf 'Client image must be ready on every owned node: desired=%s ready=%s\n' "$desired" "$ready" >&2
+    exit 2
+  fi
+  printf 'client ready nodes: %s/%s\n' "$ready" "$desired" >> "$artifacts/fixture-settings.txt"
+fi
 if [[ $suite == delivery ]]; then
   run 1200 python3 "$suite_dir/../delivery/lifecycle.py"
 else

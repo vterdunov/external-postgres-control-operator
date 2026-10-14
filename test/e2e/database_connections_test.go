@@ -257,13 +257,17 @@ func installedConnectionJobLogs(ctx context.Context, job *batchv1.Job) string {
 }
 
 func installedConnectionServiceSelector(ctx context.Context, selector map[string]string) {
+	installedConnectionNamedServiceSelector(ctx, "epco-postgres", "postgres", selector)
+}
+
+func installedConnectionNamedServiceSelector(ctx context.Context, namespace, name string, selector map[string]string) {
 	ExpectWithOffset(1, retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		service, err := kubeClient.CoreV1().Services("epco-postgres").Get(ctx, "postgres", metav1.GetOptions{})
+		service, err := kubeClient.CoreV1().Services(namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 		service.Spec.Selector = maps.Clone(selector)
-		_, err = kubeClient.CoreV1().Services("epco-postgres").Update(ctx, service, metav1.UpdateOptions{})
+		_, err = kubeClient.CoreV1().Services(namespace).Update(ctx, service, metav1.UpdateOptions{})
 		return err
 	})).To(Succeed())
 }
@@ -275,18 +279,41 @@ var _ = Describe("R4 Installed application connection Secrets", func() {
 			Labels: map[string]string{installedAccessLabel: installedAllowedLabel}}
 		Expect(apiClient.Create(ctx, appNamespace)).To(Succeed())
 		DeferCleanup(func() { deleteObject(appNamespace) })
-		cluster := installedRoleDescriptor(ctx, "application-connections", &epco.ClusterAccess{
-			NamespaceSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{installedAccessLabel: installedAllowedLabel},
-			}})
-		Expect(apiClient.Get(ctx, client.ObjectKeyFromObject(cluster), cluster)).To(Succeed())
-		cluster.Spec.ReconcileInterval = "2s"
-		Expect(apiClient.Update(ctx, cluster)).To(Succeed())
-
 		service, err := kubeClient.CoreV1().Services("epco-postgres").Get(ctx, "postgres", metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		originalSelector := maps.Clone(service.Spec.Selector)
-		installedConnectionServiceSelector(ctx, map[string]string{"epco-r4-fixture": "intentionally-unavailable"})
+		service, err = kubeClient.CoreV1().Services(service.Namespace).Create(ctx,
+			&corev1.Service{Namespace: service.Namespace, GenerateName: "application-connections-",
+				Spec: corev1.ServiceSpec{Ports: service.Spec.Ports,
+					Selector: map[string]string{"testing.epco.io/r4-outage": appNamespace.Name}}}, metav1.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { deleteObject(service) })
+		Expect(service.Spec.Ports).To(HaveLen(1))
+		host := service.Name + "." + service.Namespace + ".svc.cluster.local"
+		port := service.Spec.Ports[0].Port
+		Expect(installedConnectionServiceUnavailable(ctx, kubeClient, service.Namespace, service.Name,
+			func(probeContext context.Context) (int, error) {
+				return installedConnectionProbe(probeContext, host, port)
+			})).To(Succeed(), "dedicated SQL endpoint must be unavailable before managing resources are created")
+		fixtureAdmin, err := kubeClient.CoreV1().Secrets("epco-postgres").Get(ctx, "postgres", metav1.GetOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		admin := &corev1.Secret{Namespace: operatorNamespace, Name: "application-connections-admin",
+			Type: corev1.SecretTypeBasicAuth,
+			Data: map[string][]byte{
+				corev1.BasicAuthUsernameKey: []byte(installedDatabasePostgresName),
+				corev1.BasicAuthPasswordKey: fixtureAdmin.Data[corev1.BasicAuthPasswordKey]}}
+		Expect(apiClient.Create(ctx, admin)).To(Succeed())
+		DeferCleanup(func() { deleteObject(admin) })
+		cluster := &epco.PostgresCluster{Namespace: operatorNamespace, Name: "application-connections",
+			Spec: epco.PostgresClusterSpec{
+				Connection:        epco.PostgresConnection{Host: host, Port: port},
+				CredentialsSecret: epco.LocalReference{Name: admin.Name},
+				TLS:               &epco.PostgresTLS{Mode: installedRoleTLSMode},
+				Access: &epco.ClusterAccess{NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{installedAccessLabel: installedAllowedLabel}}},
+				ReconcileInterval: "2s", ConnectTimeout: "2s", StatementTimeout: "2s"}}
+		Expect(apiClient.Create(ctx, cluster)).To(Succeed())
+		DeferCleanup(func() { deleteObject(cluster) })
 
 		serviceSource := &corev1.Secret{Namespace: appNamespace.Name, Name: "service-source",
 			Type: corev1.SecretTypeBasicAuth,
@@ -327,7 +354,7 @@ var _ = Describe("R4 Installed application connection Secrets", func() {
 				installedConnectionJobDiagnostics(diagnostics, job, gate)
 				cancelDiagnostics()
 			}
-			installedConnectionServiceSelector(cleanup, originalSelector)
+			installedConnectionNamedServiceSelector(cleanup, service.Namespace, service.Name, originalSelector)
 			Expect(retry.RetryOnConflict(retry.DefaultRetry, func() error {
 				latest := &corev1.Namespace{}
 				if err := apiClient.Get(cleanup, client.ObjectKeyFromObject(appNamespace), latest); err != nil {
@@ -367,7 +394,7 @@ var _ = Describe("R4 Installed application connection Secrets", func() {
 			WithContext(ctx).WithTimeout(40*time.Second).WithPolling(200*time.Millisecond).Should(BeTrue(),
 			"migration Job must start from the early output and retry before SQL is available")
 
-		installedConnectionServiceSelector(ctx, originalSelector)
+		installedConnectionNamedServiceSelector(ctx, service.Namespace, service.Name, originalSelector)
 		Eventually(func() bool {
 			return strings.Contains(installedConnectionJobLogs(ctx, job), installedConnectionEstablishedMessage)
 		}).
@@ -384,7 +411,7 @@ var _ = Describe("R4 Installed application connection Secrets", func() {
 		Expect(installedDatabaseSQL(ctx, installedConnectionDatabase,
 			"SELECT to_regclass('app.orders') IS NULL")).To(Equal("t"))
 		Expect(apiClient.Get(ctx, client.ObjectKeyFromObject(gate), gate)).To(Succeed())
-		gate.Data = map[string]string{"ready": "yes"}
+		gate.Data = map[string]string{installedReadyKey: "yes"}
 		Expect(apiClient.Update(ctx, gate)).To(Succeed())
 		Eventually(func() error {
 			return installedRefreshMigrationGate(ctx, apiClient, job, gate.ResourceVersion)
@@ -478,7 +505,7 @@ var _ = Describe("R4 Installed application connection Secrets", func() {
 		Expect(err).NotTo(HaveOccurred())
 		metadata, err := json.Marshal([]map[string]string{serviceOutput.Annotations, readerOutput.Annotations})
 		Expect(err).NotTo(HaveOccurred())
-		fixtureAdmin, err := kubeClient.CoreV1().Secrets("epco-postgres").Get(ctx, "postgres", metav1.GetOptions{})
+		fixtureAdmin, err = kubeClient.CoreV1().Secrets("epco-postgres").Get(ctx, "postgres", metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		passwords = append(passwords, fixtureAdmin.Data["password"])
 		for _, password := range passwords {
@@ -494,7 +521,7 @@ var _ = Describe("R4 Installed application connection Secrets", func() {
 			}
 			Expect(output.Namespace).To(Equal(appNamespace.Name))
 			Expect(string(output.Data["dbname"])).To(Equal(installedConnectionDatabase))
-			Expect(string(output.Data["host"])).To(Equal(installedPostgresHost))
+			Expect(string(output.Data["host"])).To(Equal(host))
 			Expect(output.UID).NotTo(Equal(types.UID("")))
 		}
 		Expect(installedConnectionJobLogs(ctx, job)).To(ContainSubstring("Migration completed"))
