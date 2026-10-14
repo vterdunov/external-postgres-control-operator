@@ -7,69 +7,44 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 )
 
 const (
-	r4ImageFixtureECR = "public.ecr.aws/docker/library/postgres:18.6-bookworm"
-	r4ImageFixtureHub = "docker.io/library/postgres:18.6-bookworm"
-	r4ImageFixtureID  = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	r4ImageChangedID  = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	r4DockerPull         = "pull"
+	r4DockerImage        = "image"
+	r4DockerInspect      = "inspect"
+	r4ImageFixturePrefix = "ghcr.io/vterdunov/external-postgres-control-operator:mirror-postgres-18.6-bookworm@sha256:"
+	r4ImageFixtureID     = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	r4ImageChangedID     = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 )
 
+var r4ImageFixtureReference = regexp.MustCompile("^" + regexp.QuoteMeta(r4ImageFixturePrefix) + "[a-f0-9]{64}$")
+
 type r4ImageCommandFixture struct {
-	cache       map[string]string
-	pullIDs     map[string]string
-	pullErrors  map[string]error
-	inspectErr  error
-	commands    [][]string
-	pulls       []string
-	afterLookup func(string)
+	pullData, inspectData []byte
+	pullErr, inspectErr   error
+	commands              [][]string
 }
 
-func (f *r4ImageCommandFixture) output(ctx context.Context, args ...string) ([]byte, error) {
+func (f *r4ImageCommandFixture) output(_ context.Context, args ...string) ([]byte, error) {
 	f.commands = append(f.commands, slices.Clone(args))
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	var reference string
-	for _, candidate := range []string{r4ImageFixtureECR, r4ImageFixtureHub} {
-		if slices.Contains(args, candidate) {
-			reference = candidate
-			break
-		}
-	}
-	if reference == "" {
+	if len(args) == 0 || !r4ImageFixtureReference.MatchString(args[len(args)-1]) {
 		return nil, fmt.Errorf("unexpected or unpinned Docker image arguments: %q", args)
 	}
-	if slices.Contains(args, "inspect") {
-		if f.inspectErr != nil {
-			return nil, f.inspectErr
-		}
-		id, exists := f.cache[reference]
-		if !exists {
-			return nil, fmt.Errorf("Error response from daemon: No such image: %s", reference)
-		}
-		if f.afterLookup != nil {
-			f.afterLookup(reference)
-		}
-		return []byte(id + "\n"), nil
+	switch args[0] {
+	case r4DockerPull:
+		return f.pullData, f.pullErr
+	case r4DockerImage:
+		return f.inspectData, f.inspectErr
+	default:
+		return nil, fmt.Errorf("unexpected Docker image operation: %q", args)
 	}
-	if slices.Contains(args, "pull") {
-		f.pulls = append(f.pulls, reference)
-		if err := f.pullErrors[reference]; err != nil {
-			return nil, err
-		}
-		if f.cache == nil {
-			f.cache = make(map[string]string)
-		}
-		f.cache[reference] = f.pullIDs[reference]
-		return []byte("Image is up to date\n"), nil
-	}
-	return nil, fmt.Errorf("unexpected Docker image operation: %q", args)
 }
 
 func r4ImageRegistryError(t *testing.T, message string) error {
@@ -84,97 +59,106 @@ func r4ImageRegistryError(t *testing.T, message string) error {
 	return err
 }
 
+func r4RequireImageCommands(t *testing.T, commands [][]string, inspect bool) {
+	t.Helper()
+	wantCount := 1
+	if inspect {
+		wantCount++
+	}
+	if len(commands) != wantCount || len(commands[0]) != 2 || commands[0][0] != r4DockerPull ||
+		!r4ImageFixtureReference.MatchString(commands[0][1]) {
+		t.Fatalf("must pull only the pinned GHCR client before inspection: %v", commands)
+	}
+	if inspect {
+		want := []string{r4DockerImage, r4DockerInspect, "--format", "{{.Id}}", commands[0][1]}
+		if !slices.Equal(commands[1], want) {
+			t.Fatalf("inspection changed the pulled reference or immutable ID format: %v", commands)
+		}
+	}
+}
+
 func TestR4ResolveLibPQImage(t *testing.T) {
-	for _, reference := range []string{r4ImageFixtureECR, r4ImageFixtureHub} {
-		t.Run("uses cached immutable image from "+reference, func(t *testing.T) {
-			fixture := &r4ImageCommandFixture{cache: map[string]string{reference: r4ImageFixtureID}}
-			fixture.afterLookup = func(tag string) { fixture.cache[tag] = r4ImageChangedID }
-			id, err := r4ResolveLibPQImage(t.Context(), fixture.output)
-			if err != nil || id != r4ImageFixtureID {
-				t.Fatalf("cached image identity lost after its tag changed: id=%q err=%v", id, err)
+	fixture := &r4ImageCommandFixture{inspectData: []byte(r4ImageFixtureID + "\n")}
+	id, err := r4ResolveLibPQImage(t.Context(), fixture.output)
+	if err != nil || id != r4ImageFixtureID {
+		t.Fatalf("pinned client resolution lost immutable identity: id=%q err=%v", id, err)
+	}
+	r4RequireImageCommands(t, fixture.commands, true)
+}
+
+func TestR4ResolveLibPQImageDiagnostics(t *testing.T) {
+	for _, stage := range []string{r4DockerPull, r4DockerInspect} {
+		for _, diagnostic := range []string{
+			"Cannot connect to the Docker daemon", "dial tcp: connection refused", "unauthorized: authentication required",
+		} {
+			for _, transport := range []string{"combined output", "exit stderr"} {
+				t.Run(stage+"/"+transport+"/"+diagnostic, func(t *testing.T) {
+					failure := errors.New("fixture command failed")
+					data := []byte(diagnostic)
+					if transport == "exit stderr" {
+						failure = r4ImageRegistryError(t, diagnostic)
+						data = nil
+					}
+					fixture := &r4ImageCommandFixture{inspectData: []byte(r4ImageFixtureID)}
+					if stage == r4DockerPull {
+						fixture.pullData, fixture.pullErr = data, failure
+					} else {
+						fixture.inspectData, fixture.inspectErr = data, failure
+					}
+					id, err := r4ResolveLibPQImage(t.Context(), fixture.output)
+					if id != "" || !errors.Is(err, failure) || !strings.Contains(err.Error(), diagnostic) {
+						t.Fatalf("command cause or actionable diagnostic was lost: id=%q err=%v", id, err)
+					}
+					r4RequireImageCommands(t, fixture.commands, stage == r4DockerInspect)
+				})
 			}
-			if len(fixture.pulls) != 0 {
-				t.Fatalf("cached official client caused a registry pull: %v", fixture.pulls)
+		}
+	}
+}
+
+func TestR4ResolveLibPQImageSanitizesAndBoundsDiagnostics(t *testing.T) {
+	const credential = "fixture-private-password"
+	for _, stage := range []string{r4DockerPull, r4DockerInspect} {
+		t.Run(stage, func(t *testing.T) {
+			diagnostic := "unauthorized https://fixture-user:" + credential + "@ghcr.io/v2/\x1b[31m\x00\n" +
+				strings.Repeat("registry detail ", 1000)
+			fixture := &r4ImageCommandFixture{inspectData: []byte(r4ImageFixtureID)}
+			failure := errors.New("fixture command failed")
+			if stage == r4DockerPull {
+				fixture.pullData, fixture.pullErr = []byte(diagnostic), failure
+			} else {
+				fixture.inspectData, fixture.inspectErr = []byte(diagnostic), failure
+			}
+			id, err := r4ResolveLibPQImage(t.Context(), fixture.output)
+			if err == nil || id != "" {
+				t.Fatalf("failed command produced a usable image: id=%q err=%v", id, err)
+			}
+			message := err.Error()
+			if !strings.Contains(message, "unauthorized") || strings.Contains(message, credential) || len(message) > 4096 ||
+				strings.ContainsFunc(message, unicode.IsControl) {
+				t.Fatalf("diagnostic is not actionable, sanitized, and bounded: %.200q", message)
 			}
 		})
 	}
+}
 
-	t.Run("pulls the pinned ECR image on a cache miss", func(t *testing.T) {
-		fixture := &r4ImageCommandFixture{pullIDs: map[string]string{r4ImageFixtureECR: r4ImageFixtureID}}
-		id, err := r4ResolveLibPQImage(t.Context(), fixture.output)
-		if err != nil || id != r4ImageFixtureID || !slices.Equal(fixture.pulls, []string{r4ImageFixtureECR}) {
-			t.Fatalf("unexpected uncached client resolution: id=%q pulls=%v err=%v", id, fixture.pulls, err)
-		}
-	})
-
-	for _, quota := range []string{"toomanyrequests: Rate exceeded", "toomanyrequests: Data limit exceeded"} {
-		t.Run("falls back only for ECR quota stderr "+quota, func(t *testing.T) {
-			quotaError := r4ImageRegistryError(t, "Error response from daemon: "+quota)
-			fixture := &r4ImageCommandFixture{
-				pullIDs:    map[string]string{r4ImageFixtureHub: r4ImageFixtureID},
-				pullErrors: map[string]error{r4ImageFixtureECR: quotaError},
-			}
-			id, err := r4ResolveLibPQImage(t.Context(), fixture.output)
-			if err != nil || id != r4ImageFixtureID ||
-				!slices.Equal(fixture.pulls, []string{r4ImageFixtureECR, r4ImageFixtureHub}) {
-				t.Fatalf("quota fallback lost pinned image or registry ordering: id=%q pulls=%v err=%v",
-					id, fixture.pulls, err)
-			}
-		})
-	}
-
-	for _, diagnostic := range []string{
-		"unauthorized: authentication required", "manifest unknown", "dial tcp: connection refused",
-		"toomanyrequests: unrelated registry error", "Rate exceeded without quota error code",
-	} {
-		t.Run("preserves unrelated pull error "+diagnostic, func(t *testing.T) {
-			pullError := r4ImageRegistryError(t, diagnostic)
-			fixture := &r4ImageCommandFixture{pullErrors: map[string]error{r4ImageFixtureECR: pullError}}
-			id, err := r4ResolveLibPQImage(t.Context(), fixture.output)
-			if id != "" || !errors.Is(err, pullError) || !slices.Equal(fixture.pulls, []string{r4ImageFixtureECR}) {
-				t.Fatalf("unrelated error was hidden or caused fallback: id=%q pulls=%v err=%v", id, fixture.pulls, err)
-			}
-		})
-	}
-
-	t.Run("preserves a local Docker inspection failure without pulling", func(t *testing.T) {
-		inspectionError := errors.New("permission denied while trying to connect to the Docker daemon")
-		fixture := &r4ImageCommandFixture{inspectErr: inspectionError}
-		id, err := r4ResolveLibPQImage(t.Context(), fixture.output)
-		if id != "" || !errors.Is(err, inspectionError) || len(fixture.pulls) != 0 {
-			t.Fatalf("local Docker failure was hidden by a pull: id=%q pulls=%v err=%v", id, fixture.pulls, err)
-		}
-	})
-
-	t.Run("retains both registry failures when quota fallback fails", func(t *testing.T) {
-		ecrError := r4ImageRegistryError(t, "toomanyrequests: Data limit exceeded")
-		hubError := r4ImageRegistryError(t, "Docker Hub authentication required")
-		fixture := &r4ImageCommandFixture{pullErrors: map[string]error{
-			r4ImageFixtureECR: ecrError, r4ImageFixtureHub: hubError,
-		}}
-		id, err := r4ResolveLibPQImage(t.Context(), fixture.output)
-		if id != "" || !errors.Is(err, ecrError) || !errors.Is(err, hubError) {
-			t.Fatalf("registry failures were discarded: id=%q err=%v", id, err)
-		}
-	})
-
-	for _, malformed := range []string{"", "sha256:abc", r4ImageFixtureECR, "sha256:" + strings.Repeat("z", 64),
+func TestR4ResolveLibPQImageRejectsMalformedIdentity(t *testing.T) {
+	for _, malformed := range []string{"", "sha256:abc", r4ImageFixturePrefix,
+		"sha256:" + strings.Repeat("z", 64), "sha256:" + strings.Repeat("A", 64),
 		r4ImageFixtureID + "\n" + r4ImageChangedID} {
-		t.Run("rejects malformed local image ID "+malformed, func(t *testing.T) {
-			fixture := &r4ImageCommandFixture{pullIDs: map[string]string{r4ImageFixtureECR: malformed}}
+		t.Run(malformed, func(t *testing.T) {
+			fixture := &r4ImageCommandFixture{inspectData: []byte(malformed)}
 			id, err := r4ResolveLibPQImage(t.Context(), fixture.output)
 			if err == nil || id != "" {
 				t.Fatalf("invalid local image identity was accepted: id=%q err=%v", id, err)
 			}
+			r4RequireImageCommands(t, fixture.commands, true)
 		})
 	}
-
-	r4ImageCancellationCases(t)
 }
 
-func r4ImageCancellationCases(t *testing.T) {
-	t.Helper()
-	t.Run("cancellation before resolution performs no Docker operations", func(t *testing.T) {
+func TestR4ResolveLibPQImageCancellation(t *testing.T) {
+	t.Run("before resolution performs no Docker operations", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		fixture := &r4ImageCommandFixture{}
@@ -183,7 +167,24 @@ func r4ImageCancellationCases(t *testing.T) {
 			t.Fatalf("canceled resolution issued Docker commands: id=%q commands=%v err=%v", id, fixture.commands, err)
 		}
 	})
-
+	for _, stage := range []string{r4DockerPull, r4DockerInspect} {
+		t.Run("after "+stage+" discards successful command output", func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			fixture := &r4ImageCommandFixture{inspectData: []byte(r4ImageFixtureID)}
+			id, err := r4ResolveLibPQImage(ctx, func(commandContext context.Context, args ...string) ([]byte, error) {
+				data, commandErr := fixture.output(commandContext, args...)
+				if args[0] == stage || stage == r4DockerInspect && args[0] == r4DockerImage {
+					cancel()
+				}
+				return data, commandErr
+			})
+			if id != "" || !errors.Is(err, context.Canceled) {
+				t.Fatalf("command result escaped cancellation: id=%q err=%v", id, err)
+			}
+			r4RequireImageCommands(t, fixture.commands, stage == r4DockerInspect)
+		})
+	}
 	t.Run("in-flight Docker work observes the supplied deadline", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 		defer cancel()

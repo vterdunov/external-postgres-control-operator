@@ -531,6 +531,11 @@ class PreparationBehaviorTests(unittest.TestCase):
         built = [call for call in self.fixture.calls() if call["tool"] == "docker" and call["args"][:2] == ["buildx", "build"]]
         self.assertEqual(len(built), 1)
         self.assertIn("REVISION=" + IMAGE_SHA, built[0]["args"])
+        catalog = json.loads((self.fixture.source / "test/images/catalog.json").read_text())["images"]
+        scanner = next(entry for entry in catalog if entry["name"] == "sbom-scanner")
+        scanner_reference = scanner["destination"] + "@" + scanner["source"].rsplit("@", 1)[1]
+        self.assertIn("--attest=type=sbom,generator=" + scanner_reference, built[0]["args"],
+                      "Image preparation must pin the SBOM generator instead of using BuildKit's mutable default")
         self.assertFalse(any(call["tool"] == "helm" and call["args"][0] == "push" for call in self.fixture.calls()), "Image validation chart must remain local")
 
     def test_chart_seed_rejects_tag_that_differs_from_source_metadata(self):

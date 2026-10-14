@@ -9,15 +9,21 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"unicode"
 )
 
-const (
-	r4LibPQImageTag = "18.6-bookworm"
-	r4LibPQImage    = "public.ecr.aws/docker/library/postgres:" + r4LibPQImageTag
-	r4LibPQMirror   = "docker.io/library/postgres:" + r4LibPQImageTag
+var (
+	r4LibPQImageID       = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+	r4ImageCredentialURL = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^/\s]+@`)
 )
 
-var r4LibPQImageID = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+type r4ImageCommandError struct {
+	message string
+	cause   error
+}
+
+func (e *r4ImageCommandError) Error() string { return e.message }
+func (e *r4ImageCommandError) Unwrap() error { return e.cause }
 
 func r4ResolveLibPQImage(
 	ctx context.Context, output func(context.Context, ...string) ([]byte, error),
@@ -32,36 +38,18 @@ func r4ResolveLibPQImage(
 		}
 		return data, err
 	}
-	for _, reference := range []string{r4LibPQImage, r4LibPQMirror} {
-		data, err := invoke("image", "inspect", "--format", "{{.Id}}", reference)
-		if err == nil {
-			return r4LibPQIdentity(data)
-		}
-		if !strings.Contains(r4ImageDiagnostic(data, err), "no such image: "+reference) {
-			return "", fmt.Errorf("inspect pinned application client image: %w", err)
-		}
+	reference, err := ImageForVersion("18")
+	if err != nil {
+		return "", err
 	}
-	reference := r4LibPQImage
 	data, err := invoke("pull", reference)
 	if err != nil {
-		diagnostic := r4ImageDiagnostic(data, err)
-		if !strings.Contains(diagnostic, "toomanyrequests") ||
-			!strings.Contains(diagnostic, "rate exceeded") && !strings.Contains(diagnostic, "data limit exceeded") {
-			return "", fmt.Errorf("pull pinned application client image: %w", err)
-		}
-		reference = r4LibPQMirror
-		if _, fallbackErr := invoke("pull", reference); fallbackErr != nil {
-			return "", fmt.Errorf("pull mirrored application client image: %w", errors.Join(err, fallbackErr))
-		}
+		return "", r4ImageFailure("pull pinned application client image", data, err)
 	}
 	data, err = invoke("image", "inspect", "--format", "{{.Id}}", reference)
 	if err != nil {
-		return "", fmt.Errorf("inspect pulled application client image: %w", err)
+		return "", r4ImageFailure("inspect pinned application client image", data, err)
 	}
-	return r4LibPQIdentity(data)
-}
-
-func r4LibPQIdentity(data []byte) (string, error) {
 	id := strings.TrimSpace(string(data))
 	if !r4LibPQImageID.MatchString(id) {
 		return "", fmt.Errorf("pinned application client image has an invalid immutable ID")
@@ -69,13 +57,23 @@ func r4LibPQIdentity(data []byte) (string, error) {
 	return id, nil
 }
 
-func r4ImageDiagnostic(data []byte, err error) string {
+func r4ImageFailure(operation string, data []byte, err error) error {
 	diagnostic := string(data)
 	if failure, ok := errors.AsType[*exec.ExitError](err); ok {
-		diagnostic += "\n" + string(failure.Stderr)
+		diagnostic += " " + string(failure.Stderr)
 	}
-	if err != nil {
-		diagnostic += "\n" + err.Error()
+	diagnostic += " " + err.Error()
+	diagnostic = r4ImageCredentialURL.ReplaceAllString(diagnostic, "[REDACTED_URL]@")
+	diagnostic = strings.Map(func(character rune) rune {
+		if unicode.IsControl(character) {
+			return ' '
+		}
+		return character
+	}, diagnostic)
+	message := operation + ": " + strings.Join(strings.Fields(diagnostic), " ")
+	const limit = 4096
+	if len(message) > limit {
+		message = strings.ToValidUTF8(message[:limit], "")
 	}
-	return strings.ToLower(diagnostic)
+	return &r4ImageCommandError{message: message, cause: err}
 }

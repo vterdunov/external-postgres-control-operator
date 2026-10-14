@@ -70,10 +70,11 @@ chmod 600 "$kubeconfig"
 kind_owned=false
 image_owned=false
 child=''
-node_image='kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5'
-postgres_image="docker.io/library/postgres:$server_version-bookworm"
+mirror_cli="$suite_dir/../../tools/image_mirror.py"
+node_image=$(python3 "$mirror_cli" reference kind-node)
+postgres_image=$(python3 "$mirror_cli" reference "postgres-$major")
 client_version=16.15
-client_image="docker.io/library/postgres:$client_version-bookworm"
+client_image=$(python3 "$mirror_cli" reference postgres-16)
 seed=${EPCO_TEST_SEED:-$(date +%s)}
 export KUBECONFIG="$kubeconfig" KUBECTL_KUBERC=false
 export EPCO_E2E_CONTEXT="$context" EPCO_E2E_ARTIFACTS="$artifacts"

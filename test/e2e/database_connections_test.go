@@ -16,6 +16,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	epco "github.com/vterdunov/external-postgres-control-operator/api/v1alpha1"
+	"github.com/vterdunov/external-postgres-control-operator/test/images"
 	"github.com/vterdunov/external-postgres-control-operator/test/utils"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -43,7 +44,11 @@ const (
 )
 
 func installedClientImage() string {
-	return cmp.Or(os.Getenv("EPCO_E2E_CLIENT_IMAGE"), "docker.io/library/postgres:16.15-bookworm")
+	image, err := images.Reference("postgres-16")
+	if err != nil {
+		panic(err)
+	}
+	return cmp.Or(os.Getenv("EPCO_E2E_CLIENT_IMAGE"), image)
 }
 
 func installedRefreshMigrationGate(

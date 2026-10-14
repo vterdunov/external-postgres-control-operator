@@ -17,6 +17,7 @@ import tarfile
 import tempfile
 
 import release
+import image_mirror
 
 ROOT = Path(__file__).resolve().parents[1]
 CHART_DIR = ROOT / 'charts/external-postgres-control-operator'
@@ -67,7 +68,9 @@ def image_candidate(manifest, directory):
     # Check again immediately before writes. A prior incomplete version requires
     # explicit investigation, never a silent new build at the same version tag.
     release.require(release.command('crane', 'digest', reference, allow_absent=True) is None, 'application version tag already exists')
-    run('docker', 'buildx', 'build', '--platform', 'linux/amd64,linux/arm64', '--provenance=mode=max', '--sbom=true',
+    scanner = image_mirror.reference('sbom-scanner')
+    run('docker', 'buildx', 'build', '--platform', 'linux/amd64,linux/arm64', '--provenance=mode=max',
+        '--attest=type=sbom,generator=' + scanner,
         '--build-arg', 'VERSION=' + version, '--build-arg', 'REVISION=' + manifest['source_sha'],
         '--tag', reference, '--push', '--metadata-file', str(directory / 'build-metadata.json'), '.')
     index_digest = release.digest(release.command('crane', 'digest', reference))
