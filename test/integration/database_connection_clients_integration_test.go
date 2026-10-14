@@ -27,13 +27,13 @@ const (
 	r4JDBCDriver  = "jdbc"
 	r4LibPQDriver = "libpq"
 	r4JDBCDigest  = "cab1cd67cfa25c25de4348e532298028288a877ba01c77d1619fe45416193387"
-	r4LibPQImage  = "public.ecr.aws/docker/library/postgres:18.6-bookworm"
 )
 
 // These consumers use actual client parsers, not Go's URL decoder. Credentials
 // are sent only over stdin; child output is discarded even when a client fails.
 type r4ApplicationClients struct {
 	dir, libpq, jdbc, java string
+	image                  string
 }
 
 func r4NewApplicationClients(ctx context.Context) *r4ApplicationClients {
@@ -72,12 +72,16 @@ func r4NewApplicationClients(ctx context.Context) *r4ApplicationClients {
 	if runtime.GOOS == "linux" {
 		// Link only against the pinned image's public libpq ABI, then execute
 		// inside that same image. Its full dependency closure stays in-image.
+		c.image, err = r4ResolveLibPQImage(ctx, func(commandContext context.Context, args ...string) ([]byte, error) {
+			return exec.CommandContext(commandContext, "docker", args...).CombinedOutput()
+		})
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
 		triplet := "x86_64-linux-gnu"
 		if runtime.GOARCH == "arm64" {
 			triplet = "aarch64-linux-gnu"
 		}
 		container, createErr := exec.CommandContext(ctx, "docker", "create", "--label",
-			"epco.test.run="+postgres.RunID, "--entrypoint", "true", r4LibPQImage).Output()
+			"epco.test.run="+postgres.RunID, "--entrypoint", "true", c.image).Output()
 		ExpectWithOffset(1, createErr).NotTo(HaveOccurred())
 		id := strings.TrimSpace(string(container))
 		library = filepath.Join(c.dir, "libpq.so.5")
@@ -122,7 +126,7 @@ func (c *r4ApplicationClients) consume(ctx context.Context, secret *corev1.Secre
 	} else if runtime.GOOS == "linux" {
 		command = exec.CommandContext(ctx, "docker", "run", "--rm", "-i", "--network", "host", "--label",
 			"epco.test.run="+postgres.RunID, "--mount", "type=bind,source="+c.dir+",target="+c.dir+",readonly",
-			"--entrypoint", c.libpq, r4LibPQImage, mode)
+			"--entrypoint", c.libpq, c.image, mode)
 	}
 	command.Env = r4ClientEnvironment()
 	command.Stdin = strings.NewReader(strings.Join(values, "\n") + "\n")
