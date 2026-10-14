@@ -1,0 +1,42 @@
+name: Mirror CI images
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main, 'codex/**']
+    paths:
+      - .github/workflows/mirror-images.yml
+      - test/images/catalog.json
+      - tools/image_mirror.py
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: epco-image-mirrors
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Synchronize immutable image indexes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Pinned tools
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.9.15
+      - name: Authenticate mirror writes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | mise exec -- crane auth login ghcr.io --username "$ACTOR" --password-stdin
+      - name: Synchronize pinned images
+        run: mise exec -- python3 tools/image_mirror.py sync --catalog test/images/catalog.json

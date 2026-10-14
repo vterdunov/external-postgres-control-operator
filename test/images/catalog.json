@@ -1,0 +1,54 @@
+{
+  "images": [
+    {
+      "name": "postgres-15",
+      "source": "docker.io/library/postgres:15.19-bookworm@sha256:d4a8e1f88f475ee3e0137fa89d21ebc59f6c6ab16bf369ee92907607cc3455ae",
+      "destination": "ghcr.io/vterdunov/external-postgres-control-operator:mirror-postgres-15.19-bookworm"
+    },
+    {
+      "name": "postgres-16",
+      "source": "docker.io/library/postgres:16.15-bookworm@sha256:0ea6700a3b4f0ae6ce746519073558aed4d88a79d8d07622a9a644946c7319c4",
+      "destination": "ghcr.io/vterdunov/external-postgres-control-operator:mirror-postgres-16.15-bookworm"
+    },
+    {
+      "name": "postgres-17",
+      "source": "docker.io/library/postgres:17.11-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826",
+      "destination": "ghcr.io/vterdunov/external-postgres-control-operator:mirror-postgres-17.11-bookworm"
+    },
+    {
+      "name": "postgres-18",
+      "source": "docker.io/library/postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c",
+      "destination": "ghcr.io/vterdunov/external-postgres-control-operator:mirror-postgres-18.6-bookworm"
+    },
+    {
+      "name": "golang",
+      "source": "docker.io/library/golang:1.27.1@sha256:162be5298a40ed317005c8339c6de4d10d3eef336d66dc8e9259b03ab9d3a6d2",
+      "destination": "ghcr.io/vterdunov/external-postgres-control-operator:mirror-golang-1.27.1"
+    },
+    {
+      "name": "distroless",
+      "source": "gcr.io/distroless/static:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3",
+      "destination": "ghcr.io/vterdunov/external-postgres-control-operator:mirror-distroless-static-nonroot-e2e927ec666b"
+    },
+    {
+      "name": "kind-node",
+      "source": "docker.io/kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5",
+      "destination": "ghcr.io/vterdunov/external-postgres-control-operator:mirror-kind-node-v1.36.1"
+    },
+    {
+      "name": "buildkit",
+      "source": "docker.io/moby/buildkit:buildx-stable-1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea",
+      "destination": "ghcr.io/vterdunov/external-postgres-control-operator:mirror-buildkit-buildx-stable-1-cec9f139f45e"
+    },
+    {
+      "name": "binfmt",
+      "source": "docker.io/tonistiigi/binfmt:latest@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0",
+      "destination": "ghcr.io/vterdunov/external-postgres-control-operator:mirror-binfmt-400a4873b838"
+    },
+    {
+      "name": "sbom-scanner",
+      "source": "docker.io/docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9",
+      "destination": "ghcr.io/vterdunov/external-postgres-control-operator:mirror-buildkit-syft-scanner-stable-1-ae4f3b554449"
+    }
+  ]
+}
