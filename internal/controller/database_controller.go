@@ -453,6 +453,9 @@ func (r *DatabaseReconciler) databaseError(ctx context.Context, database *epco.D
 		message = "A required SQL or application credential operation is pending"
 	case postgres.InsufficientPrivileges:
 		message = "The administrative connection lacks required SQL privileges"
+		if failure.Message == postgres.DatabaseOwnerSetRoleRequiredMessage {
+			message = postgres.DatabaseOwnerSetRoleRequiredMessage
+		}
 	case postgres.DeletionBlocked:
 		message = "SQL dependencies prevent database or schema deletion"
 	case postgres.UnsupportedFeature:

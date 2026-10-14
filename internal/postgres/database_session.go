@@ -12,6 +12,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// DatabaseOwnerSetRoleRequiredMessage is a controlled diagnostic safe for status.
+const DatabaseOwnerSetRoleRequiredMessage = "The administrative connection requires SET ROLE authority for the requested database owner"
+
 type databaseSession struct {
 	connection *pgx.Conn
 	disposal   *pgxProbeConnection
@@ -149,6 +152,22 @@ func databaseFailure(err error) error {
 		}
 	}
 	return &Failure{ConnectionUnavailable, "Unable to complete PostgreSQL database or schema reconciliation"}
+}
+
+func (s *databaseSession) preflightDatabaseOwner(ctx context.Context, owner string, serverVersion int) error {
+	capability := "MEMBER"
+	if serverVersion >= 160000 {
+		capability = "SET"
+	}
+	var authorized bool
+	if err := s.connection.QueryRow(ctx,
+		"SELECT pg_catalog.pg_has_role(current_user,$1,$2)", owner, capability).Scan(&authorized); err != nil {
+		return err
+	}
+	if !authorized {
+		return &Failure{InsufficientPrivileges, DatabaseOwnerSetRoleRequiredMessage}
+	}
+	return nil
 }
 
 // selectDatabaseRole keeps inherited authority where possible. Otherwise the

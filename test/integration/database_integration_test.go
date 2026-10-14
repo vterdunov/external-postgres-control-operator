@@ -24,6 +24,8 @@ const (
 	databaseICUProvider       = "icu"
 	databaseExplicitSchema    = "explicit"
 	databaseOwnedSchema       = "owned"
+	databaseMemberCapability  = "MEMBER"
+	databaseSetCapability     = "SET"
 )
 
 // All helpers and cleanup belong to this suite. FORCE is used only by fixture
@@ -644,9 +646,9 @@ var _ = Describe("Database PostgreSQL reconciliation", func() {
 			executor, err := fixture.Server.Open(name, user, password)
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(func() { Expect(executor.Close()).To(Succeed()) })
-			setPrivilege := "MEMBER"
+			setPrivilege := databaseMemberCapability
 			if fixture.version >= 160000 {
-				setPrivilege = "SET"
+				setPrivilege = databaseSetCapability
 			}
 			var executingUser string
 			var superuser, executorCreate, currentOwnerAccess, destinationAccess, destinationCreate, destinationLogin bool
@@ -709,9 +711,9 @@ var _ = Describe("Database PostgreSQL reconciliation", func() {
 			_, err = target.ExecContext(ctx, "REVOKE CREATE ON DATABASE "+quoteIdentifier(name)+
 				" FROM "+quoteIdentifier(fixture.Role))
 			Expect(err).NotTo(HaveOccurred())
-			setPrivilege := "MEMBER"
+			setPrivilege := databaseMemberCapability
 			if fixture.version >= 160000 {
-				setPrivilege = "SET"
+				setPrivilege = databaseSetCapability
 			}
 			var executorCreate, destinationCreate, inheritsDatabaseOwner, destinationAccess bool
 			var schemaOwner string
