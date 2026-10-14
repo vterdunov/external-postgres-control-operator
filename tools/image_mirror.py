@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 
 
 DEFAULT_CATALOG = Path(__file__).resolve().parents[1] / 'test/images/catalog.json'
@@ -73,26 +74,54 @@ def crane(*arguments, allow_absent=False, timeout=120):
     return result.stdout.strip()
 
 
-def registry_digest(image, *, allow_absent=False):
-    value = crane('digest', image, allow_absent=allow_absent)
+def registry_digest(image, *, allow_absent=False, timeout=120):
+    value = crane('digest', image, allow_absent=allow_absent, timeout=timeout)
     require(value is None or DIGEST.fullmatch(value), 'registry returned an invalid image digest')
     return value
+
+
+def inspected_digest(image, phase, **options):
+    try:
+        return registry_digest(image, **options)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        raise RuntimeError(phase + ' digest inspection for ' + image + ': ' + str(error)) from error
+
+
+def verify_copied_digest(destination, expected):
+    deadline = time.monotonic() + 30
+    for delay in (0, 1, 2, 4, 8, 8):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        if delay:
+            wait = min(delay, remaining)
+            print('post-copy index not visible at ' + destination + '; retrying in ' + str(wait) + 's',
+                  file=sys.stderr, flush=True)
+            time.sleep(wait)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        current = inspected_digest(destination, 'post-copy', allow_absent=True, timeout=remaining)
+        if current is not None:
+            require(current == expected, 'post-copy index digest mismatch: ' + destination)
+            return
+    raise RuntimeError('post-copy index visibility verification exhausted for ' + destination)
 
 
 def sync(catalog=DEFAULT_CATALOG):
     for entry in read_catalog(catalog):
         source, destination = entry['source'], entry['destination']
         expected = source.rsplit('@', 1)[1]
-        require(registry_digest(source) == expected, 'pinned source digest mismatch: ' + entry['name'])
-        current = registry_digest(destination, allow_absent=True)
+        require(inspected_digest(source, 'source') == expected, 'pinned source digest mismatch: ' + source)
+        current = inspected_digest(destination, 'destination', allow_absent=True)
         if current is not None:
-            require(current == expected, 'immutable mirror tag digest mismatch: ' + entry['name'])
+            require(current == expected, 'immutable destination mirror tag digest mismatch: ' + destination)
         else:
             # Copy defaults to all platforms. No-clobber rechecks before copying;
             # workflow concurrency serializes writers managed by this repository.
             crane('copy', '--no-clobber', source, destination, timeout=900)
-            require(registry_digest(destination) == expected, 'copied index digest mismatch: ' + entry['name'])
-        print(entry['name'] + ': ' + destination + '@' + expected)
+            verify_copied_digest(destination, expected)
+        print(entry['name'] + ': ' + destination + '@' + expected, flush=True)
 
 
 def main():
