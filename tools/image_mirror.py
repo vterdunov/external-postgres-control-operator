@@ -16,6 +16,7 @@ SOURCE = re.compile(
     r'(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}'
     r'@sha256:[a-f0-9]{64}')
 DESTINATION = re.compile(re.escape(REPOSITORY) + r':mirror-[a-z0-9][a-z0-9_.-]{0,120}')
+HTTP_METHODS = {'GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE', 'CONNECT'}
 
 
 def require(condition, message):
@@ -63,8 +64,10 @@ def reference(name, catalog=DEFAULT_CATALOG):
 def crane(*arguments, allow_absent=False, timeout=120):
     result = subprocess.run(['crane', *arguments], capture_output=True, text=True, timeout=timeout)
     if result.returncode:
-        codes = re.findall(r'\b([A-Z][A-Z_]+):', result.stderr)
-        if allow_absent and codes and set(codes) <= {'MANIFEST_UNKNOWN', 'NAME_UNKNOWN'}:
+        # Crane logs HTTP method prefixes when HEAD falls back to GET. Those
+        # describe requests, while registry error codes determine absence.
+        codes = set(re.findall(r'\b([A-Z][A-Z_]+):', result.stderr)) - HTTP_METHODS
+        if allow_absent and codes and codes <= {'MANIFEST_UNKNOWN', 'NAME_UNKNOWN'}:
             return None
         raise RuntimeError('crane ' + arguments[0] + ' failed: ' + result.stderr.strip())
     return result.stdout.strip()
@@ -85,8 +88,8 @@ def sync(catalog=DEFAULT_CATALOG):
         if current is not None:
             require(current == expected, 'immutable mirror tag digest mismatch: ' + entry['name'])
         else:
-            # The default platform is all. No-clobber also preserves a tag that
-            # another writer creates after the authoritative absence check.
+            # Copy defaults to all platforms. No-clobber rechecks before copying;
+            # workflow concurrency serializes writers managed by this repository.
             crane('copy', '--no-clobber', source, destination, timeout=900)
             require(registry_digest(destination) == expected, 'copied index digest mismatch: ' + entry['name'])
         print(entry['name'] + ': ' + destination + '@' + expected)
