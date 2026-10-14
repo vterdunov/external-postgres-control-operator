@@ -429,7 +429,7 @@ movetokube's [aws.go](https://github.com/movetokube/postgres-operator/blob/68e09
 
 | Operation | Required authorization checks |
 | --- | --- |
-| CREATE DATABASE OWNER | CREATEDB for the executing user and access to the intended owner role |
+| CREATE DATABASE OWNER | CREATEDB for the executing user and SET ROLE authority for the intended owner role |
 | GRANT/REVOKE on tables/schema/database | Object ownership or applicable grant options |
 | ALTER DEFAULT PRIVILEGES FOR ROLE | Access to the actual object creator role |
 | GRANT group TO user | Authority to manage that group's membership |
@@ -438,6 +438,19 @@ movetokube's [aws.go](https://github.com/movetokube/postgres-operator/blob/68e09
 PG16+ separates ADMIN, INHERIT, and SET membership options. Authority to administer a role does not guarantee SET ROLE access. Inspect pg_auth_members, grantor identity, and the version's supported pg_has_role checks; an administrative role name alone is insufficient. [Role membership](https://www.postgresql.org/docs/current/role-membership.html), [ALTER ROLE](https://www.postgresql.org/docs/current/sql-alterrole.html).
 
 For new managed owner/group/creator roles, the controller may maintain the administrative memberships needed by its SQL user, using authority already granted over those roles. Missing privileges on an existing role block reconciliation. These administrative relationships have separate ownership and are not added to application users.
+
+`PostgresCluster` Ready confirms connectivity and writable state, and `DatabaseRole` Ready confirms its declared role configuration. Neither confirms the administrative login's authority to create a database owned by that role. A missing owner membership produces `Database` Ready=False with reason `InsufficientPrivileges` and a message identifying the required SET ROLE authority. The operator does not add that membership or elevate the owner role.
+
+For an existing owner, an authorized bootstrap administrator can grant the EPCO administrative login SET-only membership on PostgreSQL 16+:
+
+```sql
+GRANT app_owner TO epco_admin WITH INHERIT FALSE, SET TRUE;
+SELECT pg_has_role('epco_admin', 'app_owner', 'SET');
+```
+
+Replace these SQL names with the actual owner and the login from the PostgresCluster credentials. On PostgreSQL 15, use `GRANT app_owner TO epco_admin` and check `pg_has_role('epco_admin', 'app_owner', 'MEMBER')`; that version has no separate SET/INHERIT membership options. The application owner can remain NOCREATEDB, NOCREATEROLE and NOSUPERUSER. After bootstrap, the normal database retry can create it without changing role privileges. Existing grantors and memberships must be reviewed separately; this grant does not remove independent authority.
+
+PostgreSQL 16+ `createrole_self_grant=set` affects roles subsequently created by that session. It does not repair a missing membership on an existing role. Its current value and current role catalogs do not establish who created the role or whether a membership was later removed. [PostgreSQL client defaults](https://www.postgresql.org/docs/16/runtime-config-client.html#GUC-CREATEROLE-SELF-GRANT), [CREATE DATABASE](https://www.postgresql.org/docs/16/sql-createdatabase.html).
 
 GRANT inside a database can use an authorized SET LOCAL ROLE owner in a pinned transaction. CREATE DATABASE runs outside a transaction as an administrative user with CREATEDB and an OWNER clause; switching to a NOLOGIN owner without CREATEDB does not authorize creation. A pooled connection must not be returned with another active role.
 

@@ -50,6 +50,9 @@ func (s *databaseSession) Apply(ctx context.Context, desired DatabaseDesired) (*
 		if buildErr != nil {
 			return nil, buildErr
 		}
+		if err = s.preflightDatabaseOwner(bounded, string(desired.Spec.Owner), state.ServerVersion); err != nil {
+			return nil, databaseFailure(err)
+		}
 		// The supplied administrator retains CREATEDB. The requested owner may
 		// deliberately be NOLOGIN and NOCREATEDB.
 		if _, err = s.connection.Exec(bounded, statement); err != nil {
