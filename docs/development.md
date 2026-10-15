@@ -4,10 +4,11 @@ The project scaffold was initialized with [Kubebuilder v4.16.0](https://github.c
 
 The manager registers all three API types from [api/v1alpha1](../api/v1alpha1). Generated CRDs are in [config/crd/bases](../config/crd/bases), with generated DeepCopy methods alongside the types. See [implementation status](README.md#implementation-status) and [PostgresCluster readiness](postgrescluster.md) for the runtime scope.
 
-Install [mise](https://mise.jdx.dev/) and use the pinned Go and Kubebuilder versions from `mise.toml`:
+Install [mise](https://mise.jdx.dev/) and use the pinned Go, Kubebuilder and uv versions from `mise.toml`:
 
 ```sh
 mise trust
+mise install --locked uv
 mise run --skip-tools tools-install
 mise run build # Build bin/manager without changing sources
 mise run test-unit # Fast unit tests, race detection and randomization
@@ -20,6 +21,8 @@ mise run lint # Verify linter configuration and run the configured linters
 mise run lint-architecture # Check production package dependency boundaries
 mise run check # Build, unit tests, lint, generated checks and manifest render
 ```
+
+Python is managed by uv. Mise creates and activates `bin/python-<version>` with the exact `python_version` from `mise.toml` and `uv venv --managed-python`. This interpreter is inherited by task subprocesses and used by `mise exec -- python3`; no system Python is required. Install the locked uv first when bootstrapping so the tools installer also uses this runtime. When changing `python_version`, update the matching `cpython@<version>` request in `_.python.venv.python`; delivery tests verify they stay in sync. The explicit CPython request and uv backend override conflicting global mise Python settings. Versioned environments keep Python pin changes separate from existing environments. Project tool paths take precedence over ambient commands so nested subprocesses use the same pinned tools.
 
 Run `mise tasks` to list all development, image and deployment commands. For example, `IMG=registry/epco:dev mise run docker-build` builds an image. Cluster commands require an explicit context: `KUBE_CONTEXT=my-cluster IMG=registry/epco:dev mise run deploy`. Set `IGNORE_NOT_FOUND=true` for tolerant deletion.
 

@@ -48,7 +48,7 @@ jobs:
           mkdir candidate
           mise exec -- python3 tools/release_ci.py seed --stream image --output candidate/seed.json
           mise exec -- python3 tools/release.py image --manifest candidate/seed.json --phase preflight > candidate/preflight.json
-          python3 - <<'SCRIPT'
+          mise exec -- python3 - <<'SCRIPT'
           import json, os
           record = json.load(open('candidate/preflight.json'))
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
@@ -160,7 +160,7 @@ jobs:
           IMAGE_VERSION: ${{ github.ref_name }}
         run: |
           docker pull "$EPCO_E2E_IMAGE_REFERENCE"
-          version=$(python3 -c 'import json; print(json.load(open("candidate/manifest.json"))["image"]["version"])')
+          version=$(mise exec -- python3 -c 'import json; print(json.load(open("candidate/manifest.json"))["image"]["version"])')
           mise exec -- python3 tools/platform_check.py --image "$EPCO_E2E_IMAGE_REFERENCE" --version "$version" --source "$EPCO_DELIVERY_IMAGE_SOURCE_SHA"
       - name: Run original application PG acceptance with digest pulls
         run: mise exec -- bash test/e2e/run.sh
@@ -228,6 +228,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+      - name: Pinned Python tooling
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.9.15
+          install_args: uv
       - name: Download candidate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -244,7 +249,7 @@ jobs:
           name: release-lifecycle-${{ github.run_attempt }}
           path: reports/lifecycle
       - name: Verify observations and assemble bound runtime record
-        run: python3 tools/release_ci.py aggregate --manifest candidate/manifest.json --reports reports --output runtime/release-runtime.json
+        run: mise exec -- python3 tools/release_ci.py aggregate --manifest candidate/manifest.json --reports reports --output runtime/release-runtime.json
       - name: Upload trusted runtime record
         id: evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
