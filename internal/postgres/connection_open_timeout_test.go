@@ -47,7 +47,7 @@ func TestConnectionOpenTimeoutClassification(t *testing.T) {
 			return NewRoleFactory().Open(ctx, config)
 		}},
 		{"database", func(ctx context.Context, config *Config) (any, error) {
-			return NewDatabaseFactory().Open(ctx, config)
+			return NewDatabaseFactory().Open(ctx, config, DatabaseSessionOptions{})
 		}},
 	} {
 		t.Run(factory.name+"/local connect timeout", func(t *testing.T) {

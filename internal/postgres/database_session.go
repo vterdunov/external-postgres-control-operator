@@ -16,12 +16,14 @@ import (
 const DatabaseOwnerSetRoleRequiredMessage = "The administrative connection requires SET ROLE authority for the requested database owner"
 
 type databaseSession struct {
-	connection *pgx.Conn
-	disposal   *pgxProbeConnection
-	config     Config
+	connection  *pgx.Conn
+	disposal    *pgxProbeConnection
+	config      Config
+	options     DatabaseSessionOptions
+	eligibility map[roleCapabilityKey]roleCapabilityEligibility
 }
 
-func (*databaseFactory) Open(ctx context.Context, config *Config) (DatabaseSession, error) {
+func (*databaseFactory) Open(ctx context.Context, config *Config, options DatabaseSessionOptions) (DatabaseSession, error) {
 	if config == nil || config.Connection == nil || config.ConnectTimeout <= 0 || config.StatementTimeout <= 0 {
 		return nil, &Failure{InvalidConfiguration, "Database session configuration is invalid"}
 	}
@@ -39,7 +41,7 @@ func (*databaseFactory) Open(ctx context.Context, config *Config) (DatabaseSessi
 	if err != nil {
 		return nil, databaseFailure(classifyConnectError(ctx, err))
 	}
-	return &databaseSession{connection: connection, disposal: disposal, config: copyConfig}, nil
+	return &databaseSession{connection: connection, disposal: disposal, config: copyConfig, options: options, eligibility: make(map[roleCapabilityKey]roleCapabilityEligibility)}, nil
 }
 
 func openDatabaseConnection(ctx context.Context, config *Config) (*pgx.Conn, *pgxProbeConnection, error) {
@@ -154,20 +156,8 @@ func databaseFailure(err error) error {
 	return &Failure{ConnectionUnavailable, "Unable to complete PostgreSQL database or schema reconciliation"}
 }
 
-func (s *databaseSession) preflightDatabaseOwner(ctx context.Context, owner string, serverVersion int) error {
-	capability := "MEMBER"
-	if serverVersion >= 160000 {
-		capability = "SET"
-	}
-	var authorized bool
-	if err := s.connection.QueryRow(ctx,
-		"SELECT pg_catalog.pg_has_role(current_user,$1,$2)", owner, capability).Scan(&authorized); err != nil {
-		return err
-	}
-	if !authorized {
-		return &Failure{InsufficientPrivileges, DatabaseOwnerSetRoleRequiredMessage}
-	}
-	return nil
+func (s *databaseSession) preflightDatabaseOwner(ctx context.Context, owner string) error {
+	return s.ensureServiceRole(ctx, owner, RoleCapabilityProvision)
 }
 
 // selectDatabaseRole keeps inherited authority where possible. Otherwise the
@@ -229,6 +219,9 @@ func (s *databaseSession) Drop(ctx context.Context, name string) error {
 	}
 	if connected {
 		return &Failure{DeletionBlocked, "Connected sessions prevent SQL database deletion"}
+	}
+	if err = s.ensureOwnerExecution(bounded, state.Owner, RoleCapabilityCleanup); err != nil {
+		return databaseFailure(err)
 	}
 	if err = s.nontransactionalOwnerSQL(bounded, state.Owner, "DROP DATABASE "+pgx.Identifier{name}.Sanitize()); err != nil {
 		if bounded.Err() != nil {

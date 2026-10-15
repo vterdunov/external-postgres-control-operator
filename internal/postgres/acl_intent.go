@@ -27,6 +27,9 @@ func (e *aclEngine) prepareIntent(ctx context.Context, declarations []aclDeclara
 				for _, row := range matching {
 					b.GrantorOID = row.grantor
 					b.Grantor = e.catalog.rolesByOID[row.grantor].Name
+					if err = e.prepareRoleCapability(ctx, b, false, rows); err != nil {
+						return err
+					}
 					b.Pending = aclPendingRevoke
 					b.Generation = e.desired.Generation
 					b.Before = e.catalog.before(matching)
@@ -39,6 +42,9 @@ func (e *aclEngine) prepareIntent(ctx context.Context, declarations []aclDeclara
 			}
 			if e.hasDeclarationBinding(b) {
 				continue
+			}
+			if err = e.prepareRoleCapability(ctx, b, true, rows); err != nil {
+				return err
 			}
 			b.Pending = aclPendingGrant
 			b.Generation = e.desired.Generation

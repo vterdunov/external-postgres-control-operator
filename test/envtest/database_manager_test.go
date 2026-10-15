@@ -40,7 +40,9 @@ type databaseWatchFactory struct {
 	owner          string
 }
 
-func (f *databaseWatchFactory) Open(_ context.Context, c *postgres.Config) (postgres.DatabaseSession, error) {
+func (f *databaseWatchFactory) Open(_ context.Context,
+	c *postgres.Config, _ postgres.DatabaseSessionOptions,
+) (postgres.DatabaseSession, error) {
 	f.mu.Lock()
 	f.host = c.Connection.Host
 	f.password = c.Connection.Password
@@ -137,7 +139,10 @@ func startDatabaseManagerWithClient(ctx context.Context, f *databaseWatchFactory
 	return cached
 }
 
-// Record returned candidates, without depending on selector spelling or call ordering.
+// Record cross-namespace owner candidate lookups without depending on field
+// selector spelling or call ordering. Namespace-scoped lists belong to the
+// Namespace/Secret watch mappers, rather than owner dependency evaluation.
+// An unindexed owner lookup remains measured and fails the candidate bound.
 type databaseOwnerCandidateClient struct {
 	client.Client
 	mu             sync.Mutex
@@ -151,6 +156,11 @@ func (c *databaseOwnerCandidateClient) List(ctx context.Context, objects client.
 		return err
 	}
 	if roles, ok := objects.(*epco.DatabaseRoleList); ok {
+		listOptions := &client.ListOptions{}
+		listOptions.ApplyOptions(options)
+		if listOptions.Namespace != "" {
+			return nil
+		}
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		c.lists++

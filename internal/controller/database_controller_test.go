@@ -96,7 +96,7 @@ func (s *databaseSessionStub) Close(context.Context) error { s.closed++; return 
 
 type databaseFactoryFunc func(context.Context, *postgres.Config) (postgres.DatabaseSession, error)
 
-func (f databaseFactoryFunc) Open(ctx context.Context, c *postgres.Config) (postgres.DatabaseSession, error) {
+func (f databaseFactoryFunc) Open(ctx context.Context, c *postgres.Config, _ postgres.DatabaseSessionOptions) (postgres.DatabaseSession, error) {
 	return f(ctx, c)
 }
 func ownershipDatabase(namespace, name, uid string) *epco.Database {

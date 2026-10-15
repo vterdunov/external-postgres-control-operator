@@ -171,7 +171,20 @@ func (r *DatabaseReconciler) databasesForCluster(ctx context.Context, object cli
 	return r.databaseRequests(ctx, client.MatchingFields{databaseClusterIndex: client.ObjectKeyFromObject(object).String()})
 }
 func (r *DatabaseReconciler) databasesForNamespace(ctx context.Context, object client.Object) []reconcile.Request {
-	return r.databaseRequests(ctx, client.InNamespace(object.GetName()))
+	requests := r.databaseRequests(ctx, client.InNamespace(object.GetName()))
+	roles := &epco.DatabaseRoleList{}
+	if err := r.Client.List(ctx, roles, client.InNamespace(object.GetName())); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "Unable to list DatabaseRoles for Namespace authorization")
+		return requests
+	}
+	clusters := make(map[string]bool)
+	for _, role := range roles.Items {
+		clusters[roleClusterKey(&role)] = true
+	}
+	for key := range clusters {
+		requests = mergeDatabaseRequests(requests, r.databaseRequests(ctx, client.MatchingFields{databaseClusterIndex: key}))
+	}
+	return requests
 }
 func (r *DatabaseReconciler) databasesForRole(ctx context.Context, object client.Object) []reconcile.Request {
 	role := object.(*epco.DatabaseRole)

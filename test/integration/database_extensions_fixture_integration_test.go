@@ -114,7 +114,7 @@ func (f *extensionSQLFixture) session(ctx context.Context, restricted bool,
 		config.Connection.User, config.Connection.Password = roleSQLAdmin, f.Server.password
 	}
 	config.StatementTimeout = timeout
-	session, err := pgdatabase.NewDatabaseFactory().Open(ctx, config)
+	session, err := pgdatabase.NewDatabaseFactory().Open(ctx, config, pgdatabase.DatabaseSessionOptions{})
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	DeferCleanup(func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)

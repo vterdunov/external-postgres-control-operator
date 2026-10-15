@@ -33,7 +33,9 @@ const (
 
 type connectionAPIOfflineFactory struct{}
 
-func (connectionAPIOfflineFactory) Open(context.Context, *postgres.Config) (postgres.DatabaseSession, error) {
+func (connectionAPIOfflineFactory) Open(context.Context,
+	*postgres.Config, postgres.DatabaseSessionOptions,
+) (postgres.DatabaseSession, error) {
 	return nil, &postgres.Failure{Reason: postgres.DependenciesNotReady, Message: "isolated API test SQL outage"}
 }
 func connectionAPIRequestFor(object client.Object) ctrl.Request {
@@ -51,8 +53,10 @@ type connectionAPISession struct {
 	factory *connectionAPIFactory
 }
 
-func (f *connectionAPIFactory) Open(ctx context.Context, config *postgres.Config) (postgres.DatabaseSession, error) {
-	session, err := f.databaseWatchFactory.Open(ctx, config)
+func (f *connectionAPIFactory) Open(ctx context.Context,
+	config *postgres.Config, options postgres.DatabaseSessionOptions,
+) (postgres.DatabaseSession, error) {
+	session, err := f.databaseWatchFactory.Open(ctx, config, options)
 	if err != nil {
 		return nil, err
 	}

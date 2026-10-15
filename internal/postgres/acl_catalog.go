@@ -34,9 +34,9 @@ type aclCatalog struct {
 
 func readACLCatalog(ctx context.Context, admin roleQuerier, target roleQuerier, name string, version int) (*aclCatalog, error) {
 	c := &aclCatalog{roles: map[string]aclRole{}, rolesByOID: map[uint32]aclRole{}, schemas: map[string]aclObject{}, schemasByOID: map[uint32]aclObject{}, relations: map[uint32]aclObject{}, version: version}
-	capability := "MEMBER"
+	capability := roleCapabilityMember
 	if version >= 160000 {
-		capability = "SET"
+		capability = roleCapabilitySet
 	}
 	rows, err := admin.Query(ctx, `SELECT oid,rolname,rolsuper,pg_has_role(current_user,oid,'USAGE'),pg_has_role(current_user,oid,$1),rolname=current_user FROM pg_catalog.pg_roles`, capability)
 	if err != nil {

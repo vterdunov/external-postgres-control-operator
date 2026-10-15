@@ -13,16 +13,17 @@ import (
 )
 
 type aclEngine struct {
-	session       *databaseSession
-	desired       ACLDesired
-	targets       []epco.ManagedACLTarget
-	index         int
-	catalog       *aclCatalog
-	target        *pgx.Conn
-	targetFailure error
-	trusted       bool
-	outcomes      []epco.PermissionStatus
-	blocked       map[string]bool
+	session           *databaseSession
+	desired           ACLDesired
+	targets           []epco.ManagedACLTarget
+	index             int
+	catalog           *aclCatalog
+	target            *pgx.Conn
+	targetFailure     error
+	trusted           bool
+	serviceRoleDemand bool
+	outcomes          []epco.PermissionStatus
+	blocked           map[string]bool
 }
 type aclCheckpointFailure struct{ error }
 
@@ -46,7 +47,7 @@ func (s *databaseSession) newACLEngine(ctx context.Context, d ACLDesired, needTa
 	if !state.Exists {
 		return nil, nil, &Failure{DatabaseNotFound, databaseNotFoundMessage}
 	}
-	e := &aclEngine{session: s, desired: d, targets: cloneACLTargets(d.Targets), index: -1}
+	e := &aclEngine{session: s, desired: d, serviceRoleDemand: aclServiceRoleDemand(d, state), targets: cloneACLTargets(d.Targets), index: -1}
 	for i := range e.targets {
 		if aclTargetKey(e.targets[i]) == aclTargetKey(d.Target) {
 			e.index = i
@@ -326,6 +327,9 @@ func (e *aclEngine) reconcileBinding(ctx context.Context, b epco.ACLBinding, abs
 		}
 		return e.checkpoint(ctx)
 	}
+	if err = e.prepareRoleCapability(ctx, b, true, rows); err != nil {
+		return err
+	}
 	b.Pending = aclPendingGrant
 	b.Generation = e.desired.Generation
 	b.Before = e.catalog.before(matching)
@@ -357,6 +361,10 @@ func (e *aclEngine) reconcileBinding(ctx context.Context, b epco.ACLBinding, abs
 	return e.checkpoint(ctx)
 }
 func (e *aclEngine) revoke(ctx context.Context, b epco.ACLBinding) error {
+	if err := e.prepareRoleCapability(ctx, b, false, nil); err != nil {
+		return err
+	}
+
 	if b.Class == aclClassDatabase && b.Privilege == aclConnect {
 		if err := e.preserveConnect(ctx, b); err != nil {
 			return err

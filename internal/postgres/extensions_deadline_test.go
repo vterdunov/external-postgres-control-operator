@@ -156,7 +156,7 @@ func extensionDeadlineSession(t *testing.T, firstRow bool, timeout time.Duration
 		}
 	})
 	session, err := NewDatabaseFactory().Open(t.Context(), &Config{Connection: config,
-		ConnectTimeout: time.Second, StatementTimeout: timeout})
+		ConnectTimeout: time.Second, StatementTimeout: timeout}, DatabaseSessionOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

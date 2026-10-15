@@ -50,7 +50,7 @@ func (s *databaseSession) Apply(ctx context.Context, desired DatabaseDesired) (*
 		if buildErr != nil {
 			return nil, buildErr
 		}
-		if err = s.preflightDatabaseOwner(bounded, string(desired.Spec.Owner), state.ServerVersion); err != nil {
+		if err = s.preflightDatabaseOwner(bounded, string(desired.Spec.Owner)); err != nil {
 			return nil, databaseFailure(err)
 		}
 		// The supplied administrator retains CREATEDB. The requested owner may
@@ -193,6 +193,16 @@ func (s *databaseSession) updateDatabase(ctx context.Context, state *DatabaseSta
 	}
 	if spec.ConnectionLimit != nil && *spec.ConnectionLimit != state.ConnectionLimit {
 		options = append(options, "CONNECTION LIMIT "+strconv.FormatInt(*spec.ConnectionLimit, 10))
+	}
+	if string(spec.Owner) != state.Owner {
+		if err := s.ensureServiceRole(ctx, string(spec.Owner), RoleCapabilityProvision); err != nil {
+			return err
+		}
+	}
+	if len(options) != 0 || spec.Tablespace != "" && string(spec.Tablespace) != state.Tablespace {
+		if err := s.ensureOwnerExecution(ctx, string(spec.Owner), RoleCapabilityProvision); err != nil {
+			return err
+		}
 	}
 	if string(spec.Owner) != state.Owner || len(options) != 0 {
 		tx, err := s.connection.Begin(ctx)

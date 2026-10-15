@@ -32,8 +32,10 @@ type extensionAPISession struct {
 	host    string
 }
 
-func (f *extensionAPIFactory) Open(ctx context.Context, config *postgres.Config) (postgres.DatabaseSession, error) {
-	session, err := f.connectionAPIFactory.Open(ctx, config)
+func (f *extensionAPIFactory) Open(ctx context.Context,
+	config *postgres.Config, options postgres.DatabaseSessionOptions,
+) (postgres.DatabaseSession, error) {
+	session, err := f.connectionAPIFactory.Open(ctx, config, options)
 	if err != nil {
 		return nil, err
 	}

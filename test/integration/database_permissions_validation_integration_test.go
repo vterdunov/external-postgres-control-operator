@@ -44,8 +44,9 @@ type validationCheckpointSession struct {
 	owner *validationCheckpointFactory
 }
 
-func (f *validationCheckpointFactory) Open(ctx context.Context, config *pg.Config) (pg.DatabaseSession, error) {
-	session, err := f.delegate.Open(ctx, config)
+func (f *validationCheckpointFactory) Open(ctx context.Context, config *pg.Config,
+	options pg.DatabaseSessionOptions) (pg.DatabaseSession, error) {
+	session, err := f.delegate.Open(ctx, config, options)
 	if err != nil {
 		return nil, err
 	}

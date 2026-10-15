@@ -14,7 +14,20 @@ const (
 
 // DatabaseFactory opens isolated administrative database sessions.
 type DatabaseFactory interface {
-	Open(context.Context, *Config) (DatabaseSession, error)
+	Open(context.Context, *Config, DatabaseSessionOptions) (DatabaseSession, error)
+}
+
+// RoleCapabilityPurpose limits automatic membership acquisition to its operation.
+type RoleCapabilityPurpose string
+
+const (
+	RoleCapabilityProvision RoleCapabilityPurpose = "provision"
+	RoleCapabilityCleanup   RoleCapabilityPurpose = "cleanup"
+)
+
+// DatabaseSessionOptions provides cached Kubernetes eligibility, not SQL authority.
+type DatabaseSessionOptions struct {
+	ResolveRoleCapability func(context.Context, string, RoleCapabilityPurpose) (bool, error)
 }
 
 // DatabaseSession isolates database and target-schema operations from controllers.

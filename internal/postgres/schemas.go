@@ -75,6 +75,45 @@ func (s *databaseSession) applySchemas(ctx context.Context, database *DatabaseSt
 		return err
 	}
 	defer closeDatabaseConnection(disposal)
+	// Resolve concrete owners before opening the mutation transaction. Service
+	// membership is cluster-global and commits independently of schema changes.
+	for _, schema := range schemas {
+		state, inspectErr := inspectSchema(ctx, connection, string(schema.Name))
+		if inspectErr != nil {
+			return inspectErr
+		}
+		if schema.Ensure == epco.EnsureAbsent {
+			if state.Exists {
+				owner := state.Owner
+				if owner == databaseOwnerRole {
+					owner = database.Owner
+				}
+				if err = s.ensureOwnerExecution(ctx, owner, RoleCapabilityCleanup); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		owner := string(schema.Owner)
+		if state.Exists && (owner == "" || owner == state.Owner) {
+			continue
+		}
+		if owner == "" {
+			owner = database.Owner
+		}
+		if err = s.ensureServiceRole(ctx, owner, RoleCapabilityProvision); err != nil {
+			return err
+		}
+		if state.Exists {
+			currentOwner := state.Owner
+			if currentOwner == databaseOwnerRole {
+				currentOwner = database.Owner
+			}
+			if err = s.ensureOwnerExecution(ctx, currentOwner, RoleCapabilityProvision); err != nil {
+				return err
+			}
+		}
+	}
 	tx, err := connection.Begin(ctx)
 	if err != nil {
 		return err

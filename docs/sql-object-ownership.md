@@ -41,6 +41,14 @@ A live Database with ensure=absent still records management of its SQL name. A c
 
 The intended winner is the first recorded manager. Kubernetes can accept both CRs, and strict kubectl apply ordering is not guaranteed. The CNPG list/status check is not an atomic distributed claim. No separate ownership ConfigMap, SQL claim table, or UID tombstone is required for this conflict model. Permission bookkeeping is a separate requirement for declarative removal of grants.
 
+## Administrative service capability
+
+Database owns lazy repair of missing SET authority for eligible recorded manage-mode DatabaseRoles on the same canonical descriptor. It checks both resource namespaces against the current descriptor. Recorded management wins over unreconciled contenders; SQL existence alone is not evidence of eligibility. Existing usable SQL authority remains sufficient. A deleting role may supply historical cleanup or actual-owner DROP authority without a desired-owner Ready gate. No new CRD/status fields or separate capability journal are involved.
+
+The helper makes bounded, backend-authorized, additive membership grants and confirms identity, exact grantor-specific options and effective SET (MEMBER on PostgreSQL 15). PostgreSQL 16+ new rows use SET=true, INHERIT=false, ADMIN=false; existing rows change only SET and preserve independent grantors. ACL preparation repairs only concrete owners/creators or exact cleanup grantors before candidate intent is checkpointed, never ordinary grantees. Extension-only operations acquire no service membership. ALTER DATABASE OWNER retains its inherited-old-owner requirement and does not acquire INHERIT.
+
+Service grants are retained across shared Database lifecycles, owner changes, retain/delete, management-policy changes and connection rotation. Database does not revoke shared administrative memberships. Native DROP ROLE removes memberships only when dependency checks permit role deletion. Credentials rotation and resource removal do not offboard old SQL administrators; explicit revocation is separate. Current-state retry recovers SQL success followed by failed status publication without rollback of retained service access.
+
 ## Current connection and endpoint changes
 
 Database and DatabaseRole cluster references remain immutable, following CNPG. PostgresCluster is our external connection descriptor, which CNPG does not provide.
