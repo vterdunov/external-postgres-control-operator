@@ -89,6 +89,19 @@ class RemovalTests(DeliveryCase):
 
 
 class ImageTests(DeliveryCase):
+    def test_buildx_uses_the_catalog_pinned_mirror_for_its_builder(self):
+        catalog = json.loads((self.repo / "test/images/catalog.json").read_text())["images"]
+        entry = next(image for image in catalog if image["name"] == "buildkit")
+        expected = entry["destination"] + "@" + entry["source"].rsplit("@", 1)[1]
+        result = self.run_cli("bash", "tools/image.sh", "buildx")
+        self.assert_success(result)
+        creates = [call for call in self.calls() if call["args"][:2] == ["buildx", "create"]]
+        self.assertEqual(len(creates), 1)
+        args = creates[0]["args"]
+        options = [argument.split("=", 1)[1] for argument in args if argument.startswith("--driver-opt=")]
+        options.extend(args[index + 1] for index, argument in enumerate(args[:-1]) if argument == "--driver-opt")
+        self.assertIn("image=" + expected, options, "Buildx must not pull its unpinned default builder")
+
     def test_buildx_uses_only_supported_platforms(self):
         result = self.run_cli("bash", "tools/image.sh", "buildx")
         self.assert_success(result)

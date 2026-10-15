@@ -10,6 +10,12 @@ selects PostgreSQL 15.19, 16.15, 17.11 or 18.6; 16 is the default. Unsupported
 values fail before runtime resources are acquired. Application Jobs use a
 separately pinned PostgreSQL 16.15 client on every server major.
 
+Kind, server and client images are pulled from the project's public GHCR mirror.
+Their complete upstream indexes and immutable digests are recorded in
+[`test/images/catalog.json`](../images/catalog.json). The node image includes
+Kind's preloaded Kubernetes, networking and storage images. The operator suite
+prepares the exact native client on every node before starting scenario timers.
+
 The suite verifies one healthy manager, HTTP health/readiness, HTTPS metrics
 with authorized, missing and unauthorized tokens, an authenticated
 PostgreSQL TCP connection, and CRUD for all existing CRDs. The installed

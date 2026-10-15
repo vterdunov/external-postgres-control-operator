@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -35,11 +36,13 @@ func TestFixtures(t *testing.T) {
 
 var _ = Describe("PostgreSQL fixture support", func() {
 	It("pins supported images and rejects accidental untested versions", func() {
+		const imagePrefix = "ghcr.io/vterdunov/external-postgres-control-operator:mirror-postgres-"
 		patches := map[string]string{"15": "15.19", "16": "16.15", "17": "17.11", "18": "18.6"}
 		for _, major := range []string{"15", "16", "17", "18"} {
 			image, err := ImageForVersion(major)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(image).To(Equal("docker.io/library/postgres:" + patches[major] + "-bookworm"))
+			prefix := imagePrefix + patches[major] + "-bookworm@sha256:"
+			Expect(image).To(MatchRegexp("^" + regexp.QuoteMeta(prefix) + "[a-f0-9]{64}$"))
 			Expect(image).NotTo(ContainSubstring("latest"))
 		}
 		_, err := ImageForVersion("14")

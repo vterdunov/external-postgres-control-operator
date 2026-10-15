@@ -298,7 +298,7 @@ func (app *r6Application) migration(ctx context.Context, name, ddl string, gated
 	gateName := name + "-gate"
 	gate := &corev1.ConfigMap{Namespace: app.namespace.Name, Name: gateName, Data: map[string]string{}}
 	if !gated {
-		gate.Data["ready"] = r6GateReady
+		gate.Data[installedReadyKey] = r6GateReady
 	}
 	ExpectWithOffset(1, apiClient.Create(ctx, gate)).To(Succeed())
 	const connectScript = `export PGHOST="$(cat /connection/host)" PGPORT="$(cat /connection/port)"
@@ -402,7 +402,7 @@ func (app *r6Application) migrate(ctx context.Context) {
 	gate := &corev1.ConfigMap{}
 	ExpectWithOffset(1, apiClient.Get(ctx,
 		client.ObjectKey{Namespace: app.namespace.Name, Name: job.Name + "-gate"}, gate)).To(Succeed())
-	gate.Data = map[string]string{"ready": r6GateReady}
+	gate.Data = map[string]string{installedReadyKey: r6GateReady}
 	ExpectWithOffset(1, apiClient.Update(ctx, gate)).To(Succeed())
 	r6RefreshMigrationGate(ctx, job, gate.ResourceVersion)
 	r6MigrationComplete(ctx, job)

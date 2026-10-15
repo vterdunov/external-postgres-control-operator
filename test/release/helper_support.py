@@ -70,8 +70,9 @@ class PreparationFixture(ReleaseFixture):
         super().__init__(directory, stream)
         self.source = self.root / "source"
         (self.source / "tools").mkdir(parents=True)
-        for name in ("release_ci.py", "release.py", "chart.py", "deploy.sh"):
+        for name in ("release_ci.py", "release.py", "chart.py", "deploy.sh", "image_mirror.py"):
             shutil.copyfile(ROOT / "tools" / name, self.source / "tools" / name)
+        shutil.copytree(ROOT / "test/images", self.source / "test/images")
         shutil.copytree(ROOT / "config", self.source / "config")
         shutil.copytree(ROOT / "charts", self.source / "charts")
         chart = self.source / "charts/external-postgres-control-operator/Chart.yaml"

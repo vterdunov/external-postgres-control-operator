@@ -15,6 +15,19 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class WorkflowReleaseContractTests(unittest.TestCase):
+    def test_image_preparation_pins_buildkit_and_qemu_to_catalog_mirrors(self):
+        catalog = json.loads((ROOT / "test/images/catalog.json").read_text())["images"]
+        references = {entry["name"]: entry["destination"] + "@" + entry["source"].rsplit("@", 1)[1]
+                      for entry in catalog}
+        steps = self.workflows()["image"]["jobs"]["prepare"]["steps"]
+        builders = [step for step in steps if step.get("uses", "").startswith("docker/setup-buildx-action@")]
+        emulators = [step for step in steps if step.get("uses", "").startswith("docker/setup-qemu-action@")]
+        self.assertEqual(len(builders), 1)
+        self.assertEqual(len(emulators), 1)
+        self.assertIn("image=" + references["buildkit"], builders[0].get("with", {}).get("driver-opts", ""))
+        self.assertEqual(emulators[0].get("with", {}).get("image"), references["binfmt"],
+                         "The QEMU installer must use the accepted immutable binfmt mirror")
+
     def workflows(self):
         helm = shutil.which("helm")
         self.assertIsNotNone(helm, "Run workflow structure tests with pinned mise tools")

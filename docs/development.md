@@ -67,6 +67,23 @@ Architecture checks include generated API Go sources and exclude `_test.go` file
 
 ## Test suites
 
+Build and test images use the public GHCR package
+`ghcr.io/vterdunov/external-postgres-control-operator` with separate `mirror-*`
+tags. [`test/images/catalog.json`](../test/images/catalog.json) records pinned
+upstream digests for PostgreSQL 15-18, Go, distroless, Kind, BuildKit, binfmt and
+the SBOM scanner. Consumers use the mirrored tag plus its digest. The Kind node
+mirror includes its preloaded control-plane, networking and storage images.
+Devcontainer Features already hosted on GHCR retain their existing references.
+
+The `mirror images` GitHub Actions workflow runs daily at 03:17 UTC and supports
+manual dispatch. It copies complete multiarch indexes with the repository token,
+verifies destination digests, skips matching mirrors, and refuses conflicting
+tags or ambiguous registry failures. It neither upgrades pinned versions nor
+deletes image versions. To upgrade a dependency, update its catalog digest and
+any literal build defaults in the same PR; synchronize the mirror before CI
+consumers use it. Run `mise exec -- python3 tools/image_mirror.py sync` to perform
+the same operation with an authenticated local registry keychain.
+
 | Task | Coverage and requirements |
 | --- | --- |
 | `test-unit` | Fast unit/race tests, randomized specs, runner tests, and architecture-policy tests; no container runtime or envtest assets |

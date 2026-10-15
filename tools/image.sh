@@ -18,7 +18,8 @@ case "${1:-}" in
       exit "$status"
     }
     trap cleanup EXIT
-    "$container_tool" buildx create --name "$builder" --use
+    buildkit_image=$(python3 tools/image_mirror.py reference buildkit)
+    "$container_tool" buildx create --name "$builder" --use --driver-opt "image=$buildkit_image"
     "$container_tool" buildx build --builder "$builder" --push --platform="${PLATFORMS:-linux/amd64,linux/arm64}" ${args[@]+"${args[@]}"} --tag "$image" -f Dockerfile .
     ;;
   *) echo 'Expected build, push or buildx' >&2; exit 2 ;;

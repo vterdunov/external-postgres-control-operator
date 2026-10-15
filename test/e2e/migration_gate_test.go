@@ -4,6 +4,8 @@ package e2e
 
 import (
 	"reflect"
+	"regexp"
+	"strings"
 	"testing"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -14,6 +16,24 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+func TestInstalledClientImage(t *testing.T) {
+	t.Run("defaults to the digest-pinned GHCR PostgreSQL client", func(t *testing.T) {
+		t.Setenv("EPCO_E2E_CLIENT_IMAGE", "")
+		const prefix = "ghcr.io/vterdunov/external-postgres-control-operator:mirror-postgres-16.15-bookworm@sha256:"
+		pattern := regexp.MustCompile("^" + regexp.QuoteMeta(prefix) + "[a-f0-9]{64}$")
+		if image := installedClientImage(); !pattern.MatchString(image) {
+			t.Fatalf("default client image is not the pinned GHCR PostgreSQL fixture: %q", image)
+		}
+	})
+	t.Run("uses the selected runner client image", func(t *testing.T) {
+		image := "ghcr.io/fixture/client:custom@sha256:" + strings.Repeat("b", 64)
+		t.Setenv("EPCO_E2E_CLIENT_IMAGE", image)
+		if actual := installedClientImage(); actual != image {
+			t.Fatalf("runner image selection changed: got %q want %q", actual, image)
+		}
+	})
+}
 
 func migrationGateJob() *batchv1.Job {
 	return &batchv1.Job{Namespace: "migration-gate-fixture", Name: "application-migration", UID: types.UID("job-uid")}
@@ -30,7 +50,7 @@ func migrationGatePod(job *batchv1.Job, name string) *corev1.Pod {
 			APIVersion: "batch/v1", Kind: r6MigrationJobKind, Name: job.Name, UID: job.UID, Controller: new(true),
 		}},
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{
-			Name: "migration", Image: "docker.io/library/postgres:16.15-bookworm",
+			Name: "migration", Image: installedClientImage(),
 		}}},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning},
 	}

@@ -20,6 +20,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/vterdunov/external-postgres-control-operator/test/images"
 	"github.com/vterdunov/external-postgres-control-operator/test/utils"
 )
 
@@ -28,17 +29,14 @@ const (
 	tlsPrefer    = "prefer"
 )
 
-// ImageForVersion pins every supported PostgreSQL major to an explicit patch tag.
+// ImageForVersion selects the digest-pinned GHCR mirror for a supported major.
 func ImageForVersion(major string) (string, error) {
-	images := map[string]string{
-		"15": "postgres:15.19-bookworm", "16": "postgres:16.15-bookworm",
-		"17": "postgres:17.11-bookworm", "18": "postgres:18.6-bookworm",
-	}
-	image, ok := images[major]
-	if !ok {
+	switch major {
+	case "15", "16", "17", "18":
+		return images.Reference("postgres-" + major)
+	default:
 		return "", fmt.Errorf("unsupported PostgreSQL version %q (supported: 15-18)", major)
 	}
-	return "docker.io/library/" + image, nil
 }
 
 // Options configures an isolated PostgreSQL suite. RunID is the runner's ownership label.

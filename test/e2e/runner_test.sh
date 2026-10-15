@@ -13,6 +13,9 @@ unset EPCO_PG_VERSION EPCO_E2E_BUILD_MODE EPCO_E2E_CLIENT_IMAGE EPCO_E2E_POSTGRE
 unset EPCO_E2E_IMAGE_REFERENCE EPCO_E2E_SUITE EPCO_DELIVERY_CHART_PACKAGE EPCO_DELIVERY_IMAGE_REFERENCE
 unset EPCO_DELIVERY_IMAGE_SOURCE_SHA EPCO_DELIVERY_CHART_SOURCE_SHA EPCO_DELIVERY_LOCAL_IMAGE
 unset EPCO_E2E_INSTALL_MODE
+mirror_reference() { python3 "$suite_dir/../../tools/image_mirror.py" reference "$1"; }
+pinned_client_image=$(mirror_reference postgres-16)
+export E2E_FAKE_DEFAULT_POSTGRES_IMAGE="$pinned_client_image"
 export E2E_FAKE_REAL_PYTHON
 E2E_FAKE_REAL_PYTHON=$(python3 -c 'import sys; print(sys.executable)')
 export EPCO_TEST_SEED=60211015
@@ -71,6 +74,21 @@ case "$name $*" in
     [[ " $* " == *' --context kind-epco-e2e-'* ]] || exit 99
     [[ " $* " == *' --kubeconfig '* ]] || exit 98
     if [[ ${E2E_FAKE_FAIL:-} == apply && " $* " == *' apply '* ]]; then exit 19; fi
+    if [[ " $* " == *' rollout status daemonset/client-image-cache '* ]]; then
+      [[ ${E2E_FAKE_FAIL:-} != client-ready ]] || exit 43
+      [[ -f $E2E_FAKE_LOG.client-manifest ]] || exit 93
+      printf 'All owned nodes have Ready native clients\n' > "$E2E_FAKE_LOG.client-ready"
+    fi
+    if [[ " $* " == *' get daemonset/client-image-cache '* ]]; then
+      [[ " $* " == *' -n epco-postgres '* ]] || exit 92
+      case ${E2E_FAKE_FAIL:-} in
+        client-zero) printf '0 0\n' ;;
+        client-partial) printf '2 1\n' ;;
+        *) printf '1 1\n' ;;
+      esac
+      printf 'Live DaemonSet node coverage observed\n' > "$E2E_FAKE_LOG.client-coverage"
+      exit 0
+    fi
     if [[ " $* " == *' exec '* && " $* " == *client_connection_check_interval* ]]; then
       if [[ ${E2E_FAKE_PG_SETTING:-100} != missing ]]; then
         printf '%s\n' "${E2E_FAKE_PG_SETTING:-100}"
@@ -78,6 +96,10 @@ case "$name $*" in
       exit 0
     fi
     while [[ $# -gt 0 ]]; do
+      if [[ $1 == -f && -f ${2:-} ]] && grep -Eq '^kind:[[:space:]]*DaemonSet$' "$2"; then
+        [[ ${E2E_FAKE_FAIL:-} != client-apply ]] || exit 41
+        cp "$2" "$E2E_FAKE_LOG.client-manifest"
+      fi
       if [[ $1 == -f && $2 == */postgres.yaml ]]; then
         postgres_image=$(awk '/^[[:space:]]*image:/ { print $2 }' "$2")
         printf '%s\n' "$postgres_image" > "$E2E_FAKE_LOG.server-image"
@@ -91,7 +113,7 @@ with open(sys.argv[1], encoding="utf-8") as source:
 print("100ms" if args == [["postgres", "-c", "client_connection_check_interval=100ms"]]
       else "unconfigured")
 PY
-        if [[ $postgres_image != "${E2E_FAKE_POSTGRES_IMAGE:-docker.io/library/postgres:16.15-bookworm}" ]]; then
+        if [[ $postgres_image != "${E2E_FAKE_POSTGRES_IMAGE:-$E2E_FAKE_DEFAULT_POSTGRES_IMAGE}" ]]; then
           printf 'FAIL PostgreSQL fixture image: %s\n' "$postgres_image" >&2
           exit 95
         fi
@@ -186,8 +208,8 @@ release_runner_cases() {
         delivery) major=18; patch=18.6 ;;
         delivery-failure) major=16; patch=16.15 ;;
       esac
-      server_image="docker.io/library/postgres:$patch-bookworm"
-      client_image=docker.io/library/postgres:16.15-bookworm
+      server_image=$(mirror_reference "postgres-$major")
+      client_image=$pinned_client_image
       export EPCO_PG_VERSION=$major E2E_FAKE_POSTGRES_IMAGE=$server_image
     fi
     set +e
@@ -268,6 +290,120 @@ release_runner_cases() {
   unset EPCO_DELIVERY_IMAGE_SOURCE_SHA EPCO_DELIVERY_CHART_SOURCE_SHA
 }
 
+client_preparation_runner_cases() {
+  local mode expected status reference package failures=0 before_failures
+  local server_line ready_line coverage_line behavior_line
+  reference="ghcr.io/vterdunov/external-postgres-control-operator:0.1.0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  package="$fixture/external-postgres-control-operator-0.2.1.tgz"
+  printf 'fixture chart archive\n' > "$package"
+  for mode in docker local prebuilt chart-operator delivery client-apply client-ready client-zero client-partial; do
+    before_failures=$failures
+    export E2E_FAKE_LOG="$fixture/client-$mode.log" E2E_FAKE_FAIL=none
+    export EPCO_E2E_PROJECT_DIR="$fixture/source" EPCO_ARTIFACTS_DIR="$fixture/artifacts/client-$mode"
+    E2E_FAKE_POSTGRES_IMAGE=$(mirror_reference postgres-18)
+    export EPCO_PG_VERSION=18 E2E_FAKE_POSTGRES_IMAGE
+    unset EPCO_E2E_BUILD_MODE EPCO_E2E_IMAGE_REFERENCE EPCO_E2E_INSTALL_MODE EPCO_E2E_SUITE
+    unset EPCO_DELIVERY_CHART_PACKAGE EPCO_DELIVERY_IMAGE_REFERENCE
+    unset EPCO_DELIVERY_IMAGE_SOURCE_SHA EPCO_DELIVERY_CHART_SOURCE_SHA
+    expected=0
+    case $mode in
+      local) export EPCO_E2E_BUILD_MODE=local ;;
+      prebuilt|chart-operator|delivery|client-apply|client-ready|client-zero|client-partial)
+        export EPCO_E2E_BUILD_MODE=prebuilt EPCO_E2E_IMAGE_REFERENCE="$reference" ;;
+    esac
+    case $mode in
+      chart-operator|delivery)
+        export EPCO_DELIVERY_CHART_PACKAGE="$package" EPCO_DELIVERY_IMAGE_REFERENCE="$reference"
+        export EPCO_DELIVERY_IMAGE_SOURCE_SHA=1111111111111111111111111111111111111111
+        export EPCO_DELIVERY_CHART_SOURCE_SHA=2222222222222222222222222222222222222222 ;;
+    esac
+    case $mode in
+      chart-operator) export EPCO_E2E_INSTALL_MODE=chart ;;
+      delivery) export EPCO_E2E_SUITE=delivery ;;
+      client-apply) export E2E_FAKE_FAIL=client-apply; expected=41 ;;
+      client-ready) export E2E_FAKE_FAIL=client-ready; expected=43 ;;
+      client-zero) export E2E_FAKE_FAIL=client-zero; expected=2 ;;
+      client-partial) export E2E_FAKE_FAIL=client-partial; expected=2 ;;
+    esac
+    : > "$E2E_FAKE_LOG"
+    set +e
+    PATH="$fixture/bin:$PATH" bash "$suite_dir/run.sh" > "$E2E_FAKE_LOG.output" 2>&1
+    status=$?
+    set -e
+    if [[ $status != "$expected" ]]; then
+      printf 'FAIL client preparation %s: expected status %s, got %s\n' "$mode" "$expected" "$status" >&2
+      failures=$((failures + 1))
+    fi
+    if [[ $mode == delivery ]]; then
+      if [[ -f $E2E_FAKE_LOG.client-manifest ]] ||
+        grep -Eq "^docker pull $pinned_client_image$|^kind load docker-image|^go test " "$E2E_FAKE_LOG"; then
+        printf 'FAIL client preparation delivery: migration client acquired without Go scenarios\n' >&2
+        failures=$((failures + 1))
+      fi
+    elif [[ $expected != 0 ]]; then
+      if [[ -f $E2E_FAKE_LOG.argv ]] ||
+        { [[ $mode == client-apply || $mode == client-ready ]] && [[ -f $E2E_FAKE_LOG.client-ready ]]; }; then
+        printf 'FAIL client preparation %s: failed preparation reached semantic Go scenarios or recorded client readiness\n' "$mode" >&2
+        failures=$((failures + 1))
+      fi
+      if [[ $mode == client-apply ]] && grep -q 'rollout status daemonset/client-image-cache' "$E2E_FAKE_LOG"; then
+        printf 'FAIL client preparation %s: readiness continued after API apply failure\n' "$mode" >&2
+        failures=$((failures + 1))
+      fi
+      if [[ ! -f $EPCO_ARTIFACTS_DIR/runner-junit.xml ]] ||
+        ! grep -Fq "Exit status $expected" "$EPCO_ARTIFACTS_DIR/runner-junit.xml"; then
+        printf 'FAIL client preparation %s: preparation failure report lost the original API/readiness status\n' "$mode" >&2
+        failures=$((failures + 1))
+      fi
+    else
+      server_line=$(awk '/^kubectl .*rollout status deployment\/postgres/ { print NR; exit }' "$E2E_FAKE_LOG")
+      ready_line=$(awk '/^kubectl .*rollout status daemonset\/client-image-cache/ { print NR; exit }' "$E2E_FAKE_LOG")
+      coverage_line=$(awk '/^kubectl .*get daemonset\/client-image-cache/ { print NR; exit }' "$E2E_FAKE_LOG")
+      behavior_line=$(awk '/^go test / && !/ -run (\^\$|-run=\^\$)/ { print NR; exit }' "$E2E_FAKE_LOG")
+      if [[ ! -f $E2E_FAKE_LOG.client-ready || ! -f $E2E_FAKE_LOG.client-coverage ||
+            -z $server_line || -z $ready_line || -z $coverage_line ||
+            -z $behavior_line || $server_line -ge $ready_line || $ready_line -ge $coverage_line ||
+            $coverage_line -ge $behavior_line ]] ||
+        ! grep -Eq '^kubectl .* -n epco-postgres rollout status daemonset/client-image-cache --timeout=[1-9][0-9]*s$' "$E2E_FAKE_LOG"; then
+        printf 'FAIL client preparation %s: native client DaemonSet must be Ready after PostgreSQL and before Go scenarios\n' "$mode" >&2
+        failures=$((failures + 1))
+      fi
+      if [[ ! -f $E2E_FAKE_LOG.client-manifest ]] ||
+        ! grep -Eq '^[[:space:]]*namespace:[[:space:]]*epco-postgres$' "$E2E_FAKE_LOG.client-manifest" ||
+        ! grep -Eq "^[[:space:]]*image:[[:space:]]*$pinned_client_image$" "$E2E_FAKE_LOG.client-manifest" ||
+        ! grep -Eq '^[[:space:]]*imagePullPolicy:[[:space:]]*IfNotPresent$' "$E2E_FAKE_LOG.client-manifest" ||
+        ! grep -Eq 'command:.*sleep.*infinity' "$E2E_FAKE_LOG.client-manifest" ||
+        ! grep -Eq '^[[:space:]]*automountServiceAccountToken:[[:space:]]*false$' "$E2E_FAKE_LOG.client-manifest" ||
+        ! grep -Eq '^[[:space:]]*(-[[:space:]]*)?operator:[[:space:]]*Exists$' "$E2E_FAKE_LOG.client-manifest" ||
+        ! grep -Eq '^[[:space:]]*effect:[[:space:]]*NoSchedule$' "$E2E_FAKE_LOG.client-manifest" ||
+        grep -Eq '^[[:space:]]*(app:[[:space:]]*postgres|hostNetwork:|hostPID:|hostIPC:|hostPath:|nodeSelector:|affinity:)' "$E2E_FAKE_LOG.client-manifest"; then
+        printf 'FAIL client preparation %s: native fixture must keep the exact pinned image warm on tainted owned nodes\n' "$mode" >&2
+        failures=$((failures + 1))
+      fi
+    fi
+    if grep -Eq "^docker pull $pinned_client_image$|^kind load docker-image $pinned_client_image" "$E2E_FAKE_LOG"; then
+      printf 'FAIL client preparation %s: native client preparation used a host archive import\n' "$mode" >&2
+      failures=$((failures + 1))
+    fi
+    if [[ $mode == prebuilt || $mode == chart-operator || $mode == delivery || $expected != 0 ]]; then
+      if grep -Eq '^docker (build|push|tag|image rm)|^go build |^kind load docker-image' "$E2E_FAKE_LOG"; then
+        printf 'FAIL client preparation %s: reused public application image was rebuilt, loaded, or removed\n' "$mode" >&2
+        failures=$((failures + 1))
+      fi
+    fi
+    if [[ $(grep -c '^kind delete cluster --name epco-e2e-' "$E2E_FAKE_LOG") != 1 ||
+          $(cksum "$fixture/source/test/e2e/database_connections_test.go") != "$go_source_checksum" ]]; then
+      printf 'FAIL client preparation %s: owned cleanup/source immutability failed\n' "$mode" >&2
+      failures=$((failures + 1))
+    fi
+    if [[ $failures == "$before_failures" ]]; then printf 'PASS client preparation %s\n' "$mode"; fi
+  done
+  unset EPCO_E2E_BUILD_MODE EPCO_E2E_IMAGE_REFERENCE EPCO_E2E_SUITE EPCO_E2E_INSTALL_MODE
+  unset EPCO_DELIVERY_IMAGE_REFERENCE EPCO_DELIVERY_CHART_PACKAGE
+  unset EPCO_DELIVERY_IMAGE_SOURCE_SHA EPCO_DELIVERY_CHART_SOURCE_SHA E2E_FAKE_POSTGRES_IMAGE EPCO_PG_VERSION
+  [[ $failures == 0 ]]
+}
+
 fixture_runner_cases() {
   local mode status expected reference package chart_source application_source
   local rollout_line measurement_line behavior_line failures=0 before_failures
@@ -280,7 +416,8 @@ fixture_runner_cases() {
     before_failures=$failures
     export E2E_FAKE_LOG="$fixture/fixture-$mode.log" E2E_FAKE_FAIL=none
     export EPCO_E2E_PROJECT_DIR="$fixture/source" EPCO_ARTIFACTS_DIR="$fixture/artifacts/fixture-$mode"
-    export EPCO_PG_VERSION=18 E2E_FAKE_POSTGRES_IMAGE=docker.io/library/postgres:18.6-bookworm
+    E2E_FAKE_POSTGRES_IMAGE=$(mirror_reference postgres-18)
+    export EPCO_PG_VERSION=18 E2E_FAKE_POSTGRES_IMAGE
     export E2E_FAKE_PG_SETTING=100
     unset EPCO_E2E_BUILD_MODE EPCO_E2E_IMAGE_REFERENCE EPCO_E2E_INSTALL_MODE EPCO_E2E_SUITE
     unset EPCO_DELIVERY_CHART_PACKAGE EPCO_DELIVERY_IMAGE_REFERENCE
@@ -431,6 +568,10 @@ if [[ ${EPCO_E2E_RUNNER_TEST_SCOPE:-all} == release ]]; then
   release_runner_cases
   exit
 fi
+if [[ ${EPCO_E2E_RUNNER_TEST_SCOPE:-all} == client-preparation ]]; then
+  client_preparation_runner_cases
+  exit
+fi
 for failure in none kind apply test signal interrupt diagnostics cleanup test-cleanup; do
   export E2E_FAKE_LOG="$fixture/$failure.log" E2E_FAKE_FAIL=$failure
   export EPCO_E2E_PROJECT_DIR="$fixture/source" EPCO_ARTIFACTS_DIR="$fixture/artifacts/$failure"
@@ -517,7 +658,8 @@ for selection in default 15 16 17 18 local; do
     local) major=17; patch=17.11; build_mode=local; export EPCO_E2E_BUILD_MODE=local ;;
   esac
   if [[ $selection != default ]]; then export EPCO_PG_VERSION=$major; fi
-  export E2E_FAKE_POSTGRES_IMAGE="docker.io/library/postgres:$patch-bookworm"
+  E2E_FAKE_POSTGRES_IMAGE=$(mirror_reference "postgres-$major")
+  export E2E_FAKE_POSTGRES_IMAGE
   prepare_case "version-$selection"
   run_case
   if [[ $status != 0 ]]; then
@@ -529,10 +671,10 @@ for selection in default 15 16 17 18 local; do
   [[ $(cat "$E2E_FAKE_LOG.server-env") == "$E2E_FAKE_POSTGRES_IMAGE" ]] || fail "$selection server image was not propagated to suite"
   client_image=$(cat "$E2E_FAKE_LOG.client-env")
   client_version=16.15
-  [[ $client_image == docker.io/library/postgres:16.15-bookworm ]] || fail "$selection suite client image is not the pinned Docker Hub PostgreSQL 16.15 fixture"
+  [[ $client_image == "$pinned_client_image" ]] || fail "$selection suite client image is not the pinned GHCR PostgreSQL 16.15 fixture"
   context=$(cat "$E2E_FAKE_LOG.context")
   kubeconfig=$(cat "$E2E_FAKE_LOG.kubeconfig")
-  manager_image=$(awk '/^kind load docker-image/ { print $4 }' "$E2E_FAKE_LOG")
+  manager_image=$(awk '/^kind load docker-image epco\/e2e:/ { print $4 }' "$E2E_FAKE_LOG")
   [[ $(cat "$E2E_FAKE_LOG.artifacts") == "$EPCO_ARTIFACTS_DIR" ]] || fail "$selection suite artifact path"
   grep -Fq -- "-ginkgo.seed=$EPCO_TEST_SEED" "$E2E_FAKE_LOG" || fail "$selection randomized seed"
   [[ $context == kind-epco-e2e-* && $context != "$previous_context" ]] || fail "$selection context reused"
@@ -661,6 +803,7 @@ done
 release_runner_cases
 fixture_runner_cases
 overlay_runner_cases
+client_preparation_runner_cases
 "$E2E_FAKE_REAL_PYTHON" -m unittest discover -s "$suite_dir" -p fixture_overlay_test.py
 "$E2E_FAKE_REAL_PYTHON" -m unittest discover -s "$suite_dir" -p migration_fixture_test.py
 shellcheck "$suite_dir/fixtures/migration.sh"

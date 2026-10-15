@@ -37,6 +37,7 @@ class DeliveryCase(unittest.TestCase):
         for name in ("tools", "config", "charts"):
             if (ROOT / name).exists():
                 shutil.copytree(ROOT / name, self.repo / name)
+        shutil.copytree(ROOT / "test/images", self.repo / "test/images")
         for name in ("Dockerfile", "mise.toml", "mise.lock"):
             if (ROOT / name).exists():
                 shutil.copy2(ROOT / name, self.repo / name)

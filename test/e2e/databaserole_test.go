@@ -28,6 +28,7 @@ const (
 	installedPostgresHost    = "postgres.epco-postgres.svc.cluster.local"
 	installedAllowedLabel    = "allowed"
 	installedGeneratedName   = "generated-source"
+	installedReadyKey        = "ready"
 )
 
 func installedRole(ctx context.Context, role *epco.DatabaseRole,
@@ -51,7 +52,9 @@ func installedRoleDescriptor(ctx context.Context, name string, access *epco.Clus
 		Namespace: operatorNamespace,
 		Name:      name + "-admin",
 		Type:      corev1.SecretTypeBasicAuth,
-		Data:      map[string][]byte{"username": []byte("postgres"), "password": fixture.Data["password"]},
+		Data: map[string][]byte{
+			corev1.BasicAuthUsernameKey: []byte(installedDatabasePostgresName),
+			corev1.BasicAuthPasswordKey: fixture.Data[corev1.BasicAuthPasswordKey]},
 	}
 	ExpectWithOffset(1, apiClient.Create(ctx, admin)).To(Succeed())
 	DeferCleanup(func() { deleteObject(admin) })

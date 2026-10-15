@@ -70,10 +70,11 @@ chmod 600 "$kubeconfig"
 kind_owned=false
 image_owned=false
 child=''
-node_image='kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5'
-postgres_image="docker.io/library/postgres:$server_version-bookworm"
+mirror_cli="$suite_dir/../../tools/image_mirror.py"
+node_image=$(python3 "$mirror_cli" reference kind-node)
+postgres_image=$(python3 "$mirror_cli" reference "postgres-$major")
 client_version=16.15
-client_image="docker.io/library/postgres:$client_version-bookworm"
+client_image=$(python3 "$mirror_cli" reference postgres-16)
 seed=${EPCO_TEST_SEED:-$(date +%s)}
 export KUBECONFIG="$kubeconfig" KUBECTL_KUBERC=false
 export EPCO_E2E_CONTEXT="$context" EPCO_E2E_ARTIFACTS="$artifacts"
@@ -354,6 +355,49 @@ if [[ $interval_ms != 100 ]]; then
   exit 2
 fi
 printf 'server client connection check interval ms: %s\n' "$interval_ms" > "$artifacts/fixture-settings.txt"
+if [[ $suite == operator ]]; then
+  cat > "$run_dir/client-image-cache.yaml" <<CLIENT_CACHE
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: client-image-cache
+  namespace: epco-postgres
+spec:
+  selector:
+    matchLabels:
+      testing.epco.io/client-image-cache: "$run_id"
+  template:
+    metadata:
+      labels:
+        testing.epco.io/client-image-cache: "$run_id"
+    spec:
+      automountServiceAccountToken: false
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: client-image-cache
+        image: $client_image
+        imagePullPolicy: IfNotPresent
+        command: ["sleep", "infinity"]
+CLIENT_CACHE
+  kubectl_run 60 apply -f "$run_dir/client-image-cache.yaml"
+  kubectl_run 180 -n epco-postgres rollout status daemonset/client-image-cache --timeout=150s
+  kubectl_run 30 -n epco-postgres get daemonset/client-image-cache \
+    -o 'jsonpath={.status.desiredNumberScheduled} {.status.numberReady}{"\n"}'
+  coverage=$(cat "$run_dir/command-output")
+  if [[ ! $coverage =~ ^([0-9]+)[[:space:]]+([0-9]+)$ ]]; then
+    printf 'Client image readiness coverage is unavailable\n' >&2
+    exit 2
+  fi
+  desired=${BASH_REMATCH[1]}
+  ready=${BASH_REMATCH[2]}
+  if ((10#$desired == 0 || 10#$ready != 10#$desired)); then
+    printf 'Client image must be ready on every owned node: desired=%s ready=%s\n' "$desired" "$ready" >&2
+    exit 2
+  fi
+  printf 'client ready nodes: %s/%s\n' "$ready" "$desired" >> "$artifacts/fixture-settings.txt"
+fi
 if [[ $suite == delivery ]]; then
   run 1200 python3 "$suite_dir/../delivery/lifecycle.py"
 else

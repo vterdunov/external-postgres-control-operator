@@ -10,7 +10,10 @@ artifact directory, including JUnit and failure logs.
 Application connection tests use actual libpq 18.6 and pgJDBC 42.7.10 parsers and
 SQL sessions. Install the pinned Java tool through mise and provide a C compiler.
 On macOS, install libpq 18.6 through Homebrew; Linux fixtures obtain its library
-and runtime dependencies from the pinned PostgreSQL 18.6 image. The suite fetches
+and runtime dependencies from the digest-pinned PostgreSQL 18.6 mirror on GHCR.
+Docker pulls the exact mirrored reference, reusing cached layers. The immutable
+local image ID is shared by library extraction and
+consumer execution. The suite fetches
 the JDBC jar from Maven and verifies its SHA256. `EPCO_TEST_JDBC_JAR` can select a
 local jar with the same verified checksum. Credentials reach these clients only
 through private stdin and files, with child diagnostic output suppressed.
