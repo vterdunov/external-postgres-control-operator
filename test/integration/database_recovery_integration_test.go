@@ -78,8 +78,8 @@ type databaseRecoverySession struct {
 }
 
 func (f *databaseRecoveryFactory) Open(ctx context.Context,
-	config *pgdatabases.Config) (pgdatabases.DatabaseSession, error) {
-	session, err := f.delegate.Open(ctx, config)
+	config *pgdatabases.Config, options pgdatabases.DatabaseSessionOptions) (pgdatabases.DatabaseSession, error) {
+	session, err := f.delegate.Open(ctx, config, options)
 	if err != nil {
 		return nil, err
 	}

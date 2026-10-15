@@ -45,8 +45,10 @@ type capacityACLSession struct {
 	owner *capacityACLFactory
 }
 
-func (f *capacityACLFactory) Open(ctx context.Context, config *postgres.Config) (postgres.DatabaseSession, error) {
-	session, err := f.databaseWatchFactory.Open(ctx, config)
+func (f *capacityACLFactory) Open(ctx context.Context,
+	config *postgres.Config, options postgres.DatabaseSessionOptions,
+) (postgres.DatabaseSession, error) {
+	session, err := f.databaseWatchFactory.Open(ctx, config, options)
 	if err != nil {
 		return nil, err
 	}

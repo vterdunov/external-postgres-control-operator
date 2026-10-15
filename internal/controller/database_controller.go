@@ -140,7 +140,7 @@ func (r *DatabaseReconciler) reconcileDatabaseConfigured(ctx context.Context, da
 			return r.databaseError(ctx, database, err, interval)
 		}
 	}
-	session, err := r.Databases.Open(ctx, config)
+	session, err := r.Databases.Open(ctx, config, r.databaseSessionOptions(database, cluster))
 	if err != nil {
 		return r.databaseError(ctx, database, err, interval)
 	}

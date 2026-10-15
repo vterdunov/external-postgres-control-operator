@@ -47,8 +47,9 @@ type archACLSession struct {
 	factory *archACLFactory
 }
 
-func (f *archACLFactory) Open(ctx context.Context, config *pg.Config) (pg.DatabaseSession, error) {
-	session, err := f.delegate.Open(ctx, config)
+func (f *archACLFactory) Open(ctx context.Context, config *pg.Config,
+	options pg.DatabaseSessionOptions) (pg.DatabaseSession, error) {
+	session, err := f.delegate.Open(ctx, config, options)
 	if err != nil {
 		return nil, err
 	}
