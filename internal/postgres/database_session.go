@@ -86,8 +86,9 @@ func inspectDatabase(ctx context.Context, q roleQuerier, name string) (*Database
 		return nil, &Failure{InvalidConfiguration, "SQL database name is empty or contains an invalid byte"}
 	}
 	state := &DatabaseState{Name: name}
-	if err := q.QueryRow(ctx, `SELECT current_user, current_database(),
-		current_setting('server_version_num')::integer, current_setting('max_identifier_length')::integer`).
+	if err := q.QueryRow(ctx, `SELECT current_user, pg_catalog.current_database(),
+		pg_catalog.current_setting('server_version_num')::pg_catalog.int4,
+		pg_catalog.current_setting('max_identifier_length')::pg_catalog.int4`).
 		Scan(&state.AdminUser, &state.AdminDatabase, &state.ServerVersion, &state.MaxIdentifierLength); err != nil {
 		return nil, err
 	}
@@ -96,7 +97,8 @@ func inspectDatabase(ctx context.Context, q roleQuerier, name string) (*Database
 	}
 	err := q.QueryRow(ctx, `SELECT pg_catalog.pg_get_userbyid(d.datdba),d.datistemplate,d.datallowconn,
 		d.datconnlimit,t.spcname FROM pg_catalog.pg_database d
-		JOIN pg_catalog.pg_tablespace t ON t.oid=d.dattablespace WHERE d.datname=$1`, name).
+		JOIN pg_catalog.pg_tablespace t ON t.oid OPERATOR(pg_catalog.=) d.dattablespace
+		WHERE d.datname OPERATOR(pg_catalog.=) $1`, name).
 		Scan(&state.Owner, &state.IsTemplate, &state.AllowConnections, &state.ConnectionLimit, &state.Tablespace)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return state, nil

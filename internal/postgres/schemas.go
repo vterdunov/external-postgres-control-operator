@@ -101,24 +101,50 @@ func (s *databaseSession) applySchemas(ctx context.Context, database *DatabaseSt
 		if owner == "" {
 			owner = database.Owner
 		}
-		if err = s.ensureServiceRole(ctx, owner, RoleCapabilityProvision); err != nil {
-			return err
-		}
-		if state.Exists {
-			currentOwner := state.Owner
-			if currentOwner == databaseOwnerRole {
-				currentOwner = database.Owner
-			}
-			if err = s.ensureOwnerExecution(ctx, currentOwner, RoleCapabilityProvision); err != nil {
+		if !state.Exists {
+			if err = s.ensureServiceRole(ctx, owner, RoleCapabilityProvision); err != nil {
 				return err
 			}
 		}
 	}
+	prepared := make(map[string]bool)
+	for range len(schemas) + 1 {
+		err = applySchemaTransaction(ctx, connection, database, schemas)
+		needed, ok := errors.AsType[*schemaAuthorityRequired](err)
+		if !ok {
+			return err
+		}
+		if prepared[needed.schema] {
+			return needed.refusal
+		}
+		if err = s.prepareSchemaAuthority(ctx, connection, database.Name, needed); err != nil {
+			return err
+		}
+		prepared[needed.schema] = true
+	}
+	return &Failure{DependenciesNotReady, "Schema ownership changed while preparing administrative authority"}
+}
+
+func applySchemaTransaction(ctx context.Context, connection *pgx.Conn, database *DatabaseState, schemas []epco.SchemaSpec) (err error) {
+	// Database ownership may have changed since the caller's initial inspection.
+	actual, err := inspectDatabase(ctx, connection, database.Name)
+	if err != nil {
+		return err
+	}
+	database = actual
 	tx, err := connection.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackDatabaseTransaction(tx)
+	defer func() {
+		if err != nil {
+			cleanup, cancel := context.WithTimeout(context.Background(), membershipRollbackTimeout)
+			defer cancel()
+			if rollbackErr := tx.Rollback(cleanup); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+				err = &Failure{ConnectionUnavailable, "Unable to confirm schema transaction rollback"}
+			}
+		}
+	}()
 	for _, schema := range schemas {
 		// Each operation starts from the supplied administrator, regardless of
 		// the previous schema's authorized local role.
@@ -202,17 +228,5 @@ func applySchema(ctx context.Context, tx pgx.Tx, database *DatabaseState, state 
 		_, err := tx.Exec(ctx, "CREATE SCHEMA "+name+" AUTHORIZATION "+pgx.Identifier{owner}.Sanitize())
 		return err
 	}
-	// Owner transfer requires the administrative principal to combine the
-	// existing owner, new-owner SET authority and database CREATE privileges.
-	currentOwner := state.Owner
-	if currentOwner == databaseOwnerRole {
-		// PostgreSQL 15+ assigns public to the database-owner pseudo-role.
-		// Resolve its implicit owner to the actual database role.
-		currentOwner = database.Owner
-	}
-	if err := selectDatabaseRole(ctx, tx, currentOwner, true); err != nil {
-		return err
-	}
-	_, err := tx.Exec(ctx, "ALTER SCHEMA "+name+" OWNER TO "+pgx.Identifier{owner}.Sanitize())
-	return err
+	return transferSchemaOwner(ctx, tx, database, state, owner)
 }

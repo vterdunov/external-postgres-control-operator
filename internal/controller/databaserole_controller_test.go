@@ -184,7 +184,11 @@ func TestRoleCleanupIntentSurvivesSQLFailureAndRestart(t *testing.T) {
 	role.Spec.Parameters = map[string]string{testSearchPath: "app"}
 	role.Spec.MembershipPolicy = epco.MembershipManaged
 	r, cl, session := roleFixture(t, role)
-	session.apply = func(_ context.Context, d postgres.RoleDesired) (*postgres.RoleApplyResult, error) {
+	session.apply = func(ctx context.Context, d postgres.RoleDesired) (*postgres.RoleApplyResult, error) {
+		checkpoint := issue30Checkpoint(t, d)
+		if err := checkpoint(ctx, epco.RoleMembershipBinding{Role: testParentName, Member: testSharedSQLName, Grantor: testAdminName}, true); err != nil {
+			return nil, err
+		}
 		latest := currentRole(t, cl, role)
 		if len(latest.Status.ManagedEndpoints) != 1 || latest.Status.ManagedEndpoints[0].Host != testEndpointHost || latest.Status.ManagedEndpoints[0].Port != 5432 || !slices.Contains(latest.Status.ManagedEndpoints[0].Parameters, testSearchPath) {
 			t.Fatal("cleanup intent not durable before SQL")
