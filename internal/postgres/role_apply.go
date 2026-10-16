@@ -44,7 +44,7 @@ func (s *roleSession) Apply(ctx context.Context, desired RoleDesired) (*RoleAppl
 		desired.TrackedParameters[i] = CanonicalRoleParameterName(name, state.ServerVersion)
 	}
 	var recovery, readOnly bool
-	if err = tx.QueryRow(bounded, "SELECT pg_is_in_recovery(), current_setting('transaction_read_only')::boolean").Scan(&recovery, &readOnly); err != nil {
+	if err = tx.QueryRow(bounded, "SELECT pg_catalog.pg_is_in_recovery(), pg_catalog.current_setting('transaction_read_only')::pg_catalog.bool").Scan(&recovery, &readOnly); err != nil {
 		return nil, roleFailure(err)
 	}
 	if recovery || readOnly {

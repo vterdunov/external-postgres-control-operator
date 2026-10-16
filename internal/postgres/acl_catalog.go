@@ -38,7 +38,7 @@ func readACLCatalog(ctx context.Context, admin roleQuerier, target roleQuerier, 
 	if version >= 160000 {
 		capability = roleCapabilitySet
 	}
-	rows, err := admin.Query(ctx, `SELECT oid,rolname,rolsuper,pg_has_role(current_user,oid,'USAGE'),pg_has_role(current_user,oid,$1),rolname=current_user FROM pg_catalog.pg_roles`, capability)
+	rows, err := admin.Query(ctx, `SELECT oid,rolname,rolsuper,pg_catalog.pg_has_role(current_user,oid,'USAGE'),pg_catalog.pg_has_role(current_user,oid,$1),rolname OPERATOR(pg_catalog.=) current_user FROM pg_catalog.pg_roles`, capability)
 	if err != nil {
 		return nil, err
 	}
@@ -61,13 +61,13 @@ func readACLCatalog(ctx context.Context, admin roleQuerier, target roleQuerier, 
 	}
 	c.database.class = aclClassDatabase
 	c.database.name = name
-	if err = admin.QueryRow(ctx, `SELECT oid,datdba,pg_get_userbyid(datdba) FROM pg_catalog.pg_database WHERE datname=$1`, name).Scan(&c.database.oid, &c.database.ownerOID, &c.database.owner); err != nil {
+	if err = admin.QueryRow(ctx, `SELECT oid,datdba,pg_catalog.pg_get_userbyid(datdba) FROM pg_catalog.pg_database WHERE datname OPERATOR(pg_catalog.=) $1`, name).Scan(&c.database.oid, &c.database.ownerOID, &c.database.owner); err != nil {
 		return nil, err
 	}
 	if target == nil {
 		return c, nil
 	}
-	rows, err = target.Query(ctx, `SELECT oid,nspname,nspowner,pg_get_userbyid(nspowner) FROM pg_catalog.pg_namespace`)
+	rows, err = target.Query(ctx, `SELECT oid,nspname,nspowner,pg_catalog.pg_get_userbyid(nspowner) FROM pg_catalog.pg_namespace`)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func readACLCatalog(ctx context.Context, admin roleQuerier, target roleQuerier, 
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
-	rows, err = target.Query(ctx, `SELECT c.oid,n.nspname,c.relname,c.relnamespace,c.relowner,pg_get_userbyid(c.relowner),CASE WHEN c.relkind='S' THEN 'sequence' ELSE 'table' END FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p','f','v','m','S')`)
+	rows, err = target.Query(ctx, `SELECT c.oid,n.nspname,c.relname,c.relnamespace,c.relowner,pg_catalog.pg_get_userbyid(c.relowner),CASE WHEN c.relkind OPERATOR(pg_catalog.=) 'S' THEN 'sequence' ELSE 'table' END FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace WHERE c.relkind IN ('r','p','f','v','m','S')`)
 	if err != nil {
 		return nil, err
 	}
@@ -256,16 +256,16 @@ func readACLRows(ctx context.Context, q roleQuerier, b epco.ACLBinding) ([]aclRo
 		if kind == "S" {
 			defaultKind = "s"
 		}
-		query = `SELECT a.grantee,a.grantor,a.privilege_type,a.is_grantable FROM aclexplode(NULLIF(COALESCE((SELECT defaclacl FROM pg_catalog.pg_default_acl WHERE defaclrole=$1 AND defaclnamespace=$2 AND defaclobjtype=$3::"char"),CASE WHEN $2::oid=0 THEN acldefault($4::"char",$1) ELSE '{}'::aclitem[] END),'{}'::aclitem[])) a`
+		query = `SELECT a.grantee,a.grantor,a.privilege_type,a.is_grantable FROM pg_catalog.aclexplode(NULLIF(COALESCE((SELECT defaclacl FROM pg_catalog.pg_default_acl WHERE defaclrole OPERATOR(pg_catalog.=) $1 AND defaclnamespace OPERATOR(pg_catalog.=) $2 AND defaclobjtype OPERATOR(pg_catalog.=) $3::pg_catalog."char"),CASE WHEN $2::pg_catalog.oid OPERATOR(pg_catalog.=) 0 THEN pg_catalog.acldefault($4::pg_catalog."char",$1) ELSE '{}'::pg_catalog.aclitem[] END),'{}'::pg_catalog.aclitem[])) a`
 		args = []any{b.CreatorOID, b.SchemaOID, kind, defaultKind}
 	} else {
 		switch b.Class {
 		case aclClassDatabase:
-			query = `SELECT a.grantee,a.grantor,a.privilege_type,a.is_grantable FROM pg_catalog.pg_database d CROSS JOIN LATERAL aclexplode(NULLIF(COALESCE(d.datacl,acldefault('d',d.datdba)),'{}'::aclitem[])) a WHERE d.oid=$1`
+			query = `SELECT a.grantee,a.grantor,a.privilege_type,a.is_grantable FROM pg_catalog.pg_database d CROSS JOIN LATERAL pg_catalog.aclexplode(NULLIF(COALESCE(d.datacl,pg_catalog.acldefault('d',d.datdba)),'{}'::pg_catalog.aclitem[])) a WHERE d.oid OPERATOR(pg_catalog.=) $1`
 		case aclClassSchema:
-			query = `SELECT a.grantee,a.grantor,a.privilege_type,a.is_grantable FROM pg_catalog.pg_namespace n CROSS JOIN LATERAL aclexplode(NULLIF(COALESCE(n.nspacl,acldefault('n',n.nspowner)),'{}'::aclitem[])) a WHERE n.oid=$1`
+			query = `SELECT a.grantee,a.grantor,a.privilege_type,a.is_grantable FROM pg_catalog.pg_namespace n CROSS JOIN LATERAL pg_catalog.aclexplode(NULLIF(COALESCE(n.nspacl,pg_catalog.acldefault('n',n.nspowner)),'{}'::pg_catalog.aclitem[])) a WHERE n.oid OPERATOR(pg_catalog.=) $1`
 		default:
-			query = `SELECT a.grantee,a.grantor,a.privilege_type,a.is_grantable FROM pg_catalog.pg_class c CROSS JOIN LATERAL aclexplode(NULLIF(COALESCE(c.relacl,acldefault(CASE WHEN c.relkind='S' THEN 's'::"char" ELSE 'r'::"char" END,c.relowner)),'{}'::aclitem[])) a WHERE c.oid=$1`
+			query = `SELECT a.grantee,a.grantor,a.privilege_type,a.is_grantable FROM pg_catalog.pg_class c CROSS JOIN LATERAL pg_catalog.aclexplode(NULLIF(COALESCE(c.relacl,pg_catalog.acldefault(CASE WHEN c.relkind OPERATOR(pg_catalog.=) 'S' THEN 's'::pg_catalog."char" ELSE 'r'::pg_catalog."char" END,c.relowner)),'{}'::pg_catalog.aclitem[])) a WHERE c.oid OPERATOR(pg_catalog.=) $1`
 		}
 		args = []any{b.ObjectOID}
 	}

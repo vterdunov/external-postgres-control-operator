@@ -216,7 +216,7 @@ func (s *databaseSession) Drop(ctx context.Context, name string) error {
 	// first so a shorter statement deadline still produces a useful blocker.
 	var connected bool
 	if err = s.connection.QueryRow(bounded, `SELECT EXISTS (
-		SELECT 1 FROM pg_catalog.pg_stat_activity WHERE datname=$1)`, name).Scan(&connected); err != nil {
+		SELECT 1 FROM pg_catalog.pg_stat_activity WHERE datname OPERATOR(pg_catalog.=) $1)`, name).Scan(&connected); err != nil {
 		return databaseFailure(err)
 	}
 	if connected {

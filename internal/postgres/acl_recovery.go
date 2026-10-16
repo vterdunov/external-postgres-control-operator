@@ -53,7 +53,7 @@ func (e *aclEngine) connectWithout(rows []aclRow, removing epco.ACLBinding) bool
 }
 func (e *aclEngine) verifyConnect(ctx context.Context) error {
 	var effective, admission bool
-	if err := e.session.aclQueries(e.session.connection).QueryRow(ctx, `SELECT has_database_privilege(current_user,oid,'CONNECT'),datallowconn FROM pg_catalog.pg_database WHERE datname=$1`, e.desired.Name).Scan(&effective, &admission); err != nil {
+	if err := e.session.aclQueries(e.session.connection).QueryRow(ctx, `SELECT pg_catalog.has_database_privilege(current_user,oid,'CONNECT'),datallowconn FROM pg_catalog.pg_database WHERE datname OPERATOR(pg_catalog.=) $1`, e.desired.Name).Scan(&effective, &admission); err != nil {
 		return databaseFailure(err)
 	}
 	if !effective {

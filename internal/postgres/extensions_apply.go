@@ -125,7 +125,7 @@ func (s *databaseSession) reconcileExtension(ctx context.Context, database strin
 		case desired.Ensure == epco.EnsureAbsent:
 			_, err = tx.Exec(bounded, "DROP EXTENSION "+pgx.Identifier{string(desired.Name)}.Sanitize()+" RESTRICT")
 		case !state.Exists:
-			err = createExtension(bounded, tx, desired, schemas)
+			err = s.createExtension(bounded, tx, database, desired, schemas)
 		default:
 			err = updateExtension(bounded, tx, state, desired)
 		}
@@ -153,7 +153,7 @@ func (s *databaseSession) reconcileExtension(ctx context.Context, database strin
 	return confirmed, nil
 }
 
-func createExtension(ctx context.Context, tx pgx.Tx, desired epco.ExtensionSpec, schemas []epco.SchemaSpec) error {
+func (s *databaseSession) createExtension(ctx context.Context, tx pgx.Tx, database string, desired epco.ExtensionSpec, schemas []epco.SchemaSpec) error {
 	metadata, err := availableExtensionVersion(ctx, tx, string(desired.Name), desired.Version)
 	if err != nil {
 		return err
@@ -168,20 +168,6 @@ func createExtension(ctx context.Context, tx pgx.Tx, desired epco.ExtensionSpec,
 	}
 	if metadata.Schema != "" && desired.Schema != "" && metadata.Schema != string(desired.Schema) {
 		return &Failure{UnsupportedFeature, "The extension control file requires a different installation schema"}
-	}
-	if desired.Schema == "" && metadata.Schema == "" {
-		// A database or role setting can change the ordinary creation schema.
-		// Inspect this isolated transaction's actual default without changing it.
-		var schema string
-		if err = tx.QueryRow(ctx, `SELECT COALESCE(pg_catalog.current_schema()::pg_catalog.text,'')`).Scan(&schema); err != nil {
-			return err
-		}
-		if schema == "" {
-			return &Failure{DependenciesNotReady, "No ordinary default schema is available for extension installation"}
-		}
-		if IsProtectedSchema(schema) {
-			return &Failure{ProtectedSchema, "The ordinary extension installation schema is protected from management"}
-		}
 	}
 	if desired.Schema != "" && metadata.Schema == "" {
 		schema, inspectErr := inspectSchema(ctx, tx, string(desired.Schema))
@@ -201,15 +187,48 @@ func createExtension(ctx context.Context, tx pgx.Tx, desired epco.ExtensionSpec,
 			return &Failure{DependenciesNotReady, "A prerequisite SQL extension is not installed"}
 		}
 	}
+	installationSchema := string(desired.Schema)
+	if installationSchema == "" && metadata.Schema == "" {
+		installationSchema, err = s.ordinaryExtensionSchema(ctx, database)
+		if err != nil {
+			return err
+		}
+	}
 	statement := "CREATE EXTENSION " + pgx.Identifier{string(desired.Name)}.Sanitize()
 	if desired.Version != "" {
 		statement += " VERSION " + literal(desired.Version)
 	}
-	if desired.Schema != "" {
-		statement += " SCHEMA " + pgx.Identifier{string(desired.Schema)}.Sanitize()
+	if installationSchema != "" {
+		statement += " SCHEMA " + pgx.Identifier{installationSchema}.Sanitize()
 	}
 	_, err = tx.Exec(ctx, statement)
 	return err
+}
+
+// ordinaryExtensionSchema reads the target's database and login defaults without
+// exposing operational SQL to that path. This disposable connection runs only
+// the qualified built-in lookup; CREATE remains on the pinned transaction.
+func (s *databaseSession) ordinaryExtensionSchema(ctx context.Context, database string) (string, error) {
+	config := s.config
+	config.Connection = s.config.Connection.Copy()
+	config.Connection.Database = database
+	delete(config.Connection.RuntimeParams, "search_path")
+	connection, disposal, err := openDatabaseConnection(ctx, &config)
+	if err != nil {
+		return "", err
+	}
+	defer closeDatabaseConnection(disposal)
+	var schema string
+	if err = connection.QueryRow(ctx, `SELECT COALESCE(pg_catalog.current_schema()::pg_catalog.text,'')`).Scan(&schema); err != nil {
+		return "", err
+	}
+	if schema == "" {
+		return "", &Failure{DependenciesNotReady, "No ordinary default schema is available for extension installation"}
+	}
+	if IsProtectedSchema(schema) {
+		return "", &Failure{ProtectedSchema, "The ordinary extension installation schema is protected from management"}
+	}
+	return schema, nil
 }
 
 func updateExtension(ctx context.Context, tx pgx.Tx, state *ExtensionState, desired epco.ExtensionSpec) error {
