@@ -117,17 +117,9 @@ func (s *databaseSession) reconcileExtension(ctx context.Context, database strin
 			if IsProtectedSchema(state.Schema) {
 				return nil, &Failure{ProtectedSchema, "The installed extension schema is protected from management"}
 			}
-			if err = selectDatabaseRole(bounded, tx, state.Owner, true); err != nil {
-				return nil, err
-			}
-		}
-		switch {
-		case desired.Ensure == epco.EnsureAbsent:
-			_, err = tx.Exec(bounded, "DROP EXTENSION "+pgx.Identifier{string(desired.Name)}.Sanitize()+" RESTRICT")
-		case !state.Exists:
+			err = reconcileExistingExtension(bounded, tx, state, desired)
+		} else {
 			err = s.createExtension(bounded, tx, database, desired, schemas)
-		default:
-			err = updateExtension(bounded, tx, state, desired)
 		}
 		if err != nil {
 			return nil, databaseFailure(err)
