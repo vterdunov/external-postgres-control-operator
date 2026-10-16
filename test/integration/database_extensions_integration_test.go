@@ -13,6 +13,8 @@ import (
 	pgdatabase "github.com/vterdunov/external-postgres-control-operator/internal/postgres"
 )
 
+const issue33SetMembershipOptions = " WITH INHERIT FALSE, SET TRUE"
+
 var _ = Describe("Database extension PostgreSQL reconciliation", func() {
 	var fixture *extensionSQLFixture
 	BeforeEach(func(ctx SpecContext) { fixture = newExtensionSQLFixture(ctx) }, NodeTimeout(30*time.Second))
@@ -308,6 +310,70 @@ var _ = Describe("Database extension PostgreSQL reconciliation", func() {
 		}
 		Expect(roleMemberships(ctx, fixture.Fixture, fixture.Role)).To(BeEmpty())
 	}, NodeTimeout(30*time.Second))
+
+	It("uses existing NOINHERIT SET authority after native denial and rolls back a failed owner retry",
+		func(ctx SpecContext) {
+			administrator, err := fixture.Server.NewFixture(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func(ctx SpecContext) {
+				fixture.sql(ctx, "REVOKE CONNECT ON DATABASE "+quoteIdentifier(fixture.Database)+" FROM "+
+					quoteIdentifier(administrator.Role))
+				Expect(administrator.Close(ctx)).To(Succeed())
+			})
+			fixture.sql(ctx, "GRANT CREATE ON DATABASE "+quoteIdentifier(fixture.Database)+" TO "+quoteIdentifier(fixture.Role)+
+				"; GRANT CREATE ON SCHEMA public TO "+quoteIdentifier(fixture.Role)+
+				"; GRANT CONNECT ON DATABASE "+quoteIdentifier(fixture.Database)+" TO "+quoteIdentifier(administrator.Role)+
+				"; CREATE SCHEMA destination AUTHORIZATION "+quoteIdentifier(fixture.Role)+"; CREATE SCHEMA denied")
+			pkg := fixture.packageFiles(ctx, "superuser = false\n", nil)
+			_, err = fixture.Limited.ExecContext(ctx, "CREATE EXTENSION "+quoteIdentifier(pkg.Name)+
+				" VERSION 'seed' SCHEMA public")
+			Expect(err).NotTo(HaveOccurred())
+			probe, err := fixture.Limited.BeginTx(ctx, nil)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = probe.ExecContext(ctx, "ALTER EXTENSION "+quoteIdentifier(pkg.Name)+" SET SCHEMA destination")
+			Expect(probe.Rollback()).To(Succeed())
+			Expect(err).NotTo(HaveOccurred(), "fixture owner must have native relocation authority")
+			fixture.sql(ctx, "ALTER ROLE "+quoteIdentifier(administrator.Role)+" NOINHERIT")
+			var version int
+			Expect(fixture.Admin.QueryRowContext(ctx, "SELECT current_setting('server_version_num')::integer").
+				Scan(&version)).To(Succeed())
+			membership := "GRANT " + quoteIdentifier(fixture.Role) + " TO " + quoteIdentifier(administrator.Role)
+			if version >= 160000 {
+				membership += issue33SetMembershipOptions
+			}
+			fixture.sql(ctx, membership)
+			memberships := roleMemberships(ctx, administrator, administrator.Role)
+			native, err := fixture.Server.Open(fixture.Database, administrator.Role, administrator.Password)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() { Expect(native.Close()).To(Succeed()) })
+			_, err = native.ExecContext(ctx, "ALTER EXTENSION "+quoteIdentifier(pkg.Name)+" UPDATE TO 'omega'")
+			Expect(SQLState(err)).To(Equal("42501"), "NOINHERIT login must lack native owner authority before SET")
+			config := productionConfig(administrator, roleTLSMode, false)
+			config.Connection.Database = fixture.Database
+			session, err := pgdatabase.NewDatabaseFactory().Open(ctx, config, pgdatabase.DatabaseSessionOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func(ctx SpecContext) { Expect(session.Close(ctx)).To(Succeed()) })
+			extensions := session.(pgdatabase.DatabaseExtensionSession)
+			_, err = extensions.ReconcileExtensions(ctx, fixture.Database,
+				[]epco.ExtensionSpec{extensionSpec(pkg.Name, "omega", "destination", "")})
+			Expect(err).NotTo(HaveOccurred(), "the native login needs the existing SET-authorized owner to update and move")
+			state := extensionCatalog(ctx, fixture.Admin, pkg.Name)
+			Expect(state.Version).To(Equal("omega"))
+			Expect(state.Schema).To(Equal("destination"))
+			Expect(state.Owner).To(Equal(fixture.Role))
+			Expect(fixture.memberValue(ctx, pkg, "destination")).To(Equal(3))
+			fixture.sql(ctx, "ALTER EXTENSION "+quoteIdentifier(pkg.Name)+" UPDATE TO 'locked'")
+			before := extensionCatalog(ctx, fixture.Admin, pkg.Name)
+			_, err = extensions.ReconcileExtensions(ctx, fixture.Database,
+				[]epco.ExtensionSpec{extensionSpec(pkg.Name, "omega", "denied", "")})
+			Expect(failureReason(err)).To(Equal(pgdatabase.InsufficientPrivileges))
+			Expect(extensionCatalog(ctx, fixture.Admin, pkg.Name)).To(Equal(before),
+				"failed owner relocation must undo the enabling update")
+			Expect(fixture.memberValue(ctx, pkg, "destination")).To(Equal(4),
+				"failed retry must roll back extension script writes")
+			Expect(roleMemberships(ctx, administrator, administrator.Role)).To(Equal(memberships),
+				"existing SET authority is never modified")
+		}, NodeTimeout(30*time.Second))
 
 	It("stops lock waits on context cancellation and bounds statement deadlines without "+
 		"leaking target sessions", func(ctx SpecContext) {
