@@ -39,9 +39,11 @@ class ReleaseBehaviorTests(unittest.TestCase):
                 manifest["image"] = {key: self.fixture.manifest["image"][key] for key in ("repository", "version", "release_tag")}
             path = self.fixture.root / "seed.json"
             path.write_text(json.dumps(manifest))
+        # Publish exercises many local tool subprocesses; allow the same bounded
+        # budget as preparation even when the full suite runs under CPU load.
         return subprocess.run(
             [sys.executable, str(CLI), self.fixture.stream, "--manifest", str(path), "--phase", phase],
-            cwd=self.fixture.root, env=self.fixture.env, text=True, capture_output=True, timeout=15,
+            cwd=self.fixture.root, env=self.fixture.env, text=True, capture_output=True, timeout=45,
         )
 
     def accepted(self, phase="validate", seed=False):

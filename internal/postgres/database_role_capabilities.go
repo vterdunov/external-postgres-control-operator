@@ -11,6 +11,7 @@ import (
 const (
 	roleCapabilityMember = "MEMBER"
 	roleCapabilitySet    = "SET"
+	roleCapabilityUsage  = "USAGE"
 )
 
 type roleCapabilityKey struct {
@@ -25,6 +26,7 @@ type serviceRoleIdentity struct {
 	login, owner       string
 	loginOID, ownerOID uint32
 	version            int
+	inherit            bool
 	allowed, super     bool
 }
 type serviceGrantor struct {
@@ -34,7 +36,11 @@ type serviceGrantor struct {
 }
 
 func readServiceRoleIdentity(ctx context.Context, q roleQuerier, owner string) (serviceRoleIdentity, error) {
-	identity := serviceRoleIdentity{owner: owner}
+	return readServiceRoleCapability(ctx, q, owner, false)
+}
+
+func readServiceRoleCapability(ctx context.Context, q roleQuerier, owner string, inherit bool) (serviceRoleIdentity, error) {
+	identity := serviceRoleIdentity{owner: owner, inherit: inherit}
 	err := q.QueryRow(ctx, `SELECT session_user,a.oid,r.oid,r.rolsuper,current_setting('server_version_num')::integer
  FROM pg_catalog.pg_roles a JOIN pg_catalog.pg_roles r ON r.rolname=$1 WHERE a.rolname=session_user`, owner).
 		Scan(&identity.login, &identity.loginOID, &identity.ownerOID, &identity.super, &identity.version)
@@ -48,6 +54,9 @@ func readServiceRoleIdentity(ctx context.Context, q roleQuerier, owner string) (
 	if identity.version >= 160000 {
 		capability = roleCapabilitySet
 	}
+	if inherit {
+		capability = roleCapabilityUsage
+	}
 	err = q.QueryRow(ctx, `SELECT pg_catalog.pg_has_role($1::oid,$2::oid,$3)`, identity.loginOID, identity.ownerOID, capability).Scan(&identity.allowed)
 	return identity, err
 }
@@ -55,16 +64,24 @@ func readServiceRoleIdentity(ctx context.Context, q roleQuerier, owner string) (
 // ensureServiceRole acquires only a missing SET prerequisite. The retained grant
 // belongs to the administrative connection, not to one Database's ACL history.
 func (s *databaseSession) ensureServiceRole(ctx context.Context, owner string, purpose RoleCapabilityPurpose) error {
+	return s.ensureServiceRoleCapability(ctx, owner, purpose, false)
+}
+
+func (s *databaseSession) ensureServiceInheritance(ctx context.Context, owner string) error {
+	return s.ensureServiceRoleCapability(ctx, owner, RoleCapabilityProvision, true)
+}
+
+func (s *databaseSession) ensureServiceRoleCapability(ctx context.Context, owner string, purpose RoleCapabilityPurpose, inherit bool) error {
 	bounded, cancel := context.WithTimeout(ctx, s.config.StatementTimeout)
 	defer cancel()
-	identity, err := readServiceRoleIdentity(bounded, s.connection, owner)
+	identity, err := readServiceRoleCapability(bounded, s.connection, owner, inherit)
 	if err != nil {
 		return err
 	}
 	if identity.allowed {
 		return nil
 	}
-	if IsProtectedRole(owner, identity.login) || identity.super {
+	if IsProtectedRole(owner, identity.login) || identity.super || inherit && identity.version < 160000 {
 		return &Failure{InsufficientPrivileges, DatabaseOwnerSetRoleRequiredMessage}
 	}
 	key := roleCapabilityKey{owner, purpose}
@@ -102,16 +119,23 @@ func (s *databaseSession) ensureServiceRole(ctx context.Context, owner string, p
 }
 
 func (s *databaseSession) serviceGrantors(ctx context.Context, identity serviceRoleIdentity) ([]serviceGrantor, error) {
-	result := []serviceGrantor{{name: identity.login, oid: identity.loginOID}}
+	candidates, err := reachableServiceGrantors(ctx, s.connection, identity)
+	result := make([]serviceGrantor, 1, 1+len(candidates))
+	result[0] = serviceGrantor{name: identity.login, oid: identity.loginOID}
+	return append(result, candidates...), err
+}
+
+func reachableServiceGrantors(ctx context.Context, q roleQuerier, identity serviceRoleIdentity) ([]serviceGrantor, error) {
+	var result []serviceGrantor
 	capability := roleCapabilityMember
 	if identity.version >= 160000 {
 		capability = roleCapabilitySet
 	}
-	rows, err := s.connection.Query(ctx, `SELECT r.rolname,r.oid,NOT pg_catalog.pg_has_role($1::oid,r.oid,'USAGE')
+	rows, err := q.Query(ctx, `SELECT r.rolname,r.oid,NOT pg_catalog.pg_has_role($1::oid,r.oid,'USAGE')
  FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles r ON r.oid=m.member
  WHERE m.roleid=$2 AND m.admin_option AND r.oid<>$1
  AND (pg_catalog.pg_has_role($1::oid,r.oid,'USAGE') OR pg_catalog.pg_has_role($1::oid,r.oid,$3))
- GROUP BY r.rolname,r.oid ORDER BY NOT pg_catalog.pg_has_role($1::oid,r.oid,'USAGE'),r.oid`, identity.loginOID, identity.ownerOID, capability)
+ GROUP BY r.rolname,r.oid ORDER BY NOT pg_catalog.pg_has_role($1::oid,r.oid,'USAGE'),r.oid LIMIT $4`, identity.loginOID, identity.ownerOID, capability, maximumMembershipGrantors-1)
 	if err != nil {
 		return nil, err
 	}
@@ -127,16 +151,24 @@ func (s *databaseSession) serviceGrantors(ctx context.Context, identity serviceR
 }
 
 func sameServiceIdentity(a, b serviceRoleIdentity) bool {
-	return a.login == b.login && a.loginOID == b.loginOID && a.owner == b.owner && a.ownerOID == b.ownerOID && a.version == b.version
+	return a.login == b.login && a.loginOID == b.loginOID && a.owner == b.owner && a.ownerOID == b.ownerOID && a.version == b.version && a.inherit == b.inherit
 }
 
-func (s *databaseSession) grantServiceRole(ctx context.Context, identity serviceRoleIdentity, grantor serviceGrantor) error {
+func (s *databaseSession) grantServiceRole(ctx context.Context, identity serviceRoleIdentity, grantor serviceGrantor) (err error) {
 	tx, err := s.connection.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackDatabaseTransaction(tx)
-	observed, err := readServiceRoleIdentity(ctx, tx, identity.owner)
+	defer func() {
+		if err != nil {
+			cleanup, cancel := context.WithTimeout(context.Background(), membershipRollbackTimeout)
+			defer cancel()
+			if rollbackErr := tx.Rollback(cleanup); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+				err = &Failure{ConnectionUnavailable, "Unable to confirm administrative membership rollback"}
+			}
+		}
+	}()
+	observed, err := readServiceRoleCapability(ctx, tx, identity.owner, identity.inherit)
 	if err != nil {
 		return err
 	}
@@ -159,14 +191,20 @@ func (s *databaseSession) grantServiceRole(ctx context.Context, identity service
 		}
 	}
 	statement := "GRANT " + pgx.Identifier{identity.owner}.Sanitize() + " TO " + pgx.Identifier{identity.login}.Sanitize()
-	var existing, admin, inherit bool
+	var existing, admin, inherit, set bool
 	if identity.version >= 160000 {
-		err = tx.QueryRow(ctx, `SELECT admin_option,inherit_option FROM pg_catalog.pg_auth_members WHERE roleid=$1 AND member=$2 AND grantor=$3`, identity.ownerOID, identity.loginOID, grantor.oid).Scan(&admin, &inherit)
+		err = tx.QueryRow(ctx, `SELECT admin_option,inherit_option,set_option FROM pg_catalog.pg_auth_members WHERE roleid=$1 AND member=$2 AND grantor=$3`, identity.ownerOID, identity.loginOID, grantor.oid).Scan(&admin, &inherit, &set)
 		existing = err == nil
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
-		if existing {
+		if identity.inherit {
+			if existing {
+				statement += " WITH INHERIT TRUE"
+			} else {
+				statement += " WITH ADMIN FALSE, INHERIT TRUE, SET TRUE"
+			}
+		} else if existing {
 			statement += " WITH SET TRUE"
 		} else {
 			statement += " WITH INHERIT FALSE, SET TRUE"
@@ -176,26 +214,26 @@ func (s *databaseSession) grantServiceRole(ctx context.Context, identity service
 	if _, err = tx.Exec(ctx, statement); err != nil {
 		return err
 	}
-	if err = confirmServiceMembership(ctx, tx, identity, grantor, existing, admin, inherit); err != nil {
+	if err = confirmServiceMembership(ctx, tx, identity, grantor, existing, admin, inherit, set); err != nil {
 		return err
 	}
 
-	confirmed, err := readServiceRoleIdentity(ctx, tx, identity.owner)
+	confirmed, err := readServiceRoleCapability(ctx, tx, identity.owner, identity.inherit)
 	if err != nil {
 		return err
 	}
 	if !sameServiceIdentity(identity, confirmed) || !confirmed.allowed {
-		return &Failure{DependenciesNotReady, "Administrative SET role capability could not be confirmed"}
+		return &Failure{DependenciesNotReady, "Administrative role capability could not be confirmed"}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	confirmed, err = readServiceRoleIdentity(ctx, s.connection, identity.owner)
+	confirmed, err = readServiceRoleCapability(ctx, s.connection, identity.owner, identity.inherit)
 	if err != nil {
 		return err
 	}
 	if !sameServiceIdentity(identity, confirmed) || !confirmed.allowed {
-		return &Failure{DependenciesNotReady, "Committed administrative SET role capability could not be confirmed"}
+		return &Failure{DependenciesNotReady, "Committed administrative role capability could not be confirmed"}
 	}
 	return nil
 }
@@ -213,13 +251,23 @@ func (s *databaseSession) ensureOwnerExecution(ctx context.Context, owner string
 	return s.ensureServiceRole(ctx, owner, purpose)
 }
 
-func confirmServiceMembership(ctx context.Context, tx pgx.Tx, identity serviceRoleIdentity, grantor serviceGrantor, existing, admin, inherit bool) error {
+func confirmServiceMembership(ctx context.Context, tx pgx.Tx, identity serviceRoleIdentity, grantor serviceGrantor, existing, admin, inherit, set bool) error {
 	if identity.version >= 160000 {
 		var actualAdmin, actualInherit, actualSet bool
 		if err := tx.QueryRow(ctx, `SELECT admin_option,inherit_option,set_option FROM pg_catalog.pg_auth_members WHERE roleid=$1 AND member=$2 AND grantor=$3`, identity.ownerOID, identity.loginOID, grantor.oid).Scan(&actualAdmin, &actualInherit, &actualSet); err != nil {
 			return err
 		}
-		if !actualSet || existing && (actualAdmin != admin || actualInherit != inherit) || !existing && (actualAdmin || actualInherit) {
+		expectedAdmin, expectedInherit, expectedSet := admin, inherit, true
+		if !existing {
+			expectedAdmin, expectedInherit = false, false
+		}
+		if identity.inherit {
+			expectedInherit = true
+			if existing {
+				expectedSet = set
+			}
+		}
+		if actualAdmin != expectedAdmin || actualInherit != expectedInherit || actualSet != expectedSet {
 			return &Failure{DependenciesNotReady, "Administrative membership options could not be confirmed"}
 		}
 	} else {

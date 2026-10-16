@@ -55,6 +55,9 @@ type RoleDesired struct {
 	Password           *string
 	TrackedMemberships []epco.RoleMembershipBinding
 	TrackedParameters  []string
+	// CheckpointMembership persists an exact candidate before SQL. A false
+	// pending value retires only an absent, rolled-back candidate.
+	CheckpointMembership func(context.Context, epco.RoleMembershipBinding, bool) error
 }
 
 // RoleApplyResult contains only changes confirmed after complete reconciliation.

@@ -152,6 +152,24 @@ func (r *DatabaseRoleReconciler) reconcileRoleSession(ctx context.Context, role 
 	previous := role.Status.ManagedEndpoints[index]
 	desired := postgres.RoleDesired{Name: name, Spec: role.Spec, Password: password,
 		TrackedMemberships: slices.Clone(previous.Memberships), TrackedParameters: slices.Clone(previous.Parameters)}
+	desired.CheckpointMembership = func(ctx context.Context, binding epco.RoleMembershipBinding, pending bool) error {
+		intent := &role.Status.ManagedEndpoints[index]
+		if pending {
+			if !slices.Contains(intent.Memberships, binding) {
+				intent.Memberships = append(intent.Memberships, binding)
+			}
+		} else if !slices.ContainsFunc(previous.Memberships, func(old epco.RoleMembershipBinding) bool {
+			return old.Role == binding.Role && old.Member == binding.Member && old.Grantor == binding.Grantor
+		}) {
+			intent.Memberships = slices.DeleteFunc(intent.Memberships, func(current epco.RoleMembershipBinding) bool {
+				return current.Role == binding.Role && current.Member == binding.Member && current.Grantor == binding.Grantor
+			})
+		}
+		if err := boundRoleStatus(role); err != nil {
+			return err
+		}
+		return r.Client.Status().Update(ctx, role)
+	}
 	addRoleCleanupIntent(role, index, state, name)
 	budget := role.DeepCopy()
 	budget.Status.PasswordApplied = receipt
@@ -183,22 +201,6 @@ func (r *DatabaseRoleReconciler) reconcileRoleSession(ctx context.Context, role 
 
 func addRoleCleanupIntent(role *epco.DatabaseRole, index int, state *postgres.RoleState, name string) {
 	intent := &role.Status.ManagedEndpoints[index]
-	for _, parent := range role.Spec.InRoles {
-		// An existing independent binding satisfies the declaration without acquiring its ownership.
-		if slices.ContainsFunc(state.Memberships, func(binding epco.RoleMembershipBinding) bool {
-			return binding.Role == string(parent) && binding.Member == name
-		}) {
-			continue
-		}
-		grantor := state.MutationGrantor
-		if grantor == "" {
-			grantor = state.AdminUser
-		}
-		binding := epco.RoleMembershipBinding{Role: string(parent), Member: name, Grantor: grantor}
-		if !slices.Contains(intent.Memberships, binding) {
-			intent.Memberships = append(intent.Memberships, binding)
-		}
-	}
 	if !state.Exists && state.ServerVersion >= 160000 && state.BootstrapUser != "" {
 		binding := epco.RoleMembershipBinding{Role: name, Member: state.AdminUser, Grantor: state.BootstrapUser, AdminOption: true, Administrative: true}
 		if !slices.Contains(intent.Memberships, binding) {

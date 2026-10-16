@@ -222,42 +222,6 @@ func normalizedRoleParameters(parameters map[string]string, serverVersion int) (
 	return normalized, nil
 }
 
-func membershipGrantor(ctx context.Context, q roleQuerier, state *RoleState, parent string) (string, error) {
-	var exists, super, createRole bool
-	if err := q.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=$1),rolsuper,rolcreaterole FROM pg_roles WHERE rolname=current_user", parent).Scan(&exists, &super, &createRole); err != nil {
-		return "", err
-	}
-	if !exists {
-		return "", &Failure{DependenciesNotReady, "A required parent SQL role does not exist"}
-	}
-	if super {
-		var bootstrap string
-		if err := q.QueryRow(ctx, "SELECT rolname FROM pg_roles WHERE oid=10").Scan(&bootstrap); err != nil {
-			return "", err
-		}
-		return bootstrap, nil
-	}
-	if state.ServerVersion < 160000 && createRole {
-		var protected bool
-		if err := q.QueryRow(ctx, "SELECT rolsuper FROM pg_roles WHERE rolname=$1", parent).Scan(&protected); err != nil {
-			return "", err
-		}
-		if !protected {
-			return state.AdminUser, nil
-		}
-	}
-	var authorized bool
-	if err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_auth_members m
-		JOIN pg_roles r ON r.oid=m.roleid JOIN pg_roles u ON u.oid=m.member
-		WHERE r.rolname=$1 AND u.rolname=current_user AND m.admin_option)`, parent).Scan(&authorized); err != nil {
-		return "", err
-	}
-	if !authorized {
-		return "", &Failure{InsufficientPrivileges, "The administrative connection cannot manage the requested parent membership"}
-	}
-	return state.AdminUser, nil
-}
-
 func bindingMatches(a, b epco.RoleMembershipBinding) bool {
 	return a.Role == b.Role && a.Member == b.Member && a.Grantor == b.Grantor
 }
@@ -270,11 +234,6 @@ func applyMemberships(ctx context.Context, q roleQuerier, state *RoleState, desi
 		if err := validateRoleName(name, state.MaxIdentifierLength); err != nil {
 			return nil, err
 		}
-		grantor, err := membershipGrantor(ctx, q, state, name)
-		if err != nil {
-			return nil, err
-		}
-		binding := epco.RoleMembershipBinding{Role: name, Member: desired.Name, Grantor: grantor}
 		declared[name] = struct{}{}
 		present := slices.ContainsFunc(state.Memberships, func(current epco.RoleMembershipBinding) bool {
 			return current.Role == name && current.Member == desired.Name
@@ -284,11 +243,8 @@ func applyMemberships(ctx context.Context, q roleQuerier, state *RoleState, desi
 			result = append(result, trackedParentBindings(state, desired, name)...)
 			continue
 		}
-		statement := "GRANT " + pgx.Identifier{name}.Sanitize() + " TO " + pgx.Identifier{desired.Name}.Sanitize()
-		if state.ServerVersion >= 160000 {
-			statement += " GRANTED BY " + pgx.Identifier{grantor}.Sanitize()
-		}
-		if _, err = q.Exec(ctx, statement); err != nil {
+		binding, err := grantRoleMembership(ctx, q, state, desired, name)
+		if err != nil {
 			return nil, err
 		}
 		result = append(result, binding)
@@ -310,15 +266,7 @@ func applyMemberships(ctx context.Context, q roleQuerier, state *RoleState, desi
 		remove = append(remove, current)
 	}
 	for _, binding := range remove {
-		if _, err := membershipGrantor(ctx, q, state, binding.Role); err != nil {
-			return nil, err
-		}
-		statement := "REVOKE " + pgx.Identifier{binding.Role}.Sanitize() + " FROM " + pgx.Identifier{binding.Member}.Sanitize()
-		if state.ServerVersion >= 160000 {
-			statement += " GRANTED BY " + pgx.Identifier{binding.Grantor}.Sanitize()
-		}
-		statement += " RESTRICT"
-		if _, err := q.Exec(ctx, statement); err != nil {
+		if err := revokeRoleMembership(ctx, q, state, desired, binding); err != nil {
 			return nil, err
 		}
 	}
