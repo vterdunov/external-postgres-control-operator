@@ -37,7 +37,7 @@ func (e *aclEngine) effective(ctx context.Context, b epco.ACLBinding) *bool {
 		return nil
 	}
 	var effective bool
-	if err := e.queries(b).QueryRow(ctx, "SELECT pg_catalog."+function+"($1::oid,$2::oid,$3::text)", b.GranteeOID, b.ObjectOID, b.Privilege).Scan(&effective); err != nil {
+	if err := e.queries(b).QueryRow(ctx, "SELECT pg_catalog."+function+"($1::pg_catalog.oid,$2::pg_catalog.oid,$3::pg_catalog.text)", b.GranteeOID, b.ObjectOID, b.Privilege).Scan(&effective); err != nil {
 		return nil
 	}
 	return new(effective)
@@ -68,7 +68,7 @@ func (e *aclEngine) effectiveDefault(ctx context.Context, b epco.ACLBinding) *bo
 			continue
 		}
 		var inherited bool
-		if err = e.queries(b).QueryRow(ctx, "SELECT pg_catalog.pg_has_role($1::oid,$2::oid,'USAGE')", b.GranteeOID, row.grantee).Scan(&inherited); err != nil {
+		if err = e.queries(b).QueryRow(ctx, "SELECT pg_catalog.pg_has_role($1::pg_catalog.oid,$2::pg_catalog.oid,'USAGE')", b.GranteeOID, row.grantee).Scan(&inherited); err != nil {
 			return nil
 		}
 		if inherited {

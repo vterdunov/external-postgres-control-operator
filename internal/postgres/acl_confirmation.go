@@ -21,7 +21,7 @@ func aclIdentityFailure(err error) error {
 // other classes use their own catalog identities, not an assumed relation lock.
 func (e *aclEngine) confirmBindingIdentity(ctx context.Context, q roleQuerier, b epco.ACLBinding) error {
 	var databaseOID, databaseOwner uint32
-	if err := q.QueryRow(ctx, "SELECT oid,datdba FROM pg_catalog.pg_database WHERE datname=$1", e.desired.Name).Scan(&databaseOID, &databaseOwner); err != nil {
+	if err := q.QueryRow(ctx, "SELECT oid,datdba FROM pg_catalog.pg_database WHERE datname OPERATOR(pg_catalog.=) $1", e.desired.Name).Scan(&databaseOID, &databaseOwner); err != nil {
 		return aclIdentityFailure(err)
 	}
 	if databaseOID != b.DatabaseOID {
@@ -34,7 +34,7 @@ func (e *aclEngine) confirmBindingIdentity(ctx context.Context, q roleQuerier, b
 	} else if b.Scope == aclScopeDefault || b.Class == aclClassSchema {
 		if b.Schema != "" {
 			var oid, owner uint32
-			if err := q.QueryRow(ctx, "SELECT oid,nspowner FROM pg_catalog.pg_namespace WHERE nspname=$1", b.Schema).Scan(&oid, &owner); err != nil {
+			if err := q.QueryRow(ctx, "SELECT oid,nspowner FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) $1", b.Schema).Scan(&oid, &owner); err != nil {
 				return aclIdentityFailure(err)
 			}
 			if oid != b.SchemaOID || b.Class == aclClassSchema && (oid != b.ObjectOID || owner != b.OwnerOID) {
@@ -44,8 +44,8 @@ func (e *aclEngine) confirmBindingIdentity(ctx context.Context, q roleQuerier, b
 	} else {
 		var oid, schema, owner uint32
 		var kind string
-		if err := q.QueryRow(ctx, `SELECT c.oid,c.relnamespace,c.relowner,c.relkind::text FROM pg_catalog.pg_class c
-			JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND c.relname=$2`, b.Schema, b.Table).
+		if err := q.QueryRow(ctx, `SELECT c.oid,c.relnamespace,c.relowner,c.relkind::pg_catalog.text FROM pg_catalog.pg_class c
+			JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace WHERE n.nspname OPERATOR(pg_catalog.=) $1 AND c.relname OPERATOR(pg_catalog.=) $2`, b.Schema, b.Table).
 			Scan(&oid, &schema, &owner, &kind); err != nil {
 			return aclIdentityFailure(err)
 		}
@@ -71,7 +71,7 @@ func (e *aclEngine) confirmBindingIdentity(ctx context.Context, q roleQuerier, b
 
 func confirmACLRoleIdentity(ctx context.Context, q roleQuerier, role epco.ACLRoleIdentity) error {
 	var oid uint32
-	if err := q.QueryRow(ctx, "SELECT oid FROM pg_catalog.pg_roles WHERE rolname=$1", role.Name).Scan(&oid); err != nil {
+	if err := q.QueryRow(ctx, "SELECT oid FROM pg_catalog.pg_roles WHERE rolname OPERATOR(pg_catalog.=) $1", role.Name).Scan(&oid); err != nil {
 		return aclIdentityFailure(err)
 	}
 	if oid != role.OID {

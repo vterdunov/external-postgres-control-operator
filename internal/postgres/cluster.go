@@ -152,7 +152,11 @@ func (b *ConfigBuilder) Build(cluster *epco.PostgresCluster, secrets map[string]
 	if milliseconds > 2147483647 {
 		return nil, &Failure{InvalidConfiguration, "Statement timeout exceeds PostgreSQL's maximum supported duration"}
 	}
-	conn.RuntimeParams = map[string]string{"statement_timeout": strconv.FormatInt(int64(milliseconds), 10)}
+	// Pin system objects ahead of temporary objects and exclude tenant schemas.
+	conn.RuntimeParams = map[string]string{
+		"statement_timeout": strconv.FormatInt(int64(milliseconds), 10),
+		"search_path":       "pg_catalog, pg_temp",
+	}
 	if err = configureTLS(conn, cluster, secrets); err != nil {
 		return nil, err
 	}
@@ -353,7 +357,7 @@ func (c *connectionChecker) Check(ctx context.Context, config *Config) error {
 	defer statementCancel()
 	var recovery, readOnly bool
 	err = connection.QueryRow(statementCtx,
-		"SELECT pg_catalog.pg_is_in_recovery(), pg_catalog.current_setting('transaction_read_only')::boolean").Scan(&recovery, &readOnly)
+		"SELECT pg_catalog.pg_is_in_recovery(), pg_catalog.current_setting('transaction_read_only')::pg_catalog.bool").Scan(&recovery, &readOnly)
 	if err != nil {
 		return &Failure{ConnectionUnavailable, "Unable to check PostgreSQL writable state"}
 	}

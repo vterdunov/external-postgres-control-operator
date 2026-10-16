@@ -61,19 +61,19 @@ func (s *roleSession) Inspect(ctx context.Context, name string) (*RoleState, err
 
 func inspectRole(ctx context.Context, q roleQuerier, name string) (*RoleState, error) {
 	state := &RoleState{Name: name, Parameters: make(map[string]string)}
-	if err := q.QueryRow(ctx, "SELECT current_user, current_setting('server_version_num')::integer, current_setting('max_identifier_length')::integer").
+	if err := q.QueryRow(ctx, "SELECT current_user, pg_catalog.current_setting('server_version_num')::pg_catalog.int4, pg_catalog.current_setting('max_identifier_length')::pg_catalog.int4").
 		Scan(&state.AdminUser, &state.ServerVersion, &state.MaxIdentifierLength); err != nil {
 		return nil, err
 	}
 	if err := q.QueryRow(ctx, `SELECT bootstrap.rolname, CASE WHEN admin.rolsuper THEN bootstrap.rolname ELSE admin.rolname END
 		FROM pg_catalog.pg_roles admin CROSS JOIN pg_catalog.pg_roles bootstrap
-		WHERE admin.rolname=current_user AND bootstrap.oid=10`).Scan(&state.BootstrapUser, &state.MutationGrantor); err != nil {
+		WHERE admin.rolname OPERATOR(pg_catalog.=) current_user AND bootstrap.oid OPERATOR(pg_catalog.=) 10`).Scan(&state.BootstrapUser, &state.MutationGrantor); err != nil {
 		return nil, err
 	}
 	var expiry pgtype.Timestamptz
 	err := q.QueryRow(ctx, `SELECT rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,
-		rolbypassrls,rolconnlimit,COALESCE(shobj_description(oid,'pg_authid'),''),rolvaliduntil
-		FROM pg_catalog.pg_roles WHERE rolname=$1`, name).Scan(&state.Login, &state.Inherit, &state.Superuser,
+		rolbypassrls,rolconnlimit,COALESCE(pg_catalog.shobj_description(oid,'pg_authid'),''),rolvaliduntil
+		FROM pg_catalog.pg_roles WHERE rolname OPERATOR(pg_catalog.=) $1`, name).Scan(&state.Login, &state.Inherit, &state.Superuser,
 		&state.CreateDB, &state.CreateRole, &state.Replication, &state.BypassRLS, &state.ConnectionLimit, &state.Comment, &expiry)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return state, nil
@@ -87,9 +87,9 @@ func inspectRole(ctx context.Context, q roleQuerier, name string) (*RoleState, e
 		state.ValidUntil = new(expiry.Time)
 	}
 	rows, err := q.Query(ctx, `SELECT parent.rolname,member.rolname,grantor.rolname,b.admin_option
-		FROM pg_catalog.pg_auth_members b JOIN pg_catalog.pg_roles parent ON parent.oid=b.roleid
-		JOIN pg_catalog.pg_roles member ON member.oid=b.member JOIN pg_catalog.pg_roles grantor ON grantor.oid=b.grantor
-		WHERE parent.rolname=$1 OR member.rolname=$1 ORDER BY parent.rolname,member.rolname,grantor.rolname`, name)
+		FROM pg_catalog.pg_auth_members b JOIN pg_catalog.pg_roles parent ON parent.oid OPERATOR(pg_catalog.=) b.roleid
+		JOIN pg_catalog.pg_roles member ON member.oid OPERATOR(pg_catalog.=) b.member JOIN pg_catalog.pg_roles grantor ON grantor.oid OPERATOR(pg_catalog.=) b.grantor
+		WHERE parent.rolname OPERATOR(pg_catalog.=) $1 OR member.rolname OPERATOR(pg_catalog.=) $1 ORDER BY parent.rolname,member.rolname,grantor.rolname`, name)
 	if err != nil {
 		return nil, err
 	}
@@ -106,8 +106,8 @@ func inspectRole(ctx context.Context, q roleQuerier, name string) (*RoleState, e
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
-	rows, err = q.Query(ctx, `SELECT unnest(s.setconfig) FROM pg_catalog.pg_db_role_setting s
-		JOIN pg_catalog.pg_roles r ON r.oid=s.setrole WHERE r.rolname=$1 AND s.setdatabase=0`, name)
+	rows, err = q.Query(ctx, `SELECT pg_catalog.unnest(s.setconfig) FROM pg_catalog.pg_db_role_setting s
+		JOIN pg_catalog.pg_roles r ON r.oid OPERATOR(pg_catalog.=) s.setrole WHERE r.rolname OPERATOR(pg_catalog.=) $1 AND s.setdatabase OPERATOR(pg_catalog.=) 0`, name)
 	if err != nil {
 		return nil, err
 	}

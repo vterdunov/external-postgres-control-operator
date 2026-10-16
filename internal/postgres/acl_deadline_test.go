@@ -22,6 +22,7 @@ const (
 	aclDeadlineMaximum      = 300 * time.Millisecond
 	aclDeadlineDatabase     = "deadline_database"
 	aclDeadlineAdmin        = "deadline_admin"
+	aclDeadlineCatalogQuery = "rolname OPERATOR(pg_catalog.=) current_user"
 	aclDeadlineACLQuery     = "aclexplode"
 	aclDeadlineConnectQuery = "has_database_privilege"
 )
@@ -110,7 +111,7 @@ func aclDeadlineStall(backend *pgproto3.Backend, peer net.Conn, state *aclDeadli
 	types := []uint32{16, 16}
 	var first []string
 	switch stall {
-	case "rolname=current_user":
+	case aclDeadlineCatalogQuery:
 		types = []uint32{26, 25, 16, 16, 16, 16}
 		first = []string{"100", aclDeadlineAdmin, "f", "t", "t", "t"}
 	case aclDeadlineACLQuery:
@@ -197,7 +198,7 @@ func TestACLReadClientDeadlines(t *testing.T) {
 		returnsError bool
 		run          func(context.Context, *databaseSession) error
 	}{
-		{"catalog_stream", "rolname=current_user", true, func(ctx context.Context, session *databaseSession) error {
+		{"catalog_stream", aclDeadlineCatalogQuery, true, func(ctx context.Context, session *databaseSession) error {
 			_, dispose, err := session.newACLEngine(ctx, ACLDesired{Name: aclDeadlineDatabase}, false)
 			if dispose != nil {
 				dispose()

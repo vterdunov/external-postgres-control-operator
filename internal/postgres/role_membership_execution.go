@@ -36,13 +36,13 @@ func membershipGrantors(ctx context.Context, q roleQuerier, state *RoleState, pa
 		return nil, err
 	}
 	var super bool
-	if err = q.QueryRow(ctx, `SELECT rolsuper FROM pg_catalog.pg_roles WHERE oid=$1`, identity.loginOID).Scan(&super); err != nil {
+	if err = q.QueryRow(ctx, `SELECT rolsuper FROM pg_catalog.pg_roles WHERE oid OPERATOR(pg_catalog.=) $1`, identity.loginOID).Scan(&super); err != nil {
 		return nil, err
 	}
 	grantor := serviceGrantor{name: identity.login, oid: identity.loginOID}
 	if super {
 		grantor.name = state.BootstrapUser
-		if err = q.QueryRow(ctx, `SELECT oid FROM pg_catalog.pg_roles WHERE rolname=$1`, grantor.name).Scan(&grantor.oid); err != nil {
+		if err = q.QueryRow(ctx, `SELECT oid FROM pg_catalog.pg_roles WHERE rolname OPERATOR(pg_catalog.=) $1`, grantor.name).Scan(&grantor.oid); err != nil {
 			return nil, err
 		}
 	}
@@ -111,8 +111,8 @@ func revokeRoleMembership(ctx context.Context, q roleQuerier, state *RoleState, 
 func membershipBindingPresent(ctx context.Context, q roleQuerier, binding epco.RoleMembershipBinding) (bool, error) {
 	var present bool
 	err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_auth_members m
- JOIN pg_catalog.pg_roles p ON p.oid=m.roleid JOIN pg_catalog.pg_roles c ON c.oid=m.member
- JOIN pg_catalog.pg_roles g ON g.oid=m.grantor WHERE p.rolname=$1 AND c.rolname=$2 AND g.rolname=$3)`,
+ JOIN pg_catalog.pg_roles p ON p.oid OPERATOR(pg_catalog.=) m.roleid JOIN pg_catalog.pg_roles c ON c.oid OPERATOR(pg_catalog.=) m.member
+ JOIN pg_catalog.pg_roles g ON g.oid OPERATOR(pg_catalog.=) m.grantor WHERE p.rolname OPERATOR(pg_catalog.=) $1 AND c.rolname OPERATOR(pg_catalog.=) $2 AND g.rolname OPERATOR(pg_catalog.=) $3)`,
 		binding.Role, binding.Member, binding.Grantor).Scan(&present)
 	return present, err
 }
@@ -136,7 +136,7 @@ func executeMembershipCandidate(ctx context.Context, q roleQuerier, state *RoleS
 		}
 	}()
 	var actualName string
-	if err = tx.QueryRow(ctx, `SELECT rolname FROM pg_catalog.pg_roles WHERE oid=$1`, grantor.oid).Scan(&actualName); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT rolname FROM pg_catalog.pg_roles WHERE oid OPERATOR(pg_catalog.=) $1`, grantor.oid).Scan(&actualName); err != nil {
 		return err
 	}
 	if actualName != grantor.name {

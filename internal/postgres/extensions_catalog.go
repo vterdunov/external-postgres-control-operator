@@ -49,8 +49,8 @@ func validateExtensions(spec epco.DatabaseSpec, maximum int) error {
 
 func inspectExtension(ctx context.Context, q roleQuerier, name string) (*ExtensionState, error) {
 	state := &ExtensionState{Name: name}
-	// The target's ordinary search_path may put tenant operators before
-	// pg_catalog. Qualify comparisons as well as relations and functions.
+	// Keep comparisons qualified alongside relations and functions so catalog
+	// inspection is independent of session search_path changes.
 	err := q.QueryRow(ctx, `SELECT e.extversion,n.nspname,
 		pg_catalog.pg_get_userbyid(e.extowner),e.extrelocatable
 		FROM pg_catalog.pg_extension e

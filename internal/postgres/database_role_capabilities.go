@@ -41,8 +41,8 @@ func readServiceRoleIdentity(ctx context.Context, q roleQuerier, owner string) (
 
 func readServiceRoleCapability(ctx context.Context, q roleQuerier, owner string, inherit bool) (serviceRoleIdentity, error) {
 	identity := serviceRoleIdentity{owner: owner, inherit: inherit}
-	err := q.QueryRow(ctx, `SELECT session_user,a.oid,r.oid,r.rolsuper,current_setting('server_version_num')::integer
- FROM pg_catalog.pg_roles a JOIN pg_catalog.pg_roles r ON r.rolname=$1 WHERE a.rolname=session_user`, owner).
+	err := q.QueryRow(ctx, `SELECT session_user,a.oid,r.oid,r.rolsuper,pg_catalog.current_setting('server_version_num')::pg_catalog.int4
+ FROM pg_catalog.pg_roles a JOIN pg_catalog.pg_roles r ON r.rolname OPERATOR(pg_catalog.=) $1 WHERE a.rolname OPERATOR(pg_catalog.=) session_user`, owner).
 		Scan(&identity.login, &identity.loginOID, &identity.ownerOID, &identity.super, &identity.version)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return identity, &Failure{DependenciesNotReady, "A required SQL owner or creator role does not exist"}
@@ -57,7 +57,7 @@ func readServiceRoleCapability(ctx context.Context, q roleQuerier, owner string,
 	if inherit {
 		capability = roleCapabilityUsage
 	}
-	err = q.QueryRow(ctx, `SELECT pg_catalog.pg_has_role($1::oid,$2::oid,$3)`, identity.loginOID, identity.ownerOID, capability).Scan(&identity.allowed)
+	err = q.QueryRow(ctx, `SELECT pg_catalog.pg_has_role($1::pg_catalog.oid,$2::pg_catalog.oid,$3)`, identity.loginOID, identity.ownerOID, capability).Scan(&identity.allowed)
 	return identity, err
 }
 
@@ -131,11 +131,11 @@ func reachableServiceGrantors(ctx context.Context, q roleQuerier, identity servi
 	if identity.version >= 160000 {
 		capability = roleCapabilitySet
 	}
-	rows, err := q.Query(ctx, `SELECT r.rolname,r.oid,NOT pg_catalog.pg_has_role($1::oid,r.oid,'USAGE')
- FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles r ON r.oid=m.member
- WHERE m.roleid=$2 AND m.admin_option AND r.oid<>$1
- AND (pg_catalog.pg_has_role($1::oid,r.oid,'USAGE') OR pg_catalog.pg_has_role($1::oid,r.oid,$3))
- GROUP BY r.rolname,r.oid ORDER BY NOT pg_catalog.pg_has_role($1::oid,r.oid,'USAGE'),r.oid LIMIT $4`, identity.loginOID, identity.ownerOID, capability, maximumMembershipGrantors-1)
+	rows, err := q.Query(ctx, `SELECT r.rolname,r.oid,NOT pg_catalog.pg_has_role($1::pg_catalog.oid,r.oid,'USAGE')
+ FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles r ON r.oid OPERATOR(pg_catalog.=) m.member
+ WHERE m.roleid OPERATOR(pg_catalog.=) $2 AND m.admin_option AND r.oid OPERATOR(pg_catalog.<>) $1
+ AND (pg_catalog.pg_has_role($1::pg_catalog.oid,r.oid,'USAGE') OR pg_catalog.pg_has_role($1::pg_catalog.oid,r.oid,$3))
+ GROUP BY r.rolname,r.oid ORDER BY NOT pg_catalog.pg_has_role($1::pg_catalog.oid,r.oid,'USAGE'),r.oid LIMIT $4`, identity.loginOID, identity.ownerOID, capability, maximumMembershipGrantors-1)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +179,7 @@ func (s *databaseSession) grantServiceRole(ctx context.Context, identity service
 		return tx.Commit(ctx)
 	}
 	var grantorName string
-	if err = tx.QueryRow(ctx, `SELECT rolname FROM pg_catalog.pg_roles WHERE oid=$1`, grantor.oid).Scan(&grantorName); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT rolname FROM pg_catalog.pg_roles WHERE oid OPERATOR(pg_catalog.=) $1`, grantor.oid).Scan(&grantorName); err != nil {
 		return err
 	}
 	if grantorName != grantor.name {
@@ -193,7 +193,7 @@ func (s *databaseSession) grantServiceRole(ctx context.Context, identity service
 	statement := "GRANT " + pgx.Identifier{identity.owner}.Sanitize() + " TO " + pgx.Identifier{identity.login}.Sanitize()
 	var existing, admin, inherit, set bool
 	if identity.version >= 160000 {
-		err = tx.QueryRow(ctx, `SELECT admin_option,inherit_option,set_option FROM pg_catalog.pg_auth_members WHERE roleid=$1 AND member=$2 AND grantor=$3`, identity.ownerOID, identity.loginOID, grantor.oid).Scan(&admin, &inherit, &set)
+		err = tx.QueryRow(ctx, `SELECT admin_option,inherit_option,set_option FROM pg_catalog.pg_auth_members WHERE roleid OPERATOR(pg_catalog.=) $1 AND member OPERATOR(pg_catalog.=) $2 AND grantor OPERATOR(pg_catalog.=) $3`, identity.ownerOID, identity.loginOID, grantor.oid).Scan(&admin, &inherit, &set)
 		existing = err == nil
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
@@ -254,7 +254,7 @@ func (s *databaseSession) ensureOwnerExecution(ctx context.Context, owner string
 func confirmServiceMembership(ctx context.Context, tx pgx.Tx, identity serviceRoleIdentity, grantor serviceGrantor, existing, admin, inherit, set bool) error {
 	if identity.version >= 160000 {
 		var actualAdmin, actualInherit, actualSet bool
-		if err := tx.QueryRow(ctx, `SELECT admin_option,inherit_option,set_option FROM pg_catalog.pg_auth_members WHERE roleid=$1 AND member=$2 AND grantor=$3`, identity.ownerOID, identity.loginOID, grantor.oid).Scan(&actualAdmin, &actualInherit, &actualSet); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT admin_option,inherit_option,set_option FROM pg_catalog.pg_auth_members WHERE roleid OPERATOR(pg_catalog.=) $1 AND member OPERATOR(pg_catalog.=) $2 AND grantor OPERATOR(pg_catalog.=) $3`, identity.ownerOID, identity.loginOID, grantor.oid).Scan(&actualAdmin, &actualInherit, &actualSet); err != nil {
 			return err
 		}
 		expectedAdmin, expectedInherit, expectedSet := admin, inherit, true
@@ -272,7 +272,7 @@ func confirmServiceMembership(ctx context.Context, tx pgx.Tx, identity serviceRo
 		}
 	} else {
 		var actualGrantor uint32
-		if err := tx.QueryRow(ctx, `SELECT grantor FROM pg_catalog.pg_auth_members WHERE roleid=$1 AND member=$2`, identity.ownerOID, identity.loginOID).Scan(&actualGrantor); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT grantor FROM pg_catalog.pg_auth_members WHERE roleid OPERATOR(pg_catalog.=) $1 AND member OPERATOR(pg_catalog.=) $2`, identity.ownerOID, identity.loginOID).Scan(&actualGrantor); err != nil {
 			return err
 		}
 		if actualGrantor == 0 {

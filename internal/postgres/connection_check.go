@@ -13,7 +13,7 @@ func (s *databaseSession) CheckConnection(ctx context.Context, database, role st
 	var eligible bool
 	err := s.connection.QueryRow(bounded, `SELECT EXISTS (
 		SELECT 1 FROM pg_catalog.pg_database d CROSS JOIN pg_catalog.pg_roles r
-		WHERE d.datname=$1 AND r.rolname=$2 AND r.rolcanlogin
+		WHERE d.datname OPERATOR(pg_catalog.=) $1 AND r.rolname OPERATOR(pg_catalog.=) $2 AND r.rolcanlogin
 		AND pg_catalog.has_database_privilege(r.oid,d.oid,'CONNECT'))`, database, role).Scan(&eligible)
 	if err != nil {
 		return databaseFailure(err)
