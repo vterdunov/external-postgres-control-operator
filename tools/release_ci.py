@@ -57,6 +57,28 @@ def asset(manifest, directory, path, kind, **extra):
     return entry
 
 
+def crd_bundle(manifest, directory):
+    image = manifest['image']
+    inputs = [entry for entry in image['generated_inputs'] if entry['kind'] == 'crds']
+    expected = {'crd/bases/postgresql.epco.io_' + name + '.yaml'
+                for name in ('databaseroles', 'databases', 'postgresclusters')}
+    release.require(len(inputs) == 3 and {entry.get('input_path') for entry in inputs} == expected,
+                    'CRD bundle requires exactly the three generated EPCO CRDs')
+    documents = []
+    for entry in sorted(inputs, key=lambda item: item['input_path']):
+        source = release.asset_path(directory, entry['path'])
+        release.require(entry.get('source_sha') == image['source_sha'] and release.checksum(source) == entry['sha256'],
+                        'CRD bundle generated input provenance mismatch')
+        # Generated inputs are single YAML documents. Preserve their schemas
+        # and comments, adding exactly one document boundary per input.
+        document = re.sub(r'\A---[ \t]*\r?\n', '', source.read_text()).rstrip()
+        release.require(document and not re.search(r'(?m)^(?:---|\.\.\.)[ \t]*(?:\r?$)', document),
+                        'CRD bundle input must contain one YAML document')
+        documents.append('---\n' + document + '\n')
+    (directory / 'crds.yaml').write_text(''.join(documents))
+    asset(manifest, directory, 'crds.yaml', 'crd_bundle', source_sha=image['source_sha'])
+
+
 def signed_subject(directory, target, repository):
     reference = repository + '@' + target.get('index_digest', target.get('digest'))
     run('cosign', 'sign', '--yes', '--bundle', str(directory / target['bundle']), reference)
@@ -195,6 +217,7 @@ def prepare(preflight, directory):
         validation_chart(manifest['image'], directory)
     else:
         chart_candidate(manifest, directory)
+    crd_bundle(manifest, directory)
     evidence = {**manifest, 'image_source_sha': manifest['image']['source_sha'], 'image_index_digest': manifest['image']['index_digest'],
                 'chart_digest': manifest.get('chart', {}).get('digest')}
     write(directory / 'release-evidence.json', evidence)

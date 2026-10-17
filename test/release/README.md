@@ -58,6 +58,10 @@ boundaries remain offline fakes. It checks actual packaged inputs/defaults,
 durable candidate recovery, nondeterministic signature reuse, measured runtime
 aggregation/persistence, source pairing and native/installed identity guards.
 
+`crd_bundle_test.py` checks the CRD-only `crds.yaml` download for both release
+streams, including selected older-application inputs, deterministic output and
+the signed checksum, evidence, checkpoint and publication inventories.
+
 `workflow_test.py` parses the real workflows with Helm's YAML parser and checks
 their shared queued release lock and attempt-scoped artifact selections. The
 real pinned actionlint also validates both workflows. `source_pairing_test.py`

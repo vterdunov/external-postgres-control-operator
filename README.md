@@ -1,32 +1,138 @@
 # External PostgreSQL Control Operator
 
-EPCO manages roles, databases, and access on external PostgreSQL servers, including AWS RDS. Its primary use case is a microservice database with a service login and a separate read-only login for an admin UI. The accepted API draws on CloudNativePG DatabaseRole and Database, adding an external PostgresCluster connection descriptor, inline permissions, password generation, and application connection Secrets.
+Manage PostgreSQL roles, databases, and permissions with Kubernetes manifests.
+EPCO connects to existing PostgreSQL servers and keeps database access and application credentials in sync.
 
-The three `postgresql.epco.io/v1alpha1` resources have Go types and generated CRDs. The manager implements **PostgresCluster connection readiness, DatabaseRole reconciliation, Database/schema/extension lifecycle, declarative ACLs/default privileges, and application connection Secrets**, including named-table permissions and status-backed recovery. Initial application Secrets can precede SQL readiness; rotation waits for successful password application. Extensions use native PostgreSQL version, schema and RESTRICT operations. FDW/server runtime remains unsupported; requests report UnsupportedFeature with Ready=False. See the [documentation index and implementation status](docs/README.md).
+Supports PostgreSQL **15, 16, 17, and 18**.
 
-## Documentation
+## Features
 
-| Guide | Purpose |
-| --- | --- |
-| [Project roadmap](docs/roadmap.md) | Delivery stages, completion gates, scope, and progress tracking |
-| [Accepted API baseline](docs/api-proposal.md) | Resource fields, defaults, passwords, connection exports, permissions, and lifecycle contracts |
-| [PostgresCluster readiness](docs/postgrescluster.md) | Implemented connection checks, TLS, Secret watches, retries, and status |
-| [Cross-namespace access](docs/cross-namespace-access.md) | Shared infrastructure connections, namespace selectors, authorization removal, and team placement |
-| [SQL object ownership](docs/sql-object-ownership.md) | Canonical connection identity, competing CRs, retries, endpoint changes, and leadership |
-| [Example guide](docs/examples.md) | Microservice variants, cross-namespace setups, RDS, and named-table access |
-| [Development](docs/development.md) | Pinned tools, testing, architecture checks, generation, and deployment commands |
+- [Roles, databases, schemas, and extensions](examples/api-proposal/full.yaml).
+- [Separate owner, migration, runtime, and read-only access](examples/microservice/separate-migrations-and-admin-readonly.yaml).
+- [Permissions for specific tables](examples/api-proposal/llm-readonly.yaml), including [grant removal](examples/api-proposal/llm-readonly-after-removal.yaml).
+- [Generated passwords and application connection Secrets](examples/microservice/service-owner-and-admin-readonly.yaml), or [passwords you provide](examples/microservice/orders-service-password-provided.yaml).
+- [Shared PostgreSQL connections across namespaces](examples/cross-namespace/infra-connection.yaml).
+- [TLS connections](examples/microservice/postgres-connection.yaml), with [AWS RDS examples](examples/api-proposal/aws-rds.yaml).
 
-## Build and test
+## How it works
 
-Install [mise](https://mise.jdx.dev/) and use the project's pinned tools:
+`DatabaseRole` and `Database` reference `PostgresCluster`, which defines a connection to an existing PostgreSQL server.
 
-```sh
-mise trust
-mise run --skip-tools tools-install
-mise run build
-mise run check
+```mermaid
+---
+config:
+  theme: base
+  fontFamily: "system-ui, sans-serif"
+  htmlLabels: false
+  themeCSS: |
+    .node rect { rx: 8px; ry: 8px; stroke-width: 1px; filter: drop-shadow(0px 3px 1px #3c383680) drop-shadow(0px 9px 7px #3c383659); }
+  themeVariables:
+    fontFamily: "system-ui, sans-serif"
+    fontSize: "16px"
+    primaryColor: "#d2b98b"
+    primaryTextColor: "#3c3836"
+    primaryBorderColor: "#8c755e"
+    lineColor: "#8c755e"
+    textColor: "#3c3836"
+    clusterBkg: "#ddc9a4"
+    clusterBorder: "#8c755e"
+    titleColor: "#3c3836"
+    edgeLabelBackground: "#ddc9a4"
+  flowchart:
+    nodeSpacing: 24
+    rankSpacing: 48
+    padding: 16
+    diagramPadding: 20
+---
+flowchart LR
+    role["DatabaseRole"] --> cluster["PostgresCluster"]
+    database["Database"] --> cluster
+    cluster -.-> postgres[("External PostgreSQL")]
+
+    classDef source fill:#e0c89b,stroke:#8c755e,color:#3c3836
+    classDef output fill:#c2c18d,stroke:#8c755e,color:#3c3836
+    classDef consumer fill:#cca98d,stroke:#8c755e,color:#3c3836
+    class cluster source
+    class database,role output
+    class postgres consumer
 ```
 
-[Development](docs/development.md) lists the individual suites and runtime prerequisites. Cluster operations require an explicit `KUBE_CONTEXT`; the [API examples](docs/examples.md) describe the accepted target behavior and are not a complete working application deployment yet.
+## Install
 
-The [delivery guide](docs/development.md#delivery-and-releases) describes independently versioned images and Helm OCI charts, immutable GitHub releases, keyless signatures, verified installation and controller-only removal. Development chart defaults are not a published release.
+Choose Helm or Flux for a fresh installation. Install one EPCO release per Kubernetes cluster.
+
+### Helm
+
+```sh
+helm install epco oci://ghcr.io/vterdunov/charts/external-postgres-control-operator \
+  --version 0.1.9 \
+  --namespace epco-system \
+  --create-namespace
+```
+
+### Flux
+
+Add these resources to your Flux configuration:
+
+```yaml
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: epco
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: oci://ghcr.io/vterdunov/charts/external-postgres-control-operator
+  ref:
+    tag: "0.1.9"
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: epco
+  namespace: flux-system
+spec:
+  interval: 30m
+  releaseName: epco
+  targetNamespace: epco-system
+  chartRef:
+    kind: OCIRepository
+    name: epco
+  install:
+    createNamespace: true
+    crds: Create
+    strategy:
+      name: RetryOnFailure
+  upgrade:
+    crds: CreateReplace
+    strategy:
+      name: RetryOnFailure
+```
+
+### Upgrades
+
+With Flux, update `spec.ref.tag` in the OCIRepository. Flux updates the CRDs before upgrading the operator.
+
+With Helm CLI, apply the target release's CRDs, then upgrade its chart.
+Replace `X.Y.Z` with a chart version that includes `crds.yaml` (added after `0.1.9`):
+
+```sh
+EPCO_VERSION=X.Y.Z
+EPCO_CRDS_URL="https://github.com/vterdunov/external-postgres-control-operator/releases/download/chart-v${EPCO_VERSION}/crds.yaml"
+kubectl apply --server-side --force-conflicts -f "$EPCO_CRDS_URL" &&
+kubectl wait --for=condition=Established --timeout=120s -f "$EPCO_CRDS_URL" &&
+helm upgrade epco oci://ghcr.io/vterdunov/charts/external-postgres-control-operator \
+  --version "$EPCO_VERSION" --namespace epco-system --wait
+```
+
+Pass any custom `--values` options to `helm upgrade`. Both methods keep CRDs on uninstall.
+
+See the [example guide](docs/examples.md) to connect your PostgreSQL server and configure application access.
+The [documentation](docs/README.md) covers the API, lifecycle, and development.
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).
