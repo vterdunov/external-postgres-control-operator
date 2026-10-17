@@ -47,7 +47,7 @@ config:
 flowchart LR
     role["DatabaseRole"] --> cluster["PostgresCluster"]
     database["Database"] --> cluster
-    cluster -.-> postgres[("PostgreSQL")]
+    cluster -.-> postgres[("External PostgreSQL")]
 
     classDef source fill:#e0c89b,stroke:#8c755e,color:#3c3836
     classDef output fill:#c2c18d,stroke:#8c755e,color:#3c3836
