@@ -16,7 +16,7 @@ Supports PostgreSQL **15, 16, 17, and 18**.
 
 ## How it works
 
-`DatabaseRole` and `Database` share a `PostgresCluster` connection. EPCO uses these declarations to manage SQL objects on your PostgreSQL server.
+`DatabaseRole` and `Database` reference `PostgresCluster`, which defines a connection to an existing PostgreSQL server.
 
 ```mermaid
 ---
@@ -26,10 +26,9 @@ config:
   htmlLabels: false
   themeCSS: |
     .node rect { rx: 8px; ry: 8px; stroke-width: 1px; filter: drop-shadow(0px 3px 1px #3c383680) drop-shadow(0px 9px 7px #3c383659); }
-    .cluster rect { rx: 12px; ry: 12px; filter: drop-shadow(0px 4px 2px #28282866) drop-shadow(0px 9px 9px #28282859); }
   themeVariables:
     fontFamily: "system-ui, sans-serif"
-    fontSize: "14px"
+    fontSize: "16px"
     primaryColor: "#d2b98b"
     primaryTextColor: "#3c3836"
     primaryBorderColor: "#8c755e"
@@ -40,34 +39,22 @@ config:
     titleColor: "#3c3836"
     edgeLabelBackground: "#ddc9a4"
   flowchart:
-    nodeSpacing: 16
-    rankSpacing: 28
-    padding: 12
-    diagramPadding: 24
-    subGraphTitleMargin:
-      top: 6
-      bottom: 8
+    nodeSpacing: 24
+    rankSpacing: 48
+    padding: 16
+    diagramPadding: 20
 ---
-flowchart TB
-    subgraph resources["Kubernetes custom resources"]
-        direction TB
-        database["Database<br/>Schemas and permissions"]
-        role["DatabaseRole<br/>Role and password"]
-        cluster["PostgresCluster<br/>Connection and TLS"]
-        database -->|spec.cluster| cluster
-        role -->|spec.cluster| cluster
-        database -.->|"optional roleRef<br/>connection Secrets"| role
-    end
-
-    resources -->|desired state| operator["EPCO operator"]
-    operator -->|SQL| postgres[("External PostgreSQL")]
+flowchart LR
+    role["DatabaseRole"] --> cluster["PostgresCluster"]
+    database["Database"] --> cluster
+    cluster -.-> postgres[("PostgreSQL")]
 
     classDef source fill:#e0c89b,stroke:#8c755e,color:#3c3836
     classDef output fill:#c2c18d,stroke:#8c755e,color:#3c3836
     classDef consumer fill:#cca98d,stroke:#8c755e,color:#3c3836
     class cluster source
     class database,role output
-    class operator,postgres consumer
+    class postgres consumer
 ```
 
 ## Install
