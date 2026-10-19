@@ -137,7 +137,7 @@ func (s *extensionAPISession) ReconcileACL(ctx context.Context,
 	return s.DatabaseSession.(postgres.DatabaseACLSession).ReconcileACL(ctx, desired)
 }
 
-func extensionAPIDatabase(cluster *epco.PostgresCluster, name string) *epco.Database {
+func extensionAPIDatabase(cluster *epco.ExternalPostgres, name string) *epco.Database {
 	db := watchedDatabase(cluster, name)
 	db.Spec.Extensions = []epco.ExtensionSpec{{Name: "hstore", Schema: "public"}}
 	return db
@@ -185,10 +185,10 @@ var _ = Describe("R5 Database extensions real API and watches", func() {
 			originalUID := cluster.UID
 			Expect(environment.Client.Delete(ctx, cluster)).To(Succeed())
 			Eventually(func() bool {
-				return environment.Client.Get(ctx, client.ObjectKeyFromObject(cluster), &epco.PostgresCluster{}) != nil
+				return environment.Client.Get(ctx, client.ObjectKeyFromObject(cluster), &epco.ExternalPostgres{}) != nil
 			}).
 				WithContext(ctx).WithTimeout(10 * time.Second).Should(BeTrue())
-			replacement := &epco.PostgresCluster{Name: cluster.Name, Namespace: cluster.Namespace, Spec: cluster.Spec}
+			replacement := &epco.ExternalPostgres{Name: cluster.Name, Namespace: cluster.Namespace, Spec: cluster.Spec}
 			replacement.Spec.Connection.Host = "extension-replacement.example"
 			Expect(scope.Create(ctx, replacement)).To(Succeed())
 			Expect(replacement.UID).NotTo(Equal(originalUID))

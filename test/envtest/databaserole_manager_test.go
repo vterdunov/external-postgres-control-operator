@@ -81,7 +81,7 @@ func startRoleManager(ctx context.Context, factory *watchedRoleFactory) {
 	builder, err := postgres.NewConfigBuilder()
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	instance, err := environment.StartManager(ctx, harness.ManagerOptions{
-		CachedObjects: []client.Object{&epco.DatabaseRole{}, &epco.PostgresCluster{}, &corev1.Secret{}, &corev1.Namespace{}},
+		CachedObjects: []client.Object{&epco.DatabaseRole{}, &epco.ExternalPostgres{}, &corev1.Secret{}, &corev1.Namespace{}},
 		Register: func(mgr manager.Manager) error {
 			return (&controller.DatabaseRoleReconciler{
 				Client:    mgr.GetClient(),
@@ -99,7 +99,7 @@ func startRoleManager(ctx context.Context, factory *watchedRoleFactory) {
 		Expect(instance.Stop(stopCtx)).To(Succeed())
 	})
 }
-func createRoleDescriptor(ctx context.Context, access *epco.ClusterAccess) *epco.PostgresCluster {
+func createRoleDescriptor(ctx context.Context, access *epco.ClusterAccess) *epco.ExternalPostgres {
 	admin := &corev1.Secret{
 		Namespace: namespace.Name,
 		Name:      "role-admin",
@@ -110,10 +110,10 @@ func createRoleDescriptor(ctx context.Context, access *epco.ClusterAccess) *epco
 		},
 	}
 	ExpectWithOffset(1, scope.Create(ctx, admin)).To(Succeed())
-	cluster := &epco.PostgresCluster{
+	cluster := &epco.ExternalPostgres{
 		Namespace: namespace.Name,
 		Name:      "role-connection",
-		Spec: epco.PostgresClusterSpec{
+		Spec: epco.ExternalPostgresSpec{
 			Connection:        epco.PostgresConnection{Host: "first.example"},
 			CredentialsSecret: epco.LocalReference{Name: admin.Name},
 			TLS:               &epco.PostgresTLS{Mode: roleTestTLSMode},

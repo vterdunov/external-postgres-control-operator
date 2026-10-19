@@ -116,7 +116,7 @@ func startDatabaseManagerWithClient(ctx context.Context, f *databaseWatchFactory
 	var cached client.Client
 	instance, err := environment.StartManager(ctx, harness.ManagerOptions{
 		CachedObjects: []client.Object{
-			&epco.Database{}, &epco.DatabaseRole{}, &epco.PostgresCluster{}, &corev1.Secret{}, &corev1.Namespace{},
+			&epco.Database{}, &epco.DatabaseRole{}, &epco.ExternalPostgres{}, &corev1.Secret{}, &corev1.Namespace{},
 		},
 		Register: func(mgr manager.Manager) error {
 			cached = mgr.GetClient()
@@ -181,7 +181,7 @@ func (c *databaseOwnerCandidateClient) snapshot() (int, int, []client.ObjectKey)
 	}
 	return c.lists, c.maximum, keys
 }
-func watchedDatabase(cluster *epco.PostgresCluster, name string) *epco.Database {
+func watchedDatabase(cluster *epco.ExternalPostgres, name string) *epco.Database {
 	return &epco.Database{Namespace: namespace.Name, Name: name,
 		Spec: epco.DatabaseSpec{Cluster: epco.ClusterReference{Name: cluster.Name}, Owner: databaseTestOwnerName}}
 }
@@ -213,10 +213,10 @@ var _ = Describe("Database manager watches", func() {
 			otherScope, otherNS, err := environment.NewScope(ctx, "epco-db-owner-index-")
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(func(ctx SpecContext) { Expect(otherScope.Cleanup(ctx)).To(Succeed()) })
-			otherCluster := &epco.PostgresCluster{Namespace: otherNS.Name, Name: cluster.Name, Spec: cluster.Spec}
+			otherCluster := &epco.ExternalPostgres{Namespace: otherNS.Name, Name: cluster.Name, Spec: cluster.Spec}
 			Expect(otherScope.Create(ctx, otherCluster)).To(Succeed())
 			for i := range 8 {
-				unrelated := &epco.PostgresCluster{Namespace: namespace.Name,
+				unrelated := &epco.ExternalPostgres{Namespace: namespace.Name,
 					Name: fmt.Sprintf("unrelated-descriptor-%d", i), Spec: cluster.Spec}
 				Expect(scope.Create(ctx, unrelated)).To(Succeed())
 				for j := range 2 {
@@ -334,7 +334,7 @@ var _ = Describe("Database manager watches", func() {
 			originalUID := cluster.UID
 			Expect(environment.Client.Delete(ctx, cluster)).To(Succeed())
 			Eventually(func() bool {
-				err := environment.Client.Get(ctx, client.ObjectKeyFromObject(cluster), &epco.PostgresCluster{})
+				err := environment.Client.Get(ctx, client.ObjectKeyFromObject(cluster), &epco.ExternalPostgres{})
 				return apierrors.IsNotFound(err)
 			}).WithContext(ctx).WithTimeout(10 * time.Second).Should(BeTrue())
 			replacement := cluster.DeepCopy()

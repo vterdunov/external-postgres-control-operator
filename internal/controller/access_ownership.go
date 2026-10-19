@@ -17,7 +17,7 @@ import (
 // SQLObjectType distinguishes role and database catalogs.
 type SQLObjectType string
 
-const namespaceAccessDeniedMessage = "The resource namespace is not authorized by PostgresCluster"
+const namespaceAccessDeniedMessage = "The resource namespace is not authorized by ExternalPostgres"
 
 const (
 	SQLObjectRole     SQLObjectType = "role"
@@ -48,7 +48,7 @@ func EffectiveRoleName(role *epco.DatabaseRole) string {
 }
 
 // AuthorizeNamespace evaluates ordinary cached Namespace labels before mutations.
-func AuthorizeNamespace(ctx context.Context, reader client.Reader, cluster *epco.PostgresCluster, namespace string) error {
+func AuthorizeNamespace(ctx context.Context, reader client.Reader, cluster *epco.ExternalPostgres, namespace string) error {
 	denied := &postgres.Failure{Reason: postgres.AccessDenied, Message: namespaceAccessDeniedMessage}
 	if cluster.Spec.Access == nil {
 		if namespace == cluster.Namespace {

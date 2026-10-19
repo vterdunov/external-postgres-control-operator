@@ -50,7 +50,7 @@ case "$action" in
       kubectl --context "$KUBE_CONTEXT" apply -f "$target/crds.yaml"
     else
       # A successful empty list for every kind is required before the first write.
-      for resource in postgresclusters databaseroles databases; do
+      for resource in externalpostgres databaseroles databases; do
         kubectl --context "$KUBE_CONTEXT" get "$resource.postgresql.epco.io" --all-namespaces -o json > "$target/$resource.json"
         python3 - "$target/$resource.json" <<'PY'
 from pathlib import Path

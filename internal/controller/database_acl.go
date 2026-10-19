@@ -46,7 +46,7 @@ func databaseACLRequested(spec epco.DatabaseSpec) bool {
 	}
 	return false
 }
-func (r *DatabaseReconciler) databaseACLDesired(database *epco.Database, cluster *epco.PostgresCluster, config *postgres.Config) postgres.ACLDesired {
+func (r *DatabaseReconciler) databaseACLDesired(database *epco.Database, cluster *epco.ExternalPostgres, config *postgres.Config) postgres.ACLDesired {
 	target := epco.ManagedACLTarget{Host: strings.TrimSuffix(strings.ToLower(strings.TrimSpace(config.Connection.Host)), "."), Port: int32(config.Connection.Port), Database: EffectiveDatabaseName(database)}
 	key := fmt.Sprintf("%q/%d/%q", target.Host, target.Port, target.Database)
 	prefix := fmt.Sprintf("%x/", sha256.Sum256(fmt.Appendf(nil, "%s/%s", cluster.UID, key)))

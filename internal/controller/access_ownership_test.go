@@ -84,7 +84,7 @@ func TestNamespaceSelectorAuthorization(t *testing.T) {
 		{name: "expressions require all terms", namespace: testOrdersNamespace, access: &epco.ClusterAccess{NamespaceSelector: expressions}, labels: map[string]string{testTeamLabel: testOrdersNamespace, testAccessLabel: testYesLabel, testEnvironmentLabel: "dev"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cluster := &epco.PostgresCluster{Namespace: testInfraNamespace, Name: testDescriptorName, Spec: epco.PostgresClusterSpec{Access: tc.access}}
+			cluster := &epco.ExternalPostgres{Namespace: testInfraNamespace, Name: testDescriptorName, Spec: epco.ExternalPostgresSpec{Access: tc.access}}
 			cl := accessClient(t, &corev1.Namespace{Name: tc.namespace, Labels: tc.labels})
 			err := controller.AuthorizeNamespace(t.Context(), cl, cluster, tc.namespace)
 			if tc.allowed {
@@ -104,7 +104,7 @@ func TestNamespaceSelectorAuthorization(t *testing.T) {
 func TestNamespaceAuthorizationUsesCurrentNamespaceLabels(t *testing.T) {
 	namespace := &corev1.Namespace{Name: testOrdersNamespace, Labels: map[string]string{testSelectorAccessLabel: testYesLabel}}
 	cl := accessClient(t, namespace)
-	cluster := &epco.PostgresCluster{Namespace: testInfraNamespace, Spec: epco.PostgresClusterSpec{Access: &epco.ClusterAccess{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{testSelectorAccessLabel: testYesLabel}}}}}
+	cluster := &epco.ExternalPostgres{Namespace: testInfraNamespace, Spec: epco.ExternalPostgresSpec{Access: &epco.ClusterAccess{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{testSelectorAccessLabel: testYesLabel}}}}}
 	if err := controller.AuthorizeNamespace(t.Context(), cl, cluster, testOrdersNamespace); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestAuthorizationReturnsNamespaceReadFailure(t *testing.T) {
 	cl := interceptor.NewClient(accessClient(t), interceptor.Funcs{Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
 		return failure
 	}})
-	cluster := &epco.PostgresCluster{Namespace: testInfraNamespace, Spec: epco.PostgresClusterSpec{Access: &epco.ClusterAccess{NamespaceSelector: &metav1.LabelSelector{}}}}
+	cluster := &epco.ExternalPostgres{Namespace: testInfraNamespace, Spec: epco.ExternalPostgresSpec{Access: &epco.ClusterAccess{NamespaceSelector: &metav1.LabelSelector{}}}}
 	if err := controller.AuthorizeNamespace(t.Context(), cl, cluster, testOrdersNamespace); !errors.Is(err, failure) {
 		t.Fatalf("API failure=%v want original error for retry", err)
 	}

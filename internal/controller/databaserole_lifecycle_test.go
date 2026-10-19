@@ -42,7 +42,7 @@ func TestRoleAccessDenialPausesMutationsAndPendingFinalizer(t *testing.T) {
 			}
 			source := ownedGeneratedSource(role)
 			r, cl, session := roleFixture(t, role, source)
-			cluster := &epco.PostgresCluster{}
+			cluster := &epco.ExternalPostgres{}
 			if err := cl.Get(t.Context(), client.ObjectKey{Namespace: testInfraNamespace, Name: testDescriptorName}, cluster); err != nil {
 				t.Fatal(err)
 			}

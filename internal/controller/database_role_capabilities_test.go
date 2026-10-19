@@ -229,7 +229,7 @@ func TestManagedOwnerCapabilityRequiresBothNamespacesAndResumes(t *testing.T) {
 	db := ownershipDatabase(testOrdersNamespace, "authorization-database", "authorization-database-uid")
 	role := capabilityManager(db)
 	r, cl, session := databaseFixture(t, db, role, &corev1.Namespace{Name: role.Namespace})
-	cluster := &epco.PostgresCluster{}
+	cluster := &epco.ExternalPostgres{}
 	if err := cl.Get(t.Context(), client.ObjectKey{Namespace: testInfraNamespace, Name: testDescriptorName}, cluster); err != nil {
 		t.Fatal(err)
 	}

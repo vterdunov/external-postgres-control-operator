@@ -23,7 +23,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 API = "postgresql.epco.io/v1alpha1"
-CRDS = [name + ".postgresql.epco.io" for name in ("postgresclusters", "databaseroles", "databases")]
+CRDS = [name + ".postgresql.epco.io" for name in ("externalpostgres", "databaseroles", "databases")]
 DURABLE_STATUS = ("hasManagedSQL", "managedACLTargets", "activeACLTarget", "connectionSecretHistory",
                   "generatedPasswordInitialized", "managedEndpoints")
 
@@ -240,7 +240,7 @@ class Smoke:
         self.apply({"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "admin", "namespace": self.app_namespace},
                     "type": "kubernetes.io/basic-auth", "data": {"username": base64.b64encode(b"postgres").decode(),
                                                                   "password": fixture["data"]["password"]}})
-        self.apply(self.resource("PostgresCluster", "postgres", {"connection": {"host": f"postgres.{self.pg_namespace}.svc.cluster.local"},
+        self.apply(self.resource("ExternalPostgres", "postgres", {"connection": {"host": f"postgres.{self.pg_namespace}.svc.cluster.local"},
                     "credentialsSecret": {"name": "admin"}, "tls": {"mode": "disable"}, "reconcileInterval": "2s",
                     "connectTimeout": "2s", "statementTimeout": "2s"}))
         self.apply({"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "supplied-source", "namespace": self.app_namespace},
@@ -275,7 +275,7 @@ class Smoke:
         self.event("CR readiness, real application SQL and credential controls")
 
     def ready_application(self):
-        for resource, names in (("postgrescluster", ["postgres"]), ("databaserole", list(self.roles)), ("database", ["application"])):
+        for resource, names in (("externalpostgres", ["postgres"]), ("databaserole", list(self.roles)), ("database", ["application"])):
             for name in names:
                 def current_ready(resource=resource, name=name):
                     value = self.get(resource, name, self.app_namespace)
@@ -286,7 +286,7 @@ class Smoke:
 
     def snapshot(self):
         values = {}
-        for resource, names in (("postgrescluster", ["postgres"]), ("databaserole", list(self.roles)), ("database", ["application"]),
+        for resource, names in (("externalpostgres", ["postgres"]), ("databaserole", list(self.roles)), ("database", ["application"]),
                                 ("secret", ["admin", "supplied-source", "generated-source", "supplied-connection", "generated-connection"])):
             for name in names:
                 obj = self.get(resource, name, self.app_namespace)

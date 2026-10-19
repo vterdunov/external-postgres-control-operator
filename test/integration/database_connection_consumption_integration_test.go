@@ -73,7 +73,7 @@ var _ = Describe("R4 actual libpq and pgJDBC application consumers", Ordered, Co
 		func(ctx SpecContext) {
 			makeSpecialNames(ctx, "")
 			path := consumers.publicCA(ctx, fixture)
-			cluster := &epco.PostgresCluster{}
+			cluster := &epco.ExternalPostgres{}
 			Expect(fixture.api.Get(ctx, client.ObjectKeyFromObject(fixture.cluster), cluster)).To(Succeed())
 			// Own a local IPv6 endpoint that immediately rejects SQL startup.
 			// An external documentation address can blackhole until the operator's
@@ -164,7 +164,7 @@ var _ = Describe("R4 actual libpq and pgJDBC application consumers", Ordered, Co
 		}, NodeTimeout(45*time.Second))
 	It("matches require-plus-CA verification in libpq and JDBC and both reject an untrusted CA", func(ctx SpecContext) {
 		consumers.publicCA(ctx, fixture)
-		cluster := &epco.PostgresCluster{}
+		cluster := &epco.ExternalPostgres{}
 		Expect(fixture.api.Get(ctx, client.ObjectKeyFromObject(fixture.cluster), cluster)).To(Succeed())
 		cluster.Spec.TLS.Mode = tlsRequire
 		Expect(fixture.api.Update(ctx, cluster)).To(Succeed())

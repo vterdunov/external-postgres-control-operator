@@ -13,7 +13,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 CHART = Path("charts/external-postgres-control-operator")
-KINDS = ("postgresclusters", "databaseroles", "databases")
+KINDS = ("externalpostgres", "databaseroles", "databases")
 DIGEST = "sha256:" + "a" * 64
 IMAGE = "ghcr.io/vterdunov/external-postgres-control-operator:0.2.3@" + DIGEST
 
@@ -51,7 +51,7 @@ class DeliveryCase(unittest.TestCase):
         self.inventory = [
             {"kind": "CustomResourceDefinition", "uid": "schema-original"},
             {"kind": "Namespace", "uid": "namespace-original"},
-            {"kind": "PostgresCluster", "uid": "cluster-original", "finalizers": ["epco"]},
+            {"kind": "ExternalPostgres", "uid": "cluster-original", "finalizers": ["epco"]},
             {"kind": "DatabaseRole", "uid": "role-original", "status": {"hasManagedSQL": True}},
             {"kind": "Database", "uid": "database-original", "status": {"managedACLTargets": ["original"]}},
             {"kind": "Secret", "uid": "supplied-original", "data": {"password": "private-fixture"}},

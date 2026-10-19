@@ -94,7 +94,7 @@ func startConnectionAPIManager(ctx context.Context, factory postgres.DatabaseFac
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	instance, err := environment.StartManager(ctx, harness.ManagerOptions{
 		CachedObjects: []client.Object{
-			&epco.Database{}, &epco.DatabaseRole{}, &epco.PostgresCluster{}, &corev1.Secret{}, &corev1.Namespace{},
+			&epco.Database{}, &epco.DatabaseRole{}, &epco.ExternalPostgres{}, &corev1.Secret{}, &corev1.Namespace{},
 		},
 		Register: func(mgr manager.Manager) error {
 			return (&controller.DatabaseReconciler{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(),
@@ -109,7 +109,7 @@ func startConnectionAPIManager(ctx context.Context, factory postgres.DatabaseFac
 	})
 }
 
-func connectionAPIFixture(ctx context.Context) (*epco.PostgresCluster, *epco.DatabaseRole, *corev1.Secret) {
+func connectionAPIFixture(ctx context.Context) (*epco.ExternalPostgres, *epco.DatabaseRole, *corev1.Secret) {
 	cluster := createRoleDescriptor(ctx, nil)
 	role := &epco.DatabaseRole{Namespace: namespace.Name, Name: connectionAPIRoleName,
 		Spec: epco.DatabaseRoleSpec{Cluster: epco.ClusterReference{Namespace: namespace.Name, Name: cluster.Name},
@@ -139,7 +139,7 @@ func connectionAPIApplyRole(ctx context.Context, r *controller.DatabaseRoleRecon
 	ExpectWithOffset(1, condition.Status).To(Equal(metav1.ConditionTrue))
 }
 
-func connectionAPIDatabase(cluster *epco.PostgresCluster, name string) *epco.Database {
+func connectionAPIDatabase(cluster *epco.ExternalPostgres, name string) *epco.Database {
 	db := watchedDatabase(cluster, name)
 	db.Spec.Name = epco.SQLName(name + "_sql")
 	db.Spec.ConnectionSecrets = []epco.ConnectionSecret{{

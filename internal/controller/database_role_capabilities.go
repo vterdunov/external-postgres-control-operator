@@ -10,7 +10,7 @@ import (
 
 // databaseSessionOptions observes eligibility through the manager cache. SQL
 // authority is checked independently by PostgreSQL before any service grant.
-func (r *DatabaseReconciler) databaseSessionOptions(database *epco.Database, cluster *epco.PostgresCluster) postgres.DatabaseSessionOptions {
+func (r *DatabaseReconciler) databaseSessionOptions(database *epco.Database, cluster *epco.ExternalPostgres) postgres.DatabaseSessionOptions {
 	return postgres.DatabaseSessionOptions{ResolveRoleCapability: func(ctx context.Context, name string, purpose postgres.RoleCapabilityPurpose) (bool, error) {
 		if database.Spec.ManagementPolicy == epco.ManagementObserve && database.DeletionTimestamp.IsZero() {
 			return false, nil

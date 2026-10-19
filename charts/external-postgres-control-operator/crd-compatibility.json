@@ -2,21 +2,21 @@
   "apiVersion": 1,
   "crds": {
     "databaseroles.postgresql.epco.io": {
-      "candidateFingerprint": "sha256:69eb8214e6594bbc4aaf8291e61d7c92c9f1504640dd945b3cf969c79a211c71",
+      "candidateFingerprint": "sha256:f7dbe4e93edeab04012aba92efd061d025084ff7659b1c5caa0981f9f47a71ca",
       "compatibleFingerprints": [
-        "sha256:69eb8214e6594bbc4aaf8291e61d7c92c9f1504640dd945b3cf969c79a211c71"
+        "sha256:f7dbe4e93edeab04012aba92efd061d025084ff7659b1c5caa0981f9f47a71ca"
       ]
     },
     "databases.postgresql.epco.io": {
-      "candidateFingerprint": "sha256:db2f18c111eb7bed76e6f8e21968b4e331372eb72bda8b80dfb0d566a6c79092",
+      "candidateFingerprint": "sha256:c6b0afd1fab56150d8b7a41f24fabed52e9ca82821fd87fb037db5a1ae7b0b93",
       "compatibleFingerprints": [
-        "sha256:db2f18c111eb7bed76e6f8e21968b4e331372eb72bda8b80dfb0d566a6c79092"
+        "sha256:c6b0afd1fab56150d8b7a41f24fabed52e9ca82821fd87fb037db5a1ae7b0b93"
       ]
     },
-    "postgresclusters.postgresql.epco.io": {
-      "candidateFingerprint": "sha256:3dd63b1a1c44e1a9f9c909f9afc371232a5437915fcb804aca294d1eaa382ba9",
+    "externalpostgres.postgresql.epco.io": {
+      "candidateFingerprint": "sha256:1e39d078be2a24469c8c465768424adf140fac608a36cdc5fb49dc4b81bd9c00",
       "compatibleFingerprints": [
-        "sha256:3dd63b1a1c44e1a9f9c909f9afc371232a5437915fcb804aca294d1eaa382ba9"
+        "sha256:1e39d078be2a24469c8c465768424adf140fac608a36cdc5fb49dc4b81bd9c00"
       ]
     }
   }

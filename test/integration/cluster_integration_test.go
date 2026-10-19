@@ -50,7 +50,7 @@ func productionConfig(f *Fixture, mode string, clientCert bool) *pgcheck.Config 
 	return productionConfigUsingCA(f, mode, clientCert, f.Server.TLS.CA)
 }
 func productionConfigUsingCA(f *Fixture, mode string, clientCert bool, caPath string) *pgcheck.Config {
-	c := &epco.PostgresCluster{Namespace: "integration", Spec: epco.PostgresClusterSpec{
+	c := &epco.ExternalPostgres{Namespace: "integration", Spec: epco.ExternalPostgresSpec{
 		Connection: epco.PostgresConnection{Host: loopbackHost,
 			Port:     int32(f.Server.port),
 			Database: epco.SQLName(f.Database)},

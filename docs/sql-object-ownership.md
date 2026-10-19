@@ -1,6 +1,6 @@
 # SQL object ownership and reconciliation
 
-Status: selected design for the [accepted API baseline](api-proposal.md), updated 2026-10-10. Follow inspected CNPG behavior for retries, existing SQL objects, CR conflicts, and reclaim policies. DatabaseRole and Database implement this ownership/lifecycle contract. Database implements status-backed ACL cleanup and recovery within a live CR UID. See [implementation status](README.md#implementation-status) and the implemented [PostgresCluster connection check](postgrescluster.md).
+Status: selected design for the [accepted API baseline](api-proposal.md), updated 2026-10-10. Follow inspected CNPG behavior for retries, existing SQL objects, CR conflicts, and reclaim policies. DatabaseRole and Database implement this ownership/lifecycle contract. Database implements status-backed ACL cleanup and recovery within a live CR UID. See [implementation status](README.md#implementation-status) and the implemented [ExternalPostgres connection check](externalpostgres.md).
 
 ## Verified CNPG behavior
 
@@ -22,11 +22,11 @@ CNPG does not check these resources across namespaces in this path. Its Cluster 
 
 ## Adaptation for external PostgreSQL
 
-Use one canonical PostgresCluster per logical PostgreSQL server. The management key consists of its namespace-qualified Kubernetes reference, SQL object type (role or database), and effective SQL name. The application CR namespace is not part of the key. One role and one database can share a name because their types differ. Automatic discovery of connection aliases and independent Kubernetes control planes managing one server are outside the initial design.
+Use one canonical ExternalPostgres per logical PostgreSQL server. The management key consists of its namespace-qualified Kubernetes reference, SQL object type (role or database), and effective SQL name. The application CR namespace is not part of the key. One role and one database can share a name because their types differ. Automatic discovery of connection aliases and independent Kubernetes control planes managing one server are outside the initial design.
 
 For a new managing CR:
 
-1. Authorize its Namespace against the current PostgresCluster selector.
+1. Authorize its Namespace against the current ExternalPostgres selector.
 2. List relevant CRs across namespaces that reference the same canonical connection.
 3. Exclude the current CR by UID, not metadata.name alone.
 4. Look for another CR of the same type and SQL name with recorded management.
@@ -55,7 +55,7 @@ Service grants are retained across shared Database lifecycles, owner changes, re
 
 ## Current connection and endpoint changes
 
-Database and DatabaseRole cluster references remain immutable, following CNPG. PostgresCluster is our external connection descriptor, which CNPG does not provide.
+Database and DatabaseRole cluster references remain immutable, following CNPG. ExternalPostgres is our external connection descriptor, which CNPG does not provide.
 
 Changing the descriptor's connection settings, or recreating it under the same namespace/name, selects the current connection. Requeue dependent resources, reconcile their current desired SQL state on that connection, and refresh requested connection Secrets. Do not stop merely because the descriptor UID or endpoint changed. The operator does not copy data, migrate existing tables, or clean up objects on the previous server.
 

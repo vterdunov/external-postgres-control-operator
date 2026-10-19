@@ -55,7 +55,7 @@ func (f roleFactoryFunc) Open(ctx context.Context, c *postgres.Config) (postgres
 
 func roleFixture(t *testing.T, role *epco.DatabaseRole, objects ...client.Object) (*controller.DatabaseRoleReconciler, client.WithWatch, *roleSessionStub) {
 	t.Helper()
-	cluster := &epco.PostgresCluster{Namespace: testInfraNamespace, Name: testDescriptorName, Spec: epco.PostgresClusterSpec{
+	cluster := &epco.ExternalPostgres{Namespace: testInfraNamespace, Name: testDescriptorName, Spec: epco.ExternalPostgresSpec{
 		Connection: epco.PostgresConnection{Host: "DATABASE.EXAMPLE."}, CredentialsSecret: epco.LocalReference{Name: testAdminName}, TLS: &epco.PostgresTLS{Mode: dbTestTLSDisable}, Access: &epco.ClusterAccess{NamespaceSelector: &metav1.LabelSelector{}},
 	}}
 	admin := &corev1.Secret{Namespace: testInfraNamespace, Name: testAdminName, Type: corev1.SecretTypeBasicAuth, Data: map[string][]byte{corev1.BasicAuthUsernameKey: []byte(testAdminName), corev1.BasicAuthPasswordKey: []byte("administrative-credential")}}
@@ -435,7 +435,7 @@ func TestRoleEndpointHistoryPreservesDormantCleanup(t *testing.T) {
 		return nil, &postgres.Failure{Reason: "ConnectionUnavailable", Message: testSafeFailure}
 	}
 	runRole(t, r, role)
-	cluster := &epco.PostgresCluster{}
+	cluster := &epco.ExternalPostgres{}
 	if err := cl.Get(t.Context(), client.ObjectKey{Namespace: testInfraNamespace, Name: testDescriptorName}, cluster); err != nil {
 		t.Fatal(err)
 	}

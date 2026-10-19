@@ -16,7 +16,7 @@ Supports PostgreSQL **15, 16, 17, and 18**.
 
 ## How it works
 
-`DatabaseRole` and `Database` reference `PostgresCluster`, which defines a connection to an existing PostgreSQL server.
+`DatabaseRole` and `Database` reference `ExternalPostgres`, which defines a connection to an existing PostgreSQL server. Its Kubernetes resource name is `externalpostgres` (short name `epg`).
 
 ```mermaid
 ---
@@ -45,7 +45,7 @@ config:
     diagramPadding: 20
 ---
 flowchart LR
-    role["DatabaseRole"] --> cluster["PostgresCluster"]
+    role["DatabaseRole"] --> cluster["ExternalPostgres"]
     database["Database"] --> cluster
     cluster -.-> postgres[("External PostgreSQL")]
 

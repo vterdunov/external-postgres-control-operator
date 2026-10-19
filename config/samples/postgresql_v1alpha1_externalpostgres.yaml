@@ -1,10 +1,10 @@
 apiVersion: postgresql.epco.io/v1alpha1
-kind: PostgresCluster
+kind: ExternalPostgres
 metadata:
   labels:
     app.kubernetes.io/name: epco
     app.kubernetes.io/managed-by: kustomize
-  name: postgrescluster-sample
+  name: externalpostgres-sample
 spec:
   connection:
     host: pg-primary.example.com

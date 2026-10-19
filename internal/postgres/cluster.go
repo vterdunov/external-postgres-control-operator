@@ -99,7 +99,7 @@ func makeNeutralTemplate() (config *pgx.ConnConfig, result error) {
 }
 
 // Build resolves only the referring namespace's Secrets and assigns typed values.
-func (b *ConfigBuilder) Build(cluster *epco.PostgresCluster, secrets map[string]*corev1.Secret) (*Config, error) {
+func (b *ConfigBuilder) Build(cluster *epco.ExternalPostgres, secrets map[string]*corev1.Secret) (*Config, error) {
 	if cluster == nil || b == nil || b.template == nil {
 		return nil, &Failure{InvalidConfiguration, "PostgreSQL configuration is unavailable"}
 	}
@@ -174,7 +174,7 @@ func duration(value epco.PositiveDuration, fallback time.Duration) (time.Duratio
 	return d, nil
 }
 
-func localSecret(cluster *epco.PostgresCluster, secrets map[string]*corev1.Secret, name string) (*corev1.Secret, error) {
+func localSecret(cluster *epco.ExternalPostgres, secrets map[string]*corev1.Secret, name string) (*corev1.Secret, error) {
 	if name == "" {
 		return nil, &Failure{InvalidConfiguration, "Secret reference must have a name"}
 	}
@@ -183,12 +183,12 @@ func localSecret(cluster *epco.PostgresCluster, secrets map[string]*corev1.Secre
 		return nil, &Failure{SecretNotFound, "A referenced Secret does not exist"}
 	}
 	if secret.Name != name || secret.Namespace != cluster.Namespace {
-		return nil, &Failure{InvalidSecret, "Referenced Secret must belong to the PostgresCluster namespace"}
+		return nil, &Failure{InvalidSecret, "Referenced Secret must belong to the ExternalPostgres namespace"}
 	}
 	return secret, nil
 }
 
-func configureTLS(conn *pgx.ConnConfig, cluster *epco.PostgresCluster, secrets map[string]*corev1.Secret) error {
+func configureTLS(conn *pgx.ConnConfig, cluster *epco.ExternalPostgres, secrets map[string]*corev1.Secret) error {
 	mode := tlsVerifyFull
 	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode != "" {
 		mode = cluster.Spec.TLS.Mode

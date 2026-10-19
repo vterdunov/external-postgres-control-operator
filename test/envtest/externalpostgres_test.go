@@ -61,13 +61,13 @@ func startClusterManagerWithClient(ctx context.Context, p *clusterProbe, decorat
 	b, err := postgres.NewConfigBuilder()
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	instance, err := environment.StartManager(ctx, harness.ManagerOptions{Namespace: namespace.Name,
-		CachedObjects: []client.Object{&epco.PostgresCluster{}, &corev1.Secret{}},
+		CachedObjects: []client.Object{&epco.ExternalPostgres{}, &corev1.Secret{}},
 		Register: func(mgr manager.Manager) error {
 			controllerClient := mgr.GetClient()
 			if decorate != nil {
 				controllerClient = decorate(controllerClient)
 			}
-			return (&controller.PostgresClusterReconciler{Client: controllerClient,
+			return (&controller.ExternalPostgresReconciler{Client: controllerClient,
 				APIReader: mgr.GetAPIReader(),
 				Builder:   b,
 				Checker:   p}).SetupWithManager(mgr)
@@ -87,22 +87,22 @@ func clusterAuth(name, password string) *corev1.Secret {
 		Data: map[string][]byte{connectionAPIUsernameKey: []byte("admin"),
 			passwordKey: []byte(password)}}
 }
-func watchedCluster() *epco.PostgresCluster {
-	return &epco.PostgresCluster{Name: "watched-cluster",
+func watchedCluster() *epco.ExternalPostgres {
+	return &epco.ExternalPostgres{Name: "watched-cluster",
 		Namespace: namespace.Name,
-		Spec: epco.PostgresClusterSpec{Connection: epco.PostgresConnection{Host: "database"},
+		Spec: epco.ExternalPostgresSpec{Connection: epco.PostgresConnection{Host: "database"},
 			CredentialsSecret: epco.LocalReference{Name: "auth"},
 			TLS:               &epco.PostgresTLS{Mode: "disable"},
 			ReconcileInterval: "2m"}}
 }
-func clusterCondition(ctx context.Context, c *epco.PostgresCluster) *metav1.Condition {
-	latest := &epco.PostgresCluster{}
+func clusterCondition(ctx context.Context, c *epco.ExternalPostgres) *metav1.Condition {
+	latest := &epco.ExternalPostgres{}
 	if environment.Client.Get(ctx, client.ObjectKeyFromObject(c), latest) != nil {
 		return nil
 	}
 	return meta.FindStatusCondition(latest.Status.Conditions, "Ready")
 }
-func expectReady(ctx context.Context, c *epco.PostgresCluster, status metav1.ConditionStatus, reason string) {
+func expectReady(ctx context.Context, c *epco.ExternalPostgres, status metav1.ConditionStatus, reason string) {
 	Eventually(func(g Gomega) {
 		condition := clusterCondition(ctx, c)
 		g.Expect(condition).NotTo(BeNil())
@@ -132,7 +132,7 @@ func (w *conflictStatusWriter) Patch(ctx context.Context,
 	opts ...client.SubResourcePatchOption) error {
 	var mutationErr error
 	w.parent.once.Do(func() {
-		latest := &epco.PostgresCluster{}
+		latest := &epco.ExternalPostgres{}
 		mutationErr = environment.Client.Get(ctx, client.ObjectKeyFromObject(obj), latest)
 		if mutationErr == nil {
 			latest.Status.Message = "independent concurrent writer"
@@ -149,7 +149,7 @@ func (w *conflictStatusWriter) Patch(ctx context.Context,
 	return err
 }
 
-var _ = Describe("PostgresCluster manager reconciliation", func() {
+var _ = Describe("ExternalPostgres manager reconciliation", func() {
 	It("recovers on Secret creation, rotation, deletion and recreation and suppresses status-only events",
 		func(ctx SpecContext) {
 			p := &clusterProbe{seen: make(chan string, 32)}
@@ -160,7 +160,7 @@ var _ = Describe("PostgresCluster manager reconciliation", func() {
 			s := clusterAuth("auth", "valid")
 			Expect(scope.Create(ctx, s)).To(Succeed())
 			expectReady(ctx, c, metav1.ConditionTrue, "Ready")
-			latest := &epco.PostgresCluster{}
+			latest := &epco.ExternalPostgres{}
 			Expect(environment.Client.Get(ctx, client.ObjectKeyFromObject(c), latest)).To(Succeed())
 			successful := latest.Status.LastSuccessfulReconcileTime.DeepCopy()
 			before := p.count()
@@ -218,7 +218,7 @@ var _ = Describe("PostgresCluster manager reconciliation", func() {
 		close(release)
 		Eventually(p.seen).WithContext(ctx).Should(Receive(Equal("broken")))
 		expectReady(ctx, c, metav1.ConditionFalse, "ConnectionUnavailable")
-		latest := &epco.PostgresCluster{}
+		latest := &epco.ExternalPostgres{}
 		Expect(environment.Client.Get(ctx, client.ObjectKeyFromObject(c), latest)).To(Succeed())
 		Expect(latest.Status.AppliedGeneration).To(BeZero())
 		Expect(latest.Status.LastSuccessfulReconcileTime).To(BeNil())
@@ -267,7 +267,7 @@ var _ = Describe("PostgresCluster manager reconciliation", func() {
 		close(release)
 		Eventually(p.seen).WithContext(ctx).Should(Receive(Equal("broken")))
 		expectReady(ctx, c, metav1.ConditionFalse, "ConnectionUnavailable")
-		latest := &epco.PostgresCluster{}
+		latest := &epco.ExternalPostgres{}
 		Expect(environment.Client.Get(ctx, client.ObjectKeyFromObject(c), latest)).To(Succeed())
 		Expect(latest.Status.ObservedGeneration).To(Equal(c.Generation))
 		Expect(latest.Status.AppliedGeneration).To(BeZero())

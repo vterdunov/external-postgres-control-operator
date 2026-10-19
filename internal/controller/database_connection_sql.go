@@ -17,7 +17,7 @@ import (
 
 const databasePublicRole = "PUBLIC"
 
-func (r *DatabaseReconciler) confirmConnectionState(ctx context.Context, database *epco.Database, cluster *epco.PostgresCluster, session postgres.DatabaseSession, state *postgres.DatabaseState, desired *postgres.ACLDesired, inputs []connectionSecretInput) (bool, *postgres.DatabaseState, error) {
+func (r *DatabaseReconciler) confirmConnectionState(ctx context.Context, database *epco.Database, cluster *epco.ExternalPostgres, session postgres.DatabaseSession, state *postgres.DatabaseState, desired *postgres.ACLDesired, inputs []connectionSecretInput) (bool, *postgres.DatabaseState, error) {
 	connected, coreErr := r.applyConnectionCore(ctx, database, session, state, desired)
 	if connected == nil && coreErr != nil {
 		return false, nil, coreErr
@@ -108,7 +108,7 @@ func connectionDeclarationConfirmed(database *epco.Database, role string, result
 	return true
 }
 
-func (r *DatabaseReconciler) refreshConnectionSecrets(ctx context.Context, database *epco.Database, cluster *epco.PostgresCluster, session postgres.DatabaseSession, inputs []connectionSecretInput, connected *postgres.ACLResult) error {
+func (r *DatabaseReconciler) refreshConnectionSecrets(ctx context.Context, database *epco.Database, cluster *epco.ExternalPostgres, session postgres.DatabaseSession, inputs []connectionSecretInput, connected *postgres.ACLResult) error {
 	checker, capable := session.(postgres.DatabaseConnectionSession)
 	var first error
 	for _, input := range inputs {
@@ -123,7 +123,7 @@ func (r *DatabaseReconciler) refreshConnectionSecrets(ctx context.Context, datab
 	return first
 }
 
-func (r *DatabaseReconciler) refreshConnectionSecret(ctx context.Context, database *epco.Database, cluster *epco.PostgresCluster, checker postgres.DatabaseConnectionSession, capable bool, input connectionSecretInput, connected *postgres.ACLResult) error {
+func (r *DatabaseReconciler) refreshConnectionSecret(ctx context.Context, database *epco.Database, cluster *epco.ExternalPostgres, checker postgres.DatabaseConnectionSession, capable bool, input connectionSecretInput, connected *postgres.ACLResult) error {
 	receipt := passwordApplicationReceipt(input.role, cluster, input.source)
 	if !equality.Semantic.DeepEqual(receipt, input.role.Status.PasswordApplied) || !connectionDeclarationConfirmed(database, EffectiveRoleName(input.role), connected) {
 		return &postgres.Failure{Reason: postgres.DependenciesNotReady, Message: "The current application credential and desired CONNECT are not confirmed"}

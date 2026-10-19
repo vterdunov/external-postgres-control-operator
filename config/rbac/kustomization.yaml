@@ -28,6 +28,6 @@ resources:
 - databaserole_admin_role.yaml
 - databaserole_editor_role.yaml
 - databaserole_viewer_role.yaml
-- postgrescluster_admin_role.yaml
-- postgrescluster_editor_role.yaml
-- postgrescluster_viewer_role.yaml
+- externalpostgres_admin_role.yaml
+- externalpostgres_editor_role.yaml
+- externalpostgres_viewer_role.yaml

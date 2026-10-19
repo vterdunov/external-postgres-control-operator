@@ -17,6 +17,13 @@ import (
 	harness "github.com/vterdunov/external-postgres-control-operator/test/envtest"
 )
 
+const (
+	namespaceField     = "namespace"
+	connectionField    = "connection"
+	hostField          = "host"
+	descriptorTestHost = "postgres.example.test"
+)
+
 var environment *harness.Environment
 var scope *harness.Scope
 var namespace *corev1.Namespace

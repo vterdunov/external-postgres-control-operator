@@ -430,11 +430,11 @@ var _ = Describe("R3 independent grantor provenance validation", Ordered, Contin
 			} else {
 				fixture.other = newName
 			}
-			previous := &epco.PostgresCluster{}
+			previous := &epco.ExternalPostgres{}
 			key := client.ObjectKey{Name: fixture.database.Spec.Cluster.Name, Namespace: fixture.database.Namespace}
 			Expect(environment.Client.Get(ctx, key, previous)).To(Succeed())
 			Expect(environment.Client.Delete(ctx, previous)).To(Succeed())
-			replacement := &epco.PostgresCluster{Name: previous.Name, Namespace: previous.Namespace, Spec: previous.Spec}
+			replacement := &epco.ExternalPostgres{Name: previous.Name, Namespace: previous.Namespace, Spec: previous.Spec}
 			Expect(fixture.scope.Create(ctx, replacement)).To(Succeed())
 			Expect(replacement.UID).NotTo(Equal(previous.UID))
 			fixture.update(ctx, func(spec *epco.DatabaseSpec) {

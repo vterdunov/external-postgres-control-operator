@@ -76,7 +76,7 @@ func (r *DatabaseRoleReconciler) SetupWithManager(manager ctrl.Manager) error {
 			}
 			return keys
 		}},
-		{&epco.PostgresCluster{}, roleAdminSecretIndex, func(object client.Object) []string { return secretReferences(object.(*epco.PostgresCluster)) }},
+		{&epco.ExternalPostgres{}, roleAdminSecretIndex, func(object client.Object) []string { return secretReferences(object.(*epco.ExternalPostgres)) }},
 	} {
 		if err := manager.GetFieldIndexer().IndexField(context.Background(), index.object, index.name, index.extract); err != nil {
 			return err
@@ -101,7 +101,7 @@ func (r *DatabaseRoleReconciler) SetupWithManager(manager ctrl.Manager) error {
 		For(&epco.DatabaseRole{}, builder.WithPredicates(primary)).
 		Watches(&epco.DatabaseRole{}, handler.EnqueueRequestsFromMapFunc(r.rolesForRole), builder.WithPredicates(dependencies)).
 		Watches(&epco.Database{}, handler.EnqueueRequestsFromMapFunc(r.rolesForDatabaseOutputs), builder.WithPredicates(outputs)).
-		Watches(&epco.PostgresCluster{}, handler.EnqueueRequestsFromMapFunc(r.rolesForCluster), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
+		Watches(&epco.ExternalPostgres{}, handler.EnqueueRequestsFromMapFunc(r.rolesForCluster), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.rolesForSecret), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.rolesForNamespace), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Complete(r)
@@ -151,9 +151,9 @@ func (r *DatabaseRoleReconciler) rolesForNamespace(ctx context.Context, object c
 
 func (r *DatabaseRoleReconciler) rolesForSecret(ctx context.Context, object client.Object) []reconcile.Request {
 	requests := r.roleRequests(ctx, client.InNamespace(object.GetNamespace()), client.MatchingFields{roleSourceIndex: object.GetName()})
-	clusters := &epco.PostgresClusterList{}
+	clusters := &epco.ExternalPostgresList{}
 	if err := r.Client.List(ctx, clusters, client.InNamespace(object.GetNamespace()), client.MatchingFields{roleAdminSecretIndex: object.GetName()}); err != nil {
-		ctrl.LoggerFrom(ctx).Error(err, "Unable to list PostgresClusters for administrative Secret")
+		ctrl.LoggerFrom(ctx).Error(err, "Unable to list ExternalPostgres resources for administrative Secret")
 		return requests
 	}
 	for _, cluster := range clusters.Items {

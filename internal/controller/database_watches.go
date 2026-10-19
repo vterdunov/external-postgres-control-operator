@@ -71,7 +71,7 @@ func (r *DatabaseReconciler) SetupWithManager(manager ctrl.Manager) error {
 			return nil
 		}},
 		{&epco.Database{}, databaseOutputSecretIndex, func(object client.Object) []string { return databaseOutputNames(object.(*epco.Database)) }},
-		{&epco.PostgresCluster{}, databaseAdminSecretIndex, databaseSecretIndexKeys},
+		{&epco.ExternalPostgres{}, databaseAdminSecretIndex, databaseSecretIndexKeys},
 	} {
 		if err := manager.GetFieldIndexer().IndexField(context.Background(), index.object, index.name, index.extract); err != nil {
 			return err
@@ -100,7 +100,7 @@ func (r *DatabaseReconciler) SetupWithManager(manager ctrl.Manager) error {
 		For(&epco.Database{}, builder.WithPredicates(primary)).
 		Watches(&epco.Database{}, handler.EnqueueRequestsFromMapFunc(r.databasesForDatabase), builder.WithPredicates(ownership)).
 		Watches(&epco.DatabaseRole{}, handler.EnqueueRequestsFromMapFunc(r.databasesForRole), builder.WithPredicates(owners)).
-		Watches(&epco.PostgresCluster{}, handler.EnqueueRequestsFromMapFunc(r.databasesForCluster), builder.WithPredicates(descriptors)).
+		Watches(&epco.ExternalPostgres{}, handler.EnqueueRequestsFromMapFunc(r.databasesForCluster), builder.WithPredicates(descriptors)).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.databasesForSecret), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.databasesForNamespace), builder.WithPredicates(namespaces)).
 		Complete(r)
@@ -147,7 +147,7 @@ func databaseConnectionRoleIndexKeys(object client.Object) []string {
 }
 
 func databaseSecretIndexKeys(object client.Object) []string {
-	cluster := object.(*epco.PostgresCluster)
+	cluster := object.(*epco.ExternalPostgres)
 	names := secretReferences(cluster)
 	if cluster.Spec.TLS != nil && cluster.Spec.TLS.CASecret != nil && !slices.Contains(names, cluster.Spec.TLS.CASecret.Name) {
 		names = append(names, cluster.Spec.TLS.CASecret.Name)
@@ -224,9 +224,9 @@ func (r *DatabaseReconciler) databasesForDatabase(ctx context.Context, object cl
 }
 func (r *DatabaseReconciler) databasesForSecret(ctx context.Context, object client.Object) []reconcile.Request {
 	requests := r.databasesForOutputNames(ctx, object.GetNamespace(), []string{object.GetName()})
-	clusters := &epco.PostgresClusterList{}
+	clusters := &epco.ExternalPostgresList{}
 	if err := r.Client.List(ctx, clusters, client.InNamespace(object.GetNamespace()), client.MatchingFields{databaseAdminSecretIndex: object.GetName()}); err != nil {
-		ctrl.LoggerFrom(ctx).Error(err, "Unable to list PostgresClusters for administrative Secret")
+		ctrl.LoggerFrom(ctx).Error(err, "Unable to list ExternalPostgres resources for administrative Secret")
 		return requests
 	}
 	for _, cluster := range clusters.Items {

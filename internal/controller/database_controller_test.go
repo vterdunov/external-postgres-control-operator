@@ -115,7 +115,7 @@ func databaseClient(t *testing.T, objects ...client.Object) client.WithWatch {
 }
 func databaseFixture(t *testing.T, db *epco.Database, objects ...client.Object) (*controller.DatabaseReconciler, client.WithWatch, *databaseSessionStub) {
 	t.Helper()
-	cluster := &epco.PostgresCluster{Namespace: testInfraNamespace, Name: testDescriptorName, Spec: epco.PostgresClusterSpec{Connection: epco.PostgresConnection{Host: testEndpointHost, Database: dbTestAdminDatabase}, CredentialsSecret: epco.LocalReference{Name: testAdminName}, TLS: &epco.PostgresTLS{Mode: dbTestTLSDisable}, Access: &epco.ClusterAccess{NamespaceSelector: &metav1.LabelSelector{}}}}
+	cluster := &epco.ExternalPostgres{Namespace: testInfraNamespace, Name: testDescriptorName, Spec: epco.ExternalPostgresSpec{Connection: epco.PostgresConnection{Host: testEndpointHost, Database: dbTestAdminDatabase}, CredentialsSecret: epco.LocalReference{Name: testAdminName}, TLS: &epco.PostgresTLS{Mode: dbTestTLSDisable}, Access: &epco.ClusterAccess{NamespaceSelector: &metav1.LabelSelector{}}}}
 	admin := &corev1.Secret{Namespace: testInfraNamespace, Name: testAdminName, Type: corev1.SecretTypeBasicAuth, Data: map[string][]byte{corev1.BasicAuthUsernameKey: []byte(testAdminName), corev1.BasicAuthPasswordKey: []byte("administrative-credential")}}
 	all := append([]client.Object{db, cluster, admin, &corev1.Namespace{Name: db.Namespace}}, objects...)
 	cl := databaseClient(t, all...)
@@ -345,7 +345,7 @@ func TestDatabaseAccessDenialNeverConnectsAndPreservesPendingFinalizer(t *testin
 				db.DeletionTimestamp = new(metav1.Now())
 			}
 			r, cl, s := databaseFixture(t, db)
-			cluster := &epco.PostgresCluster{}
+			cluster := &epco.ExternalPostgres{}
 			if err := cl.Get(t.Context(), client.ObjectKey{Namespace: testInfraNamespace, Name: testDescriptorName}, cluster); err != nil {
 				t.Fatal(err)
 			}

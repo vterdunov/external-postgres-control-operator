@@ -32,14 +32,14 @@ const (
 type checkFunc func(context.Context, *postgres.Config) error
 
 func (f checkFunc) Check(ctx context.Context, c *postgres.Config) error { return f(ctx, c) }
-func testCluster() *epco.PostgresCluster {
-	return &epco.PostgresCluster{Name: testClusterName, Namespace: controllerTestNamespace, Generation: 2, UID: types.UID("original"), Spec: epco.PostgresClusterSpec{
+func testCluster() *epco.ExternalPostgres {
+	return &epco.ExternalPostgres{Name: testClusterName, Namespace: controllerTestNamespace, Generation: 2, UID: types.UID("original"), Spec: epco.ExternalPostgresSpec{
 		Connection: epco.PostgresConnection{Host: "database"}, CredentialsSecret: epco.LocalReference{Name: "auth"}, TLS: &epco.PostgresTLS{Mode: dbTestTLSDisable}, ReconcileInterval: "2m"}}
 }
 func authSecret() *corev1.Secret {
 	return &corev1.Secret{Name: "auth", Namespace: controllerTestNamespace, Type: corev1.SecretTypeBasicAuth, Data: map[string][]byte{"username": []byte("admin"), "password": []byte("sensitive-password")}}
 }
-func reconciler(t *testing.T, c *epco.PostgresCluster, secrets ...client.Object) (*controller.PostgresClusterReconciler, client.Client) {
+func reconciler(t *testing.T, c *epco.ExternalPostgres, secrets ...client.Object) (*controller.ExternalPostgresReconciler, client.Client) {
 	t.Helper()
 	s := runtime.NewScheme()
 	if err := epco.AddToScheme(s); err != nil {
@@ -49,26 +49,26 @@ func reconciler(t *testing.T, c *epco.PostgresCluster, secrets ...client.Object)
 		t.Fatal(err)
 	}
 	objects := append([]client.Object{c}, secrets...)
-	cl := fake.NewClientBuilder().WithScheme(s).WithStatusSubresource(&epco.PostgresCluster{}).WithObjects(objects...).Build()
+	cl := fake.NewClientBuilder().WithScheme(s).WithStatusSubresource(&epco.ExternalPostgres{}).WithObjects(objects...).Build()
 	b, err := postgres.NewConfigBuilder()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &controller.PostgresClusterReconciler{Client: cl, APIReader: cl, Builder: b, Checker: checkFunc(func(context.Context, *postgres.Config) error { return nil }), Now: func() time.Time { return time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC) }}, cl
+	return &controller.ExternalPostgresReconciler{Client: cl, APIReader: cl, Builder: b, Checker: checkFunc(func(context.Context, *postgres.Config) error { return nil }), Now: func() time.Time { return time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC) }}, cl
 }
-func read(t *testing.T, cl client.Client) *epco.PostgresCluster {
+func read(t *testing.T, cl client.Client) *epco.ExternalPostgres {
 	t.Helper()
-	c := &epco.PostgresCluster{}
+	c := &epco.ExternalPostgres{}
 	if err := cl.Get(context.Background(), client.ObjectKey{Namespace: controllerTestNamespace, Name: testClusterName}, c); err != nil {
 		t.Fatal(err)
 	}
 	return c
 }
-func run(t *testing.T, r *controller.PostgresClusterReconciler) (ctrl.Result, error) {
+func run(t *testing.T, r *controller.ExternalPostgresReconciler) (ctrl.Result, error) {
 	t.Helper()
 	return r.Reconcile(context.Background(), ctrl.Request{Namespace: controllerTestNamespace, Name: testClusterName})
 }
-func assertStatus(t *testing.T, c *epco.PostgresCluster, applied bool, reason string) {
+func assertStatus(t *testing.T, c *epco.ExternalPostgres, applied bool, reason string) {
 	t.Helper()
 	if c.Status.Applied == nil || *c.Status.Applied != applied {
 		t.Errorf("applied=%v want=%v", c.Status.Applied, applied)
@@ -254,7 +254,7 @@ func TestOptimisticStatusConflictDiscardsResult(t *testing.T) {
 	patches := 0
 	r.Client = interceptor.NewClient(cl.(client.WithWatch), interceptor.Funcs{SubResourcePatch: func(_ context.Context, _ client.Client, _ string, _ client.Object, _ client.Patch, _ ...client.SubResourcePatchOption) error {
 		patches++
-		return apierrors.NewConflict(schema.GroupResource{Group: epco.SchemeGroupVersion.Group, Resource: "postgresclusters"}, testClusterName, errors.New("concurrent writer"))
+		return apierrors.NewConflict(schema.GroupResource{Group: epco.SchemeGroupVersion.Group, Resource: "externalpostgres"}, testClusterName, errors.New("concurrent writer"))
 	}})
 	result, err := run(t, r)
 	if err != nil {

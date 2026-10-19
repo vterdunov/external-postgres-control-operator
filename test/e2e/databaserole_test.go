@@ -45,7 +45,7 @@ func installedRole(ctx context.Context, role *epco.DatabaseRole,
 	}).WithContext(ctx).WithTimeout(40 * time.Second).WithPolling(200 * time.Millisecond).Should(Succeed())
 	return latest
 }
-func installedRoleDescriptor(ctx context.Context, name string, access *epco.ClusterAccess) *epco.PostgresCluster {
+func installedRoleDescriptor(ctx context.Context, name string, access *epco.ClusterAccess) *epco.ExternalPostgres {
 	fixture, err := kubeClient.CoreV1().Secrets("epco-postgres").Get(ctx, "postgres", metav1.GetOptions{})
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	admin := &corev1.Secret{
@@ -58,10 +58,10 @@ func installedRoleDescriptor(ctx context.Context, name string, access *epco.Clus
 	}
 	ExpectWithOffset(1, apiClient.Create(ctx, admin)).To(Succeed())
 	DeferCleanup(func() { deleteObject(admin) })
-	cluster := &epco.PostgresCluster{
+	cluster := &epco.ExternalPostgres{
 		Namespace: operatorNamespace,
 		Name:      name,
-		Spec: epco.PostgresClusterSpec{
+		Spec: epco.ExternalPostgresSpec{
 			Connection:        epco.PostgresConnection{Host: installedPostgresHost},
 			CredentialsSecret: epco.LocalReference{Name: admin.Name},
 			TLS:               &epco.PostgresTLS{Mode: installedRoleTLSMode},

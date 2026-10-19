@@ -11,12 +11,12 @@ metadata:
   labels:
     app.kubernetes.io/name: epco
     app.kubernetes.io/managed-by: kustomize
-  name: postgrescluster-viewer-role
+  name: externalpostgres-viewer-role
 rules:
 - apiGroups:
   - postgresql.epco.io
   resources:
-  - postgresclusters
+  - externalpostgres
   verbs:
   - get
   - list
@@ -24,6 +24,6 @@ rules:
 - apiGroups:
   - postgresql.epco.io
   resources:
-  - postgresclusters/status
+  - externalpostgres/status
   verbs:
   - get

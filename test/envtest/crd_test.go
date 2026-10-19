@@ -22,8 +22,8 @@ const (
 func resource(kind string) *unstructured.Unstructured {
 	spec := map[string]any{}
 	switch kind {
-	case "PostgresCluster":
-		spec["connection"] = map[string]any{"host": "postgres.example.test"}
+	case "ExternalPostgres":
+		spec[connectionField] = map[string]any{hostField: descriptorTestHost}
 		spec["credentialsSecret"] = map[string]any{nameField: "credentials"}
 	case "Database":
 		spec[clusterField] = map[string]any{nameField: clusterField}
@@ -33,7 +33,7 @@ func resource(kind string) *unstructured.Unstructured {
 	}
 	return &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "postgresql.epco.io/v1alpha1", "kind": kind,
-		"metadata": map[string]any{nameField: "sample", "namespace": namespace.Name}, specField: spec,
+		"metadata": map[string]any{nameField: "sample", namespaceField: namespace.Name}, specField: spec,
 	}}
 }
 
@@ -50,11 +50,11 @@ func setField(object *unstructured.Unstructured, value any, path ...string) {
 
 var _ = Describe("installed CRD contracts", func() {
 	It("defaults the cluster connection, timeouts and explicit TLS stanza", func(ctx SpecContext) {
-		object := resource("PostgresCluster")
+		object := resource("ExternalPostgres")
 		setField(object, map[string]any{}, specField, "tls")
 		Expect(scope.Create(ctx, object)).To(Succeed())
-		Expect(field(object, specField, "connection", "port")).To(Equal(int64(5432)))
-		Expect(field(object, specField, "connection", "database")).To(Equal("postgres"))
+		Expect(field(object, specField, connectionField, "port")).To(Equal(int64(5432)))
+		Expect(field(object, specField, connectionField, "database")).To(Equal("postgres"))
 		Expect(field(object, specField, "reconcileInterval")).To(Equal("5m"))
 		Expect(field(object, specField, "connectTimeout")).To(Equal("10s"))
 		Expect(field(object, specField, "statementTimeout")).To(Equal("30s"))
@@ -123,7 +123,7 @@ var _ = Describe("installed CRD contracts", func() {
 			setField(o, "observe", specField, "managementPolicy")
 			setField(o, "delete", specField, "databaseRoleReclaimPolicy")
 		}, "observe requires"),
-		Entry("zero positive duration", "PostgresCluster", func(o *unstructured.Unstructured) {
+		Entry("zero positive duration", "ExternalPostgres", func(o *unstructured.Unstructured) {
 			setField(o, "0s", specField, "connectTimeout")
 		}, "duration must be positive"),
 	)
@@ -142,7 +142,7 @@ var _ = Describe("installed CRD contracts", func() {
 		Entry("role SQL name", "DatabaseRole", []string{specField, nameField}, "other", "effective SQL name is immutable"),
 		Entry("database cluster", "Database", []string{specField, clusterField, nameField},
 			"other", "cluster reference is immutable"),
-		Entry("role cluster", "DatabaseRole", []string{specField, clusterField, "namespace"},
+		Entry("role cluster", "DatabaseRole", []string{specField, clusterField, namespaceField},
 			"other", "cluster reference is immutable"),
 		Entry("creation-only encoding added", "Database", []string{specField, "encoding"}, "UTF8", "encoding is immutable"),
 	)
@@ -226,8 +226,8 @@ var _ = Describe("installed CRD contracts", func() {
 		var specPath []string
 		var attemptedSpecValue any
 		switch kind {
-		case "PostgresCluster":
-			specPath, attemptedSpecValue = []string{specField, "connection", "host"}, "ignored.example.test"
+		case "ExternalPostgres":
+			specPath, attemptedSpecValue = []string{specField, connectionField, hostField}, "ignored.example.test"
 		case "Database":
 			specPath, attemptedSpecValue = []string{specField, "owner"}, "ignored-owner"
 		case "DatabaseRole":
@@ -246,7 +246,7 @@ var _ = Describe("installed CRD contracts", func() {
 		Expect(environment.Client.Get(ctx, client.ObjectKeyFromObject(object), object)).To(Succeed())
 		Expect(object.GetLabels()).To(HaveKeyWithValue("test", "updated"))
 		Expect(field(object, "status", "message")).To(Equal("observed"))
-	}, Entry("PostgresCluster", "PostgresCluster"), Entry("Database", "Database"), Entry("DatabaseRole", "DatabaseRole"))
+	}, Entry("ExternalPostgres", "ExternalPostgres"), Entry("Database", "Database"), Entry("DatabaseRole", "DatabaseRole"))
 
 	DescribeTable("retains deleting resources until their finalizer is removed", func(ctx SpecContext, kind string) {
 		object := resource(kind)
@@ -259,5 +259,5 @@ var _ = Describe("installed CRD contracts", func() {
 		object.SetFinalizers(nil)
 		Expect(environment.Client.Update(ctx, object)).To(Succeed())
 		Expect(scope.WaitGone(ctx, object)).To(Succeed())
-	}, Entry("PostgresCluster", "PostgresCluster"), Entry("Database", "Database"), Entry("DatabaseRole", "DatabaseRole"))
+	}, Entry("ExternalPostgres", "ExternalPostgres"), Entry("Database", "Database"), Entry("DatabaseRole", "DatabaseRole"))
 })

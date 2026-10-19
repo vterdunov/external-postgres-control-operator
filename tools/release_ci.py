@@ -61,7 +61,7 @@ def crd_bundle(manifest, directory):
     image = manifest['image']
     inputs = [entry for entry in image['generated_inputs'] if entry['kind'] == 'crds']
     expected = {'crd/bases/postgresql.epco.io_' + name + '.yaml'
-                for name in ('databaseroles', 'databases', 'postgresclusters')}
+                for name in ('databaseroles', 'databases', 'externalpostgres')}
     release.require(len(inputs) == 3 and {entry.get('input_path') for entry in inputs} == expected,
                     'CRD bundle requires exactly the three generated EPCO CRDs')
     documents = []

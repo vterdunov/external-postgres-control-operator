@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	epco "github.com/vterdunov/external-postgres-control-operator/api/v1alpha1"
+	"github.com/vterdunov/external-postgres-control-operator/test/utils"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,10 +19,10 @@ import (
 func installedClusterStatus(ctx context.Context,
 	key client.ObjectKey,
 	status metav1.ConditionStatus,
-	reason string) epco.PostgresClusterStatus {
-	var observed epco.PostgresClusterStatus
+	reason string) epco.ExternalPostgresStatus {
+	var observed epco.ExternalPostgresStatus
 	Eventually(func(g Gomega) {
-		latest := &epco.PostgresCluster{}
+		latest := &epco.ExternalPostgres{}
 		g.Expect(apiClient.Get(ctx, key, latest)).To(Succeed())
 		condition := meta.FindStatusCondition(latest.Status.Conditions, "Ready")
 		g.Expect(condition).NotTo(BeNil())
@@ -36,7 +37,7 @@ func installedClusterStatus(ctx context.Context,
 	return observed
 }
 
-var _ = Describe("Installed PostgresCluster controller", func() {
+var _ = Describe("Installed ExternalPostgres controller", func() {
 	It("authenticates real fixture credentials and recovers after Secret breakage and replacement", func(ctx SpecContext) {
 		source, err := kubeClient.CoreV1().Secrets("epco-postgres").Get(ctx, "postgres", metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
@@ -50,9 +51,10 @@ var _ = Describe("Installed PostgresCluster controller", func() {
 				corev1.BasicAuthPasswordKey: password}}
 		Expect(apiClient.Create(ctx, secret)).To(Succeed())
 		DeferCleanup(func() { deleteObject(secret) })
-		cluster := &epco.PostgresCluster{Name: "connection-cluster",
+		cluster := &epco.ExternalPostgres{Name: "connection-cluster",
 			Namespace: operatorNamespace,
-			Spec: epco.PostgresClusterSpec{Connection: epco.PostgresConnection{Host: "postgres.epco-postgres.svc.cluster.local"},
+			Spec: epco.ExternalPostgresSpec{
+				Connection:        epco.PostgresConnection{Host: "postgres.epco-postgres.svc.cluster.local"},
 				CredentialsSecret: epco.LocalReference{Name: secret.Name},
 				TLS:               &epco.PostgresTLS{Mode: "disable"},
 				ReconcileInterval: "5s",
@@ -60,6 +62,10 @@ var _ = Describe("Installed PostgresCluster controller", func() {
 				StatementTimeout:  "2s"}}
 		Expect(apiClient.Create(ctx, cluster)).To(Succeed())
 		DeferCleanup(func() { deleteObject(cluster) })
+		output, err := utils.Run(kubectlCommand(ctx, "-n", operatorNamespace,
+			"get", "epg", cluster.Name, "-o", "jsonpath={.kind}"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(output).To(Equal("ExternalPostgres"), "bare shorthand must resolve to the descriptor API")
 		key := client.ObjectKeyFromObject(cluster)
 		success := installedClusterStatus(ctx, key, metav1.ConditionTrue, "Ready")
 		Expect(success.AppliedGeneration).To(Equal(cluster.Generation))

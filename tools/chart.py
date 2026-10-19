@@ -19,7 +19,7 @@ import tarfile
 import tempfile
 
 
-CRD_NAMES = {'postgresclusters.postgresql.epco.io', 'databaseroles.postgresql.epco.io', 'databases.postgresql.epco.io'}
+CRD_NAMES = {'externalpostgres.postgresql.epco.io', 'databaseroles.postgresql.epco.io', 'databases.postgresql.epco.io'}
 
 
 def crd_fingerprint(spec):
