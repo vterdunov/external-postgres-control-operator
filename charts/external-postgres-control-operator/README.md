@@ -12,6 +12,10 @@ not a published release. See [delivery and releases](../../docs/development.md#d
 for verified OCI installation, explicit CRD upgrades, route migration and safe removal.
 
 Helm installs CRDs from `crds/` initially but does not upgrade or remove them.
+Flux updates them with `HelmRelease.spec.upgrade.crds: CreateReplace`, as shown in
+the [Flux installation example](../../README.md#flux).
+For Helm CLI upgrades, apply the chart release's `crds.yaml` first; the
+[upgrade commands](../../README.md#upgrades) use its versioned release URL.
 Uninstalling the chart preserves CRDs, custom resources, credentials and SQL
 history. Reinstall or resume the manager to complete pending finalizers before
 explicit CRD retirement.

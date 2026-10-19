@@ -1,6 +1,6 @@
 # Example guide
 
-These manifests illustrate the [accepted API baseline](api-proposal.md). PostgresCluster connection checks and DatabaseRole reconciliation, including password generation, are implemented. Database reconciliation, permission cleanup, and application connection exports await later roadmap stages. See the [implementation status](README.md#implementation-status).
+These manifests show how to configure connections, roles, databases, permissions, and application credentials. See the [API reference](api-proposal.md) for field details and the [implementation status](README.md#implementation-status) for supported behavior.
 
 ## Choose a resource set
 
