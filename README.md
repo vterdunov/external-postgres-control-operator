@@ -45,10 +45,13 @@ config:
     diagramPadding: 20
 ---
 flowchart LR
-    role["DatabaseRole"] --> cluster["ExternalPostgres"]
-    database["Database"] --> cluster
+    subgraph k8s["Kubernetes - Custom Resources"]
+        role["DatabaseRole"] --> cluster["ExternalPostgres"]
+        database["Database"] --> cluster
+    end
     cluster -.-> postgres[("External PostgreSQL")]
 
+    style k8s fill:transparent,stroke:#8c755e,stroke-width:1px
     classDef source fill:#e0c89b,stroke:#8c755e,color:#3c3836
     classDef output fill:#c2c18d,stroke:#8c755e,color:#3c3836
     classDef consumer fill:#cca98d,stroke:#8c755e,color:#3c3836
