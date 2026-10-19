@@ -345,7 +345,7 @@ var _ = Describe("R4 application connections with real API and PostgreSQL", Orde
 		wrong, err := randomName("old-target-")
 		Expect(err).NotTo(HaveOccurred())
 		roleSQL(ctx, otherFixture, "CREATE ROLE "+quoteIdentifier(fixture.Role)+" LOGIN PASSWORD "+quoteLiteral(wrong))
-		latest := &epco.PostgresCluster{}
+		latest := &epco.ExternalPostgres{}
 		Expect(fixture.api.Get(ctx, client.ObjectKeyFromObject(fixture.cluster), latest)).To(Succeed())
 		latest.Spec.Connection.Port = int32(other.port)
 		latest.Spec.Connection.Database = epco.SQLName(otherFixture.Database)
@@ -378,7 +378,7 @@ var _ = Describe("R4 application connections with real API and PostgreSQL", Orde
 		before = fixture.output(ctx, r4OutputName)
 		Expect(fixture.api.Get(ctx, client.ObjectKeyFromObject(fixture.cluster), latest)).To(Succeed())
 		Expect(fixture.api.Delete(ctx, latest)).To(Succeed())
-		recreated := &epco.PostgresCluster{Name: latest.Name, Namespace: latest.Namespace, Spec: latest.Spec}
+		recreated := &epco.ExternalPostgres{Name: latest.Name, Namespace: latest.Namespace, Spec: latest.Spec}
 		Expect(fixture.api.Create(ctx, recreated)).To(Succeed())
 		DeferCleanup(func(ctx SpecContext) { Expect(fixture.api.Delete(ctx, recreated)).To(Succeed()) })
 		fixture.editDatabase(ctx, func(spec *epco.DatabaseSpec) {

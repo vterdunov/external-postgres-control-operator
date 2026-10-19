@@ -46,7 +46,7 @@ rules:
   resources:
   - databaseroles/status
   - databases/status
-  - postgresclusters/status
+  - externalpostgres/status
   verbs:
   - get
   - patch
@@ -54,7 +54,7 @@ rules:
 - apiGroups:
   - postgresql.epco.io
   resources:
-  - postgresclusters
+  - externalpostgres
   verbs:
   - get
   - list

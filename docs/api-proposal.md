@@ -1,12 +1,12 @@
 # User-facing API baseline
 
-Status: accepted initial API baseline, 2026-10-07. See [implementation status](README.md#implementation-status) for schema and runtime coverage. PostgresCluster connection readiness, DatabaseRole reconciliation, Database/schema/extension lifecycle, declarative ACLs and application connection exports are implemented in the current checkout. Validation gates are recorded in the [roadmap](roadmap.md).
+Status: accepted initial API baseline, 2026-10-07; connection descriptor renamed to ExternalPostgres on 2026-10-19. See [implementation status](README.md#implementation-status) for schema and runtime coverage. ExternalPostgres connection readiness, DatabaseRole reconciliation, Database/schema/extension lifecycle, declarative ACLs and application connection exports are implemented in the current checkout. Validation gates are recorded in the [roadmap](roadmap.md).
 
 Implementation follows the resource fields, defaults, declarative permission reconciliation, password management, and connection Secret contracts defined here and demonstrated in the examples. Changes to this baseline require agreement and corresponding documentation and example updates. Future extensions explicitly described as such are outside the initial implementation scope.
 
 A PostgreSQL cluster means one logical PostgreSQL server with shared role and database catalogs. Its writable endpoint can belong to CNPG, a self-managed PostgreSQL installation, or a cloud service. This operator manages SQL objects and access through a supplied connection.
 
-The baseline defines three CRDs - `PostgresCluster`, `DatabaseRole`, and `Database`. Base role and database fields follow CNPG; external connection settings and ACL management are extensions. Permissions belong to `Database`. SQL execution adapts to the server version, ACLs, and connection privileges without a user-facing `provider` field.
+The baseline defines three CRDs - `ExternalPostgres`, `DatabaseRole`, and `Database`. Base role and database fields follow CNPG; external connection settings and ACL management are extensions. Permissions belong to `Database`. SQL execution adapts to the server version, ACLs, and connection privileges without a user-facing `provider` field.
 
 The primary use case is a database for a microservice, a LOGIN user for the service, and a separate LOGIN user for the admin UI with read-only access. Each gets its own connection Secret. A service that runs its own migrations can own its database. With separate migrations, a NOLOGIN role owns the database, a migrator belongs to that role, the runtime user gets DML privileges, and the admin user gets SELECT. Dedicated reader/writer groups are supported but not required for each pair of users.
 
@@ -36,7 +36,7 @@ The inspected `DatabaseSpec` does not contain database/schema `permissions`. A s
 | Standard DatabaseRole attributes, passwordSecret, inRoles, reclaim policy | CNPG names and base defaults |
 | Standard Database fields, schemas with name/owner/ensure, extensions, FDWs/servers | CNPG format |
 | Database/schema permission maps | Based on open CNPG proposals, absent from the inspected DatabaseSpec; name/ensure and removal cleanup are this operator's contract |
-| PostgresCluster with connection/credentials/TLS and namespace access | External connection descriptor; cluster.name and optional cluster.namespace reference it instead of a CNPG Cluster |
+| ExternalPostgres with connection/credentials/TLS and namespace access | External connection descriptor; cluster.name and optional cluster.namespace reference it instead of a CNPG Cluster |
 | defaultPrivileges and named tablePermissions | Extensions for SQL access management |
 | passwordGeneration and Database.connectionSecrets | Extensions for generating a role password and exporting a connection to a particular database; output Secret keys follow CNPG |
 | parameters, managementPolicy, membershipPolicy | Operator extensions for role settings, observation, and membership reconciliation |
@@ -56,17 +56,17 @@ Issue #10826 covers privileges on the database object. CONNECT allows a connecti
 
 | Resource | Represents | Relationships |
 | --- | --- | --- |
-| `PostgresCluster` | Connection settings for one PostgreSQL cluster | Many roles and databases |
+| `ExternalPostgres` | Connection settings for one PostgreSQL cluster | Many roles and databases |
 | `DatabaseRole` | One SQL role: a LOGIN user or NOLOGIN group | One cluster, multiple memberships |
 | `Database` | One SQL database, listed schemas/extensions/FDWs, and their permissions | One cluster, one owner, multiple grantees |
 
-All resources are namespaced. Database and DatabaseRole may reference a PostgresCluster in another namespace through cluster.namespace; omission resolves to the referencing CR's namespace. Cross-namespace use requires authorization by PostgresCluster.spec.access.namespaceSelector. Administrative credentials and CA references remain local to PostgresCluster; password sources and connection outputs remain local to their application resources, and roleRef exports remain local to Database. The [cross-namespace access contract](cross-namespace-access.md) is part of this accepted initial API and defines the selector defaults and shared infrastructure examples.
+All resources are namespaced. Database and DatabaseRole may reference an ExternalPostgres in another namespace through cluster.namespace; omission resolves to the referencing CR's namespace. Cross-namespace use requires authorization by ExternalPostgres.spec.access.namespaceSelector. Administrative credentials and CA references remain local to ExternalPostgres; password sources and connection outputs remain local to their application resources, and roleRef exports remain local to Database. The [cross-namespace access contract](cross-namespace-access.md) is part of this accepted initial API and defines the selector defaults and shared infrastructure examples.
 
 SQL operations use the supplied connection's privileges. A namespace scopes Kubernetes resources and Secret references; PostgreSQL object names still belong to the shared server catalogs. CR/status ownership checks resolve competing declarations of the same SQL object. A separate privilege isolation policy would require additional authorization rules whether references are local or cross-namespace.
 
-`cluster.name` and optional `cluster.namespace` reference a Kubernetes `PostgresCluster`. `owner`, `inRoles[]`, and `permissions.*[].name` contain SQL names, following CNPG owner/inRoles/UsageSpec. If the operator manages the referenced role, dependent SQL operations wait for it to become ready. Otherwise, that SQL role must already exist on the same PostgreSQL cluster. Initial connection export can use validated credential sources before the role becomes ready, as described below.
+`cluster.name` and optional `cluster.namespace` reference a Kubernetes `ExternalPostgres`. `owner`, `inRoles[]`, and `permissions.*[].name` contain SQL names, following CNPG owner/inRoles/UsageSpec. If the operator manages the referenced role, dependent SQL operations wait for it to become ready. Otherwise, that SQL role must already exist on the same PostgreSQL cluster. Initial connection export can use validated credential sources before the role becomes ready, as described below.
 
-`Database.connectionSecrets[].roleRef.name` references a Kubernetes `DatabaseRole` so its SQL name and password source can be resolved unambiguously. It is a resource name rather than a SQL grantee name. The role and database must reference the same PostgresCluster.
+`Database.connectionSecrets[].roleRef.name` references a Kubernetes `DatabaseRole` so its SQL name and password source can be resolved unambiguously. It is a resource name rather than a SQL grantee name. The role and database must reference the same ExternalPostgres.
 
 `public` in permissions represents the special PUBLIC grantee. The controller emits the PUBLIC keyword without quotes and quotes ordinary SQL identifiers correctly.
 
@@ -76,7 +76,7 @@ SQL operations use the supplied connection's privileges. A namespace scopes Kube
 | --- | --- |
 | `DatabaseRole.cluster.name`, `Database.cluster.name` | Required; no automatic cluster selection |
 | `DatabaseRole.cluster.namespace`, `Database.cluster.namespace` | Namespace of the referencing CR |
-| `PostgresCluster.access` | Without access, local references are allowed and remote references are denied; a configured namespace selector applies to both |
+| `ExternalPostgres.access` | Without access, local references are allowed and remote references are denied; a configured namespace selector applies to both |
 | `DatabaseRole.name`, `Database.name` | Default to metadata.name; the effective SQL name is then immutable |
 | `Database.owner` | Required in manage mode |
 | `DatabaseRole.login` | false |
@@ -105,10 +105,10 @@ SQL operations use the supplied connection's privileges. A namespace scopes Kube
 | `schemas[].tablePermissions` | Empty list; tables are not created or dropped |
 | `managementPolicy` for roles/databases | manage; observe only inspects the SQL object, including ACLs |
 | Existing SQL roles/databases | Create when missing; reconcile existing objects when no competing managing CR is recorded, following CNPG |
-| `PostgresCluster.connection.port`, `.database` | 5432, postgres |
-| `PostgresCluster.tls.mode` | verify-full using the operator client's trust store or the supplied CA Secret |
-| `PostgresCluster.reconcileInterval` | 5m, plus reactions to resource and Secret changes |
-| `PostgresCluster.connectTimeout`, `statementTimeout` | 10s, 30s |
+| `ExternalPostgres.connection.port`, `.database` | 5432, postgres |
+| `ExternalPostgres.tls.mode` | verify-full using the operator client's trust store or the supplied CA Secret |
+| `ExternalPostgres.reconcileInterval` | 5m, plus reactions to resource and Secret changes |
+| `ExternalPostgres.connectTimeout`, `statementTimeout` | 10s, 30s |
 
 Omitted `spec.name` resolves to `metadata.name` through the effective-name mechanism; it is not copied into spec by OpenAPI defaulting. CRD CEL validation keeps that effective name immutable and permits making the same fallback name explicit. Reconcilers must populate `status.effectiveName` for roles/databases when implemented. The stored `cluster` reference is immutable, including whether namespace was omitted; set an explicit namespace at creation if desired. SQL names are checked against the target server's `max_identifier_length`, usually 63 bytes. Automatic truncation is prohibited.
 
@@ -160,7 +160,7 @@ An existing independent membership satisfies `inRoles` without being adopted or 
 
 ## Passwords and connection Secrets
 
-A role password and database connection settings have different scopes. The password belongs to one DatabaseRole on a PostgreSQL cluster; host/port belong to PostgresCluster; dbname belongs to Database. One role can connect to several databases with the same password, so connections are exported from Database.
+A role password and database connection settings have different scopes. The password belongs to one DatabaseRole on a PostgreSQL cluster; host/port belong to ExternalPostgres; dbname belongs to Database. One role can connect to several databases with the same password, so connections are exported from Database.
 
 ### Password source
 
@@ -233,7 +233,7 @@ connectionSecrets:
 
 The service connects as orders_service; the admin UI connects as orders_admin_readonly. SQL privileges are declared separately in permissions; exporting a Secret does not grant access. A readonly name does not select a physical replica. These examples connect both users to the writable endpoint and limit the admin user to SELECT.
 
-Connection exports support LOGIN roles with passwordSecret or passwordGeneration. IAM and certificate authentication are unsupported for exports. The operator does not generate or store IAM tokens. PostgresCluster administrative credentials are never used as application credentials.
+Connection exports support LOGIN roles with passwordSecret or passwordGeneration. IAM and certificate authentication are unsupported for exports. The operator does not generate or store IAM tokens. ExternalPostgres administrative credentials are never used as application credentials.
 
 Output Secrets have type `kubernetes.io/basic-auth`. Core keys follow [CNPG application Secrets](https://cloudnative-pg.io/docs/devel/applications/) and the inspected [CNPG generator](https://github.com/cloudnative-pg/cloudnative-pg/blob/63d0bd5a77dce5d86edc010e4d935defdf48e1af/pkg/specs/secrets.go):
 
@@ -241,13 +241,13 @@ Output Secrets have type `kubernetes.io/basic-auth`. Core keys follow [CNPG appl
 | --- | --- |
 | username, user | Effective DatabaseRole SQL name; user is an alias |
 | password | Current DatabaseRole source for initial publication; rotated passwords update existing outputs after PostgreSQL accepts them |
-| host, port | PostgresCluster.spec.connection; port is a string, default "5432" |
-| dbname | Effective Database SQL name, rather than the administrative PostgresCluster.connection.database |
+| host, port | ExternalPostgres.spec.connection; port is a string, default "5432" |
+| dbname | Effective Database SQL name, rather than the administrative ExternalPostgres.connection.database |
 | uri | PostgreSQL URI with username/password/host/port/dbname and sslmode |
 | jdbc-uri | JDBC URI with the corresponding user/password/TLS parameters |
 | fqdn-uri, fqdn-jdbc-uri | Aliases of uri/jdbc-uri; the external hostname is used without adding a Kubernetes service domain |
 | pgpass | .pgpass content for this host/port/dbname/user with required escaping |
-| sslmode | PostgresCluster.spec.tls.mode |
+| sslmode | ExternalPostgres.spec.tls.mode |
 | ca.crt | Public CA copied from cluster.tls.caSecret when configured |
 | sslrootcert | CA path inside the application container when a CA is included |
 
@@ -439,9 +439,9 @@ movetokube's [aws.go](https://github.com/movetokube/postgres-operator/blob/68e09
 
 PG16+ separates ADMIN, INHERIT, and SET membership options. Authority to administer a role does not guarantee SET ROLE access. Inspect pg_auth_members, grantor identity, and the version's supported pg_has_role checks; an administrative role name alone is insufficient. [Role membership](https://www.postgresql.org/docs/current/role-membership.html), [ALTER ROLE](https://www.postgresql.org/docs/current/sql-alterrole.html).
 
-Database lazily acquires missing administrative SET access to a recorded, currently managed DatabaseRole on the same canonical PostgresCluster when a database owner, schema owner, ACL creator/grantor, or actual-owner deletion operation needs it. Both the Database namespace and role manager namespace must be authorized. Unreconciled managing roles remain pending; external roles and current observers do not become repair targets. Existing sufficient SQL authority is used without an extra GRANT or eligibility requirement. Application roles retain their declared attributes and receive no administrative privileges.
+Database lazily acquires missing administrative SET access to a recorded, currently managed DatabaseRole on the same canonical ExternalPostgres when a database owner, schema owner, ACL creator/grantor, or actual-owner deletion operation needs it. Both the Database namespace and role manager namespace must be authorized. Unreconciled managing roles remain pending; external roles and current observers do not become repair targets. Existing sufficient SQL authority is used without an extra GRANT or eligibility requirement. Application roles retain their declared attributes and receive no administrative privileges.
 
-`PostgresCluster` Ready confirms connectivity and writable state, and `DatabaseRole` Ready confirms its declared role configuration. Existing desired-owner Ready gates remain; administrative capability repair adds no universal Role Ready gate. A deleting recorded manage-mode role is eligible for historical cleanup and actual-owner deletion, but not provisioning. PostgreSQL remains the authority: if the supplied connection cannot legally acquire SET, Database reports `InsufficientPrivileges` identifying the missing capability and retries normally after authority returns.
+`ExternalPostgres` Ready confirms connectivity and writable state, and `DatabaseRole` Ready confirms its declared role configuration. Existing desired-owner Ready gates remain; administrative capability repair adds no universal Role Ready gate. A deleting recorded manage-mode role is eligible for historical cleanup and actual-owner deletion, but not provisioning. PostgreSQL remains the authority: if the supplied connection cannot legally acquire SET, Database reports `InsufficientPrivileges` identifying the missing capability and retries normally after authority returns.
 
 On PostgreSQL 16+, ordinary SET repair preserves the existing exact grantor-specific ADMIN and INHERIT options. New SET-only service memberships use INHERIT=false, SET=true and ADMIN=false. A concrete schema-owner transfer may additionally require operator-recipient INHERIT as described below; later SET repair preserves that option. Other grantor rows remain unchanged. PostgreSQL 15 uses plain GRANT and MEMBER checks because separate SET/INHERIT membership options are unavailable; the administrator's role-level INHERIT is unchanged. Direct, inherited and SET-reachable administrative grantors are checked by the backend. No selfgrant setting or per-object bootstrap SQL is required for eligible managed roles when the supplied connection already has legal administrative authority.
 
@@ -485,7 +485,7 @@ This SQL configuration needs no provider field. Membership in rds_iam does not c
 
 IAM takes precedence over password authentication for an RDS user with effective rds_iam membership. An incompatible password-management request must produce a clear error. Authentication tokens are short-lived and are not stored as permanent passwords. [AWS IAM authentication](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.html).
 
-The operator authenticates with a password through a local basic-auth `credentialsSecret`. PostgresCluster has no `authentication` or `awsIam` field. The `rds_iam` membership above is ordinary SQL role configuration through `inRoles`; IAM authentication and IAM connection exports are outside the project scope.
+The operator authenticates with a password through a local basic-auth `credentialsSecret`. ExternalPostgres has no `authentication` or `awsIam` field. The `rds_iam` membership above is ordinary SQL role configuration through `inRoles`; IAM authentication and IAM connection exports are outside the project scope.
 
 [aws-rds.yaml](../examples/api-proposal/aws-rds.yaml) includes an RDS connection and CA, owner, migrator, reader, password and IAM LOGIN users, and inline permissions/default privileges. No resource requests rds_superuser. Defaults cover both owner and migrator because either can create objects under its own SQL identity.
 
@@ -505,13 +505,13 @@ A DatabaseRole has one cluster reference. If a single user-facing resource must 
 
 ## SQL name collisions
 
-The canonical namespace-qualified PostgresCluster reference, object type, and effective SQL name form the management key. One recorded manager owns each key across application namespaces; a competing CR reports OwnershipConflict before SQL mutation or connection export. Existing SQL objects without a competing live manager use normal create-or-update reconciliation.
+The canonical namespace-qualified ExternalPostgres reference, object type, and effective SQL name form the management key. One recorded manager owns each key across application namespaces; a competing CR reports OwnershipConflict before SQL mutation or connection export. Existing SQL objects without a competing live manager use normal create-or-update reconciliation.
 
 [SQL object ownership](sql-object-ownership.md) defines the conflict algorithm, retries, endpoint changes, and leadership requirements. It is the reference for ownership implementation. Use one canonical descriptor per logical PostgreSQL server; automatic alias discovery and independent-control-plane coordination are outside the initial design.
 
 ## Lifecycle, ownership, and status
 
-- Role/database names and cluster references are immutable, following CNPG. The referenced PostgresCluster connection settings may change, including its endpoint, or the descriptor may be recreated under the same namespace/name. Reconcile against the current connection without a stored-UID rebind approval. Requeue dependents and refresh connection outputs. This does not copy data or clean up the previous server.
+- Role/database names and cluster references are immutable, following CNPG. The referenced ExternalPostgres connection settings may change, including its endpoint, or the descriptor may be recreated under the same namespace/name. Reconcile against the current connection without a stored-UID rebind approval. Requeue dependents and refresh connection outputs. This does not copy data or clean up the previous server.
 - Database.ensure=absent explicitly requests DROP regardless of reclaim policy. Reclaim policies apply when a Kubernetes CR is deleted. Manage/adopt/ALTER/DROP protect postgres, template0, template1 and the currently configured administrative database; observation is allowed. Managed schema mutations protect pg_catalog, information_schema and pg_* system schemas, while public remains manageable. A nonempty schema uses RESTRICT and active database sessions block DROP; no CASCADE, FORCE or session-termination fallback is attempted.
 - DatabaseRole does not support ensure=absent; deleting its CR with databaseRoleReclaimPolicy=delete requests DROP.
 - Role deletion does not automatically run DROP OWNED or REASSIGN OWNED. Dependencies in any database block DROP. Forced session termination needs an explicit request if supported.
@@ -521,9 +521,9 @@ The canonical namespace-qualified PostgresCluster reference, object type, and ef
 - Each ACL tuple has one spec owner. Conflicting broad and named-table rules for the same grantee are rejected. User-declared memberships and operator administrative memberships have separate ownership.
 - Predefined PostgreSQL/service roles and the administrative connection account are protected from adoption, modification, and deletion; permitted memberships in them are considered separately.
 - Ready requires confirmed reconciliation, including declared permissions and connection exports. An initial connection Secret can exist while Ready is false. A positive grant does not prove that every other access path is absent. Effective privileges and errors are reported without promising an audit of function bodies.
-- Passwords and password-bearing DSNs never appear in logs/status. The platform team controls administrative Secrets and PostgresCluster.
+- Passwords and password-bearing DSNs never appear in logs/status. The platform team controls administrative Secrets and ExternalPostgres.
 
-The generated status schema includes `applied`, `observedGeneration`, `message`, `effectiveName`, `appliedGeneration`, `lastSuccessfulReconcileTime`, and conditions. DatabaseRole adds `secretResourceVersion`, sticky `hasManagedSQL`, `generatedPasswordInitialized`, and `managedEndpoints` containing normalized host/effective port, grantor-specific membership bindings, and managed parameter names. Its `passwordApplied` receipt identifies the exact applied source namespace/name/UID/resourceVersion, role UID/generation, descriptor UID/generation, and normalized host/effective port. It contains no password, password hash, or DSN and is published only after successful SQL application. Database records sticky `hasManagedSQL` after confirmed database core reconciliation or explicit absence, including when later schema, extension or ACL work remains pending. Its `connectionSecretHistory` records namespace-local output names before CREATE and confirmed output UIDs for conditional cleanup. During retained-output adoption, optional `adoptionFromDatabaseUID` records the exact former owner before ownership changes and is cleared after adoption is confirmed. Missing recorded outputs require current SQL confirmation before recreation. Receipts and output history share the whole-resource status size budget. Per-permission outcomes identify database/schema/relation/default scopes, objects, creators and grantees; `effective` reports access separately from the managed direct-grant result. All three controllers populate runtime status. PostgresCluster reasons are documented in [PostgresCluster readiness](postgrescluster.md).
+The generated status schema includes `applied`, `observedGeneration`, `message`, `effectiveName`, `appliedGeneration`, `lastSuccessfulReconcileTime`, and conditions. DatabaseRole adds `secretResourceVersion`, sticky `hasManagedSQL`, `generatedPasswordInitialized`, and `managedEndpoints` containing normalized host/effective port, grantor-specific membership bindings, and managed parameter names. Its `passwordApplied` receipt identifies the exact applied source namespace/name/UID/resourceVersion, role UID/generation, descriptor UID/generation, and normalized host/effective port. It contains no password, password hash, or DSN and is published only after successful SQL application. Database records sticky `hasManagedSQL` after confirmed database core reconciliation or explicit absence, including when later schema, extension or ACL work remains pending. Its `connectionSecretHistory` records namespace-local output names before CREATE and confirmed output UIDs for conditional cleanup. During retained-output adoption, optional `adoptionFromDatabaseUID` records the exact former owner before ownership changes and is cleared after adoption is confirmed. Missing recorded outputs require current SQL confirmation before recreation. Receipts and output history share the whole-resource status size budget. Per-permission outcomes identify database/schema/relation/default scopes, objects, creators and grantees; `effective` reports access separately from the managed direct-grant result. All three controllers populate runtime status. ExternalPostgres reasons are documented in [ExternalPostgres readiness](externalpostgres.md).
 
 Database reconciles database/schema/table/sequence ACLs, named-table permissions, and actual-creator global/schema defaults for tables, sequences, functions and types. Broad relation scopes discover existing and newly created objects on periodic reconciliation; defaults affect future objects. Omission removes grants managed within the same UID; explicit absent can remove selected pre-existing grants. Neither removal promises denial through other grantors, PUBLIC, ownership or memberships. A missing named table with present permissions reports DependenciesNotReady with TableNotFound; absent-only declarations can succeed without the table. Table and table-default MAINTAIN requires PostgreSQL 17 or later; unsupported privileges and conflicting broad/named declarations fail preflight before mutation.
 

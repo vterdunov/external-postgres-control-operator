@@ -6,8 +6,8 @@ The [API baseline](api-proposal.md) was accepted on 2026-10-07. Its filename is 
 
 | Area | Current checkout |
 | --- | --- |
-| PostgresCluster, DatabaseRole, Database | Go types, generated CRDs, defaults, and admission rules; CRD admission tests are in [test/envtest/crd_test.go](../test/envtest/crd_test.go) |
-| PostgresCluster runtime | Implemented authentication/writable-state check, TLS, local Secret watches, bounded retries, and Ready status |
+| ExternalPostgres, DatabaseRole, Database | Go types, generated CRDs, defaults, and admission rules; CRD admission tests are in [test/envtest/crd_test.go](../test/envtest/crd_test.go) |
+| ExternalPostgres runtime | Implemented authentication/writable-state check, TLS, local Secret watches, bounded retries, and Ready status |
 | DatabaseRole runtime | Implemented role attributes, both membership policies, targeted parameter cleanup, supplied/generated password application, observation, and retain/delete reclaim |
 | Database runtime | Implemented database/schema/extension lifecycle, observation, reclaim, database/schema/table/sequence ACLs, named-table allowlists, creator-specific global/schema defaults, and application connection Secrets |
 | FDW/server runtime | API fields retained; runtime excluded by the [roadmap scope](roadmap.md#scope-boundaries). Requests must report UnsupportedFeature/Ready=False |
@@ -17,7 +17,7 @@ The [API baseline](api-proposal.md) was accepted on 2026-10-07. Its filename is 
 | Installed application scenarios | Locally validated PostgreSQL 15-18 end-to-end profiles for migrations, separate owner/migrator/runtime access, CRUD/sequences, read-only defaults, named-table consumers, two namespaces and interrupted credential/ACL recovery; completed gates and delivery status are recorded in the roadmap |
 | Delivery | Independent image/chart SemVer workflows, GHCR OCI packaging, GitHub OIDC signatures, immutable-release verification and retained-resource removal; [delivery commands](development.md#delivery-and-releases) and the roadmap distinguish tooling from published artifacts |
 
-PostgresCluster Ready confirms only its administrative connection check. DatabaseRole Ready confirms role reconciliation; Database Ready requires the database, listed schemas and extensions, declared ACLs/defaults, requested connection outputs, and required managed cleanup to be confirmed on the current connection. Initial outputs can exist before SQL is reachable or named tables exist. Existing outputs refresh after the current source is applied to SQL and role/database/CONNECT eligibility is confirmed; unrelated pending permissions or extensions do not block an eligible refresh. Confirmed lifecycle management reserves the SQL name even while a named table or extension is pending; it does not establish full Ready or appliedGeneration. Observation checks requested extension presence, version and schema, reports Observed with applied unset when they match, and creates no outputs or ACL management history. FDW/server behavior reports UnsupportedFeature/Ready=False, including explicit database absence. A generated role password source or an initial application output does not imply SQL readiness.
+ExternalPostgres Ready confirms only its administrative connection check. DatabaseRole Ready confirms role reconciliation; Database Ready requires the database, listed schemas and extensions, declared ACLs/defaults, requested connection outputs, and required managed cleanup to be confirmed on the current connection. Initial outputs can exist before SQL is reachable or named tables exist. Existing outputs refresh after the current source is applied to SQL and role/database/CONNECT eligibility is confirmed; unrelated pending permissions or extensions do not block an eligible refresh. Confirmed lifecycle management reserves the SQL name even while a named table or extension is pending; it does not establish full Ready or appliedGeneration. Observation checks requested extension presence, version and schema, reports Observed with applied unset when they match, and creates no outputs or ACL management history. FDW/server behavior reports UnsupportedFeature/Ready=False, including explicit database absence. A generated role password source or an initial application output does not imply SQL readiness.
 
 Extensions retain unspecified installed versions and schemas. Explicit changes require native PostgreSQL capabilities and existing authority; omission retains the extension, while explicit absence uses RESTRICT. See [extension reconciliation](api-proposal.md#extension-reconciliation) for prerequisites, ordering and failure behavior.
 
@@ -29,7 +29,7 @@ ACL recovery is scoped to the live CR UID and selected endpoint. Journal checkpo
 | --- | --- |
 | [Project roadmap](roadmap.md) | Selected runtime scope, delivery stages, gates, and progress records |
 | [API baseline](api-proposal.md) | Accepted fields/defaults, credentials, connection outputs, declarative ACLs, lifecycle, and deferred public API |
-| [PostgresCluster readiness](postgrescluster.md) | Current connection runtime, status reasons, and operational limits |
+| [ExternalPostgres readiness](externalpostgres.md) | Current connection runtime, status reasons, and operational limits |
 | [Cross-namespace access](cross-namespace-access.md) | Namespace authorization, selector semantics, denial/resumption, and resource placement |
 | [SQL object ownership](sql-object-ownership.md) | SQL-name management keys, recorded-manager conflicts, retry behavior, endpoint changes, and leadership |
 | [Examples](examples.md) | Resource-set selection and prerequisites |

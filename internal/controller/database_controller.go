@@ -76,10 +76,10 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, request ctrl.Request
 		return freshCheck(), nil
 	}
 	database = fresh
-	cluster := &epco.PostgresCluster{}
+	cluster := &epco.ExternalPostgres{}
 	if err = r.Client.Get(ctx, key.Cluster, cluster); err != nil {
 		if apierrors.IsNotFound(err) {
-			return r.databaseStatus(ctx, database, false, postgres.DependenciesNotReady, "The referenced PostgresCluster does not exist", 30*time.Second)
+			return r.databaseStatus(ctx, database, false, postgres.DependenciesNotReady, "The referenced ExternalPostgres does not exist", 30*time.Second)
 		}
 		return ctrl.Result{}, err
 	}
@@ -88,7 +88,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, request ctrl.Request
 		return r.databaseError(ctx, database, err, interval)
 	}
 	if !cluster.DeletionTimestamp.IsZero() {
-		return r.databaseStatus(ctx, database, false, postgres.DependenciesNotReady, "The PostgresCluster is being deleted", interval)
+		return r.databaseStatus(ctx, database, false, postgres.DependenciesNotReady, "The ExternalPostgres is being deleted", interval)
 	}
 	deleting := !database.DeletionTimestamp.IsZero()
 	if deleting && (!controllerutil.ContainsFinalizer(database, DatabaseFinalizer) || database.Spec.ReclaimPolicy != epco.ReclaimDelete) {
@@ -130,7 +130,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, request ctrl.Request
 	return r.reconcileDatabaseConfigured(ctx, database, cluster, config, secrets, interval, cleanupErr)
 }
 
-func (r *DatabaseReconciler) reconcileDatabaseConfigured(ctx context.Context, database *epco.Database, cluster *epco.PostgresCluster, config *postgres.Config, secrets map[string]*corev1.Secret, interval time.Duration, cleanupErr error) (ctrl.Result, error) {
+func (r *DatabaseReconciler) reconcileDatabaseConfigured(ctx context.Context, database *epco.Database, cluster *epco.ExternalPostgres, config *postgres.Config, secrets map[string]*corev1.Secret, interval time.Duration, cleanupErr error) (ctrl.Result, error) {
 	deleting := !database.DeletionTimestamp.IsZero()
 	var inputs []connectionSecretInput
 	var err error

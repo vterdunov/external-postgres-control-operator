@@ -188,7 +188,7 @@ func TestDatabaseConnectionPayloadUsesEffectiveApplicationNamesAndStructuredEnco
 func connectionPayloadScenario(t *testing.T, scenario string) {
 	t.Helper()
 	db, role, source, r, cl, _ := connectionFixture(t)
-	cluster := &epco.PostgresCluster{}
+	cluster := &epco.ExternalPostgres{}
 	if err := cl.Get(t.Context(), types.NamespacedName{Namespace: testInfraNamespace, Name: testDescriptorName}, cluster); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func connectionPayloadScenario(t *testing.T, scenario string) {
 }
 
 func connectionRequirePayloadIdentity(t *testing.T, db *epco.Database, source *corev1.Secret,
-	cluster *epco.PostgresCluster, output *corev1.Secret, scenario string) (port, mode string) {
+	cluster *epco.ExternalPostgres, output *corev1.Secret, scenario string) (port, mode string) {
 	t.Helper()
 	keys := []string{"dbname", "fqdn-jdbc-uri", "fqdn-uri", "host", "jdbc-uri", "password", "pgpass", "port", "sslmode", "uri", "user", "username"}
 	if output.Type != corev1.SecretTypeBasicAuth || len(output.Data) != len(keys) {
@@ -253,7 +253,7 @@ func connectionRequirePayloadIdentity(t *testing.T, db *epco.Database, source *c
 }
 
 func connectionRequirePayloadEncoding(t *testing.T, db *epco.Database, role *epco.DatabaseRole,
-	source *corev1.Secret, cluster *epco.PostgresCluster, output *corev1.Secret, port, mode string) {
+	source *corev1.Secret, cluster *epco.ExternalPostgres, output *corev1.Secret, port, mode string) {
 	t.Helper()
 	uri, err := url.Parse(string(output.Data["uri"]))
 	if err != nil || uri.User == nil {
@@ -546,7 +546,7 @@ func connectionLifecycleScenario(t *testing.T, scenario string) (*epco.Database,
 		}
 	}
 	if scenario == connectionAccessDeniedDeletionCase {
-		cluster := &epco.PostgresCluster{}
+		cluster := &epco.ExternalPostgres{}
 		if err := cl.Get(t.Context(), types.NamespacedName{Namespace: testInfraNamespace, Name: testDescriptorName}, cluster); err != nil {
 			t.Fatal(err)
 		}
@@ -573,7 +573,7 @@ func TestDatabaseConnectionAuthorizationAndOwnershipPrecedePublication(t *testin
 			wantReason := "ConnectionSecretConflict"
 			switch scenario {
 			case "namespace denied":
-				cluster := &epco.PostgresCluster{}
+				cluster := &epco.ExternalPostgres{}
 				if err := cl.Get(t.Context(), types.NamespacedName{Namespace: testInfraNamespace, Name: testDescriptorName}, cluster); err != nil {
 					t.Fatal(err)
 				}
@@ -612,8 +612,8 @@ func TestDatabaseConnectionAuthorizationAndOwnershipPrecedePublication(t *testin
 			case connectionAdminSourceCase:
 				// Administrative source identity is namespace qualified. Use a local
 				// descriptor selecting this exact source, rather than its name alone.
-				local := &epco.PostgresCluster{Namespace: db.Namespace, Name: testDescriptorName,
-					Spec: epco.PostgresClusterSpec{Connection: epco.PostgresConnection{Host: testEndpointHost},
+				local := &epco.ExternalPostgres{Namespace: db.Namespace, Name: testDescriptorName,
+					Spec: epco.ExternalPostgresSpec{Connection: epco.PostgresConnection{Host: testEndpointHost},
 						CredentialsSecret: epco.LocalReference{Name: source.Name}, TLS: &epco.PostgresTLS{Mode: dbTestTLSDisable}}}
 				if err := cl.Create(t.Context(), local); err != nil {
 					t.Fatal(err)

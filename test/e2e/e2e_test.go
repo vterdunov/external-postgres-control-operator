@@ -141,8 +141,8 @@ var _ = Describe("Installed operator", func() {
 				corev1.BasicAuthPasswordKey: "fixture-only-no-controller"}}
 		Expect(apiClient.Create(ctx, secret)).To(Succeed())
 		DeferCleanup(func() { deleteObject(secret) })
-		cluster := &epco.PostgresCluster{Name: "crud-cluster", Namespace: operatorNamespace,
-			Spec: epco.PostgresClusterSpec{
+		cluster := &epco.ExternalPostgres{Name: "crud-cluster", Namespace: operatorNamespace,
+			Spec: epco.ExternalPostgresSpec{
 				Connection:        epco.PostgresConnection{Host: "postgres.epco-postgres.svc.cluster.local"},
 				CredentialsSecret: epco.LocalReference{Name: secret.Name}, TLS: &epco.PostgresTLS{Mode: "disable"},
 			}}

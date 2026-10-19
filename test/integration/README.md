@@ -24,7 +24,7 @@ suite CA. Fixture clients expose a database administrator and a restricted login
 catalog assertions and SQL execution both check grant/revoke behavior. SQL
 readiness uses an authenticated `SELECT 1` over the same TLS connection as tests.
 
-Production PostgresCluster client tests cover all six TLS modes, transport order
+Production ExternalPostgres client tests cover all six TLS modes, transport order
 and fallback, hostname and CA verification, required client certificates,
 incorrect credentials, read-only sessions, recovery after repaired inputs, and
 connection cleanup after cancellation. Fixture certificate keys are generated

@@ -160,7 +160,7 @@ var _ = Describe("Database combined API and PostgreSQL recovery", Ordered, func(
 	var environment *kubeenv.Environment
 	var scope *kubeenv.Scope
 	var fixture *Fixture
-	var cluster *epco.PostgresCluster
+	var cluster *epco.ExternalPostgres
 	var database *epco.Database
 
 	BeforeAll(func(ctx SpecContext) {
@@ -310,7 +310,7 @@ var _ = Describe("Database combined API and PostgreSQL recovery", Ordered, func(
 		roleSQL(ctx, otherFixture, "CREATE ROLE "+quoteIdentifier(string(database.Spec.Owner))+" NOLOGIN")
 		recoveryDatabaseCleanup(other, string(database.Spec.Name))
 		setEndpoint := func(target *Fixture) {
-			latest := &epco.PostgresCluster{}
+			latest := &epco.ExternalPostgres{}
 			Expect(environment.Client.Get(ctx, client.ObjectKeyFromObject(cluster), latest)).To(Succeed())
 			latest.Spec.Connection.Port = int32(target.Server.port)
 			latest.Spec.Connection.Database = epco.SQLName(target.Database)
@@ -337,11 +337,11 @@ var _ = Describe("Database combined API and PostgreSQL recovery", Ordered, func(
 		Expect(environment.Client.Update(ctx, current)).To(Succeed())
 		recoverDatabaseReady(ctx, environment.Client, reconciler, database)
 		setEndpoint(fixture)
-		latest := &epco.PostgresCluster{}
+		latest := &epco.ExternalPostgres{}
 		Expect(environment.Client.Get(ctx, client.ObjectKeyFromObject(cluster), latest)).To(Succeed())
 		oldUID := latest.UID
 		Expect(environment.Client.Delete(ctx, latest)).To(Succeed())
-		recreated := &epco.PostgresCluster{Name: latest.Name, Namespace: latest.Namespace, Spec: latest.Spec}
+		recreated := &epco.ExternalPostgres{Name: latest.Name, Namespace: latest.Namespace, Spec: latest.Spec}
 		Expect(scope.Create(ctx, recreated)).To(Succeed())
 		Expect(recreated.UID).NotTo(Equal(oldUID))
 		restarted := databaseRecoveryReconciler(environment.Client, pgdatabases.NewDatabaseFactory())

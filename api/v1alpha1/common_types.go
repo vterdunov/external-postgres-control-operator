@@ -43,10 +43,10 @@ type LocalReference struct {
 	Name string `json:"name"`
 }
 
-// ClusterReference identifies a PostgresCluster connection descriptor.
+// ClusterReference identifies a ExternalPostgres connection descriptor.
 // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="cluster reference is immutable"
 type ClusterReference struct {
-	// Name is the PostgresCluster resource name.
+	// Name is the ExternalPostgres resource name.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
 	Name string `json:"name"`

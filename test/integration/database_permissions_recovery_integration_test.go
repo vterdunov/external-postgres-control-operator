@@ -360,7 +360,7 @@ var _ = Describe("R3 Database ACL durable recovery", Ordered, ContinueOnFailure,
 		setCreate(ctx)
 		r := databaseRecoveryReconciler(environment.Client, pg.NewDatabaseFactory())
 		database = recoverDatabaseReady(ctx, environment.Client, r, database)
-		cluster := &epco.PostgresCluster{}
+		cluster := &epco.ExternalPostgres{}
 		clusterKey := client.ObjectKey{Name: database.Spec.Cluster.Name, Namespace: database.Namespace}
 		Expect(environment.Client.Get(ctx, clusterKey, cluster)).To(Succeed())
 		cluster.Spec.Access = &epco.ClusterAccess{NamespaceSelector: &metav1.LabelSelector{
@@ -434,7 +434,7 @@ var _ = Describe("R3 Database ACL durable recovery", Ordered, ContinueOnFailure,
 		roleSQL(ctx, otherFixture, "DROP ROLE r3_identity_padding")
 		roleSQL(ctx, otherFixture, "CREATE DATABASE "+quoteIdentifier(name)+" OWNER "+quoteIdentifier(fixture.Role))
 		recoveryDatabaseCleanup(other, name)
-		cluster := &epco.PostgresCluster{}
+		cluster := &epco.ExternalPostgres{}
 		clusterKey := client.ObjectKey{Name: database.Spec.Cluster.Name, Namespace: database.Namespace}
 		selectTarget := func(target *Fixture) {
 			Expect(environment.Client.Get(ctx, clusterKey, cluster)).To(Succeed())
@@ -470,7 +470,7 @@ var _ = Describe("R3 Database ACL durable recovery", Ordered, ContinueOnFailure,
 		Expect(environment.Client.Get(ctx, clusterKey, cluster)).To(Succeed())
 		oldUID := cluster.UID
 		Expect(environment.Client.Delete(ctx, cluster)).To(Succeed())
-		replacement := &epco.PostgresCluster{Name: cluster.Name, Namespace: cluster.Namespace, Spec: cluster.Spec}
+		replacement := &epco.ExternalPostgres{Name: cluster.Name, Namespace: cluster.Namespace, Spec: cluster.Spec}
 		Expect(scope.Create(ctx, replacement)).To(Succeed())
 		Expect(replacement.UID).NotTo(Equal(oldUID))
 		recoverDatabaseReady(ctx, environment.Client,

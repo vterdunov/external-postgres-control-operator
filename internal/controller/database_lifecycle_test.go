@@ -132,7 +132,7 @@ func TestDatabaseRetryUsesCurrentDescriptorAndSecret(t *testing.T) {
 		return s, nil
 	})
 	runDatabase(t, r, db)
-	cluster := &epco.PostgresCluster{}
+	cluster := &epco.ExternalPostgres{}
 	key := client.ObjectKey{Namespace: testInfraNamespace, Name: testDescriptorName}
 	if err := cl.Get(t.Context(), key, cluster); err != nil {
 		t.Fatal(err)

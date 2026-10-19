@@ -31,8 +31,8 @@ const (
 	ambientPassword    = "env-secret"
 )
 
-func cluster() *epco.PostgresCluster {
-	return &epco.PostgresCluster{Name: "cluster", Namespace: testNamespace, Spec: epco.PostgresClusterSpec{
+func cluster() *epco.ExternalPostgres {
+	return &epco.ExternalPostgres{Name: "cluster", Namespace: testNamespace, Spec: epco.ExternalPostgresSpec{
 		Connection: epco.PostgresConnection{Host: testHost}, CredentialsSecret: epco.LocalReference{Name: authenticationName},
 	}}
 }
@@ -48,7 +48,7 @@ func builder(t *testing.T) *postgres.ConfigBuilder {
 	}
 	return b
 }
-func build(t *testing.T, c *epco.PostgresCluster, secrets map[string]*corev1.Secret) *postgres.Config {
+func build(t *testing.T, c *epco.ExternalPostgres, secrets map[string]*corev1.Secret) *postgres.Config {
 	t.Helper()
 	config, err := builder(t).Build(c, secrets)
 	if err != nil {
@@ -123,15 +123,15 @@ func TestCredentialContract(t *testing.T) {
 func TestConnectionValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		modify func(*epco.PostgresCluster)
+		modify func(*epco.ExternalPostgres)
 	}{
-		{"host", func(c *epco.PostgresCluster) { c.Spec.Connection.Host = "" }},
-		{"port negative", func(c *epco.PostgresCluster) { c.Spec.Connection.Port = -1 }},
-		{"port overflow", func(c *epco.PostgresCluster) { c.Spec.Connection.Port = 65536 }},
-		{"unknown TLS", func(c *epco.PostgresCluster) { c.Spec.TLS = &epco.PostgresTLS{Mode: invalidValue} }},
-		{"invalid duration", func(c *epco.PostgresCluster) { c.Spec.ConnectTimeout = "garbage" }},
-		{"zero duration", func(c *epco.PostgresCluster) { c.Spec.StatementTimeout = "0s" }},
-		{"negative duration", func(c *epco.PostgresCluster) { c.Spec.ReconcileInterval = "-1s" }},
+		{"host", func(c *epco.ExternalPostgres) { c.Spec.Connection.Host = "" }},
+		{"port negative", func(c *epco.ExternalPostgres) { c.Spec.Connection.Port = -1 }},
+		{"port overflow", func(c *epco.ExternalPostgres) { c.Spec.Connection.Port = 65536 }},
+		{"unknown TLS", func(c *epco.ExternalPostgres) { c.Spec.TLS = &epco.PostgresTLS{Mode: invalidValue} }},
+		{"invalid duration", func(c *epco.ExternalPostgres) { c.Spec.ConnectTimeout = "garbage" }},
+		{"zero duration", func(c *epco.ExternalPostgres) { c.Spec.StatementTimeout = "0s" }},
+		{"negative duration", func(c *epco.ExternalPostgres) { c.Spec.ReconcileInterval = "-1s" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := cluster()
@@ -201,7 +201,7 @@ func tlsSecrets(t *testing.T) map[string]*corev1.Secret {
 	s["client"] = &corev1.Secret{Name: "client", Namespace: testNamespace, Type: corev1.SecretTypeTLS, Data: map[string][]byte{corev1.TLSCertKey: crt, corev1.TLSPrivateKeyKey: key}}
 	return s
 }
-func tlsCluster() *epco.PostgresCluster {
+func tlsCluster() *epco.ExternalPostgres {
 	c := cluster()
 	c.Spec.TLS = &epco.PostgresTLS{Mode: tlsVerifyFull, CASecret: &epco.SecretKeyReference{Name: "ca", Key: "root"}, ClientCertificateSecret: &epco.LocalReference{Name: "client"}}
 	return c

@@ -55,10 +55,10 @@ func (r *DatabaseRoleReconciler) Reconcile(ctx context.Context, request ctrl.Req
 		return ctrl.Result{}, err
 	}
 	defer release()
-	cluster := &epco.PostgresCluster{}
+	cluster := &epco.ExternalPostgres{}
 	if err = r.Client.Get(ctx, key.Cluster, cluster); err != nil {
 		if apierrors.IsNotFound(err) {
-			return r.roleStatus(ctx, role, false, postgres.DependenciesNotReady, "The referenced PostgresCluster does not exist", 30*time.Second)
+			return r.roleStatus(ctx, role, false, postgres.DependenciesNotReady, "The referenced ExternalPostgres does not exist", 30*time.Second)
 		}
 		return ctrl.Result{}, err
 	}
@@ -67,7 +67,7 @@ func (r *DatabaseRoleReconciler) Reconcile(ctx context.Context, request ctrl.Req
 		return r.roleError(ctx, role, err, interval)
 	}
 	if !cluster.DeletionTimestamp.IsZero() {
-		return r.roleStatus(ctx, role, false, postgres.DependenciesNotReady, "The PostgresCluster is being deleted", interval)
+		return r.roleStatus(ctx, role, false, postgres.DependenciesNotReady, "The ExternalPostgres is being deleted", interval)
 	}
 	if !role.DeletionTimestamp.IsZero() && (!controllerutil.ContainsFinalizer(role, RoleFinalizer) || role.Spec.ReclaimPolicy != epco.ReclaimDelete || !hasManagedRole(role)) {
 		return r.releaseRole(ctx, role)
@@ -127,7 +127,7 @@ func (r *DatabaseRoleReconciler) Reconcile(ctx context.Context, request ctrl.Req
 	return r.reconcileRoleSession(ctx, role, cluster, session, interval, password, source)
 }
 
-func (r *DatabaseRoleReconciler) reconcileRoleSession(ctx context.Context, role *epco.DatabaseRole, cluster *epco.PostgresCluster, session postgres.RoleSession, interval time.Duration, password *string, source *corev1.Secret) (ctrl.Result, error) {
+func (r *DatabaseRoleReconciler) reconcileRoleSession(ctx context.Context, role *epco.DatabaseRole, cluster *epco.ExternalPostgres, session postgres.RoleSession, interval time.Duration, password *string, source *corev1.Secret) (ctrl.Result, error) {
 	name := EffectiveRoleName(role)
 	state, err := session.Inspect(ctx, name)
 	if err != nil {
@@ -221,7 +221,7 @@ func addRoleCleanupIntent(role *epco.DatabaseRole, index int, state *postgres.Ro
 	slices.Sort(intent.Parameters)
 }
 
-func roleEndpoint(_ *epco.DatabaseRole, cluster *epco.PostgresCluster) epco.RoleEndpointState {
+func roleEndpoint(_ *epco.DatabaseRole, cluster *epco.ExternalPostgres) epco.RoleEndpointState {
 	port := cluster.Spec.Connection.Port
 	if port == 0 {
 		port = 5432
@@ -291,7 +291,7 @@ func (r *DatabaseRoleReconciler) roleError(ctx context.Context, role *epco.Datab
 	message := "PostgreSQL role reconciliation could not complete"
 	switch failure.Reason {
 	case postgres.AccessDenied:
-		message = "The resource namespace is not authorized by PostgresCluster"
+		message = "The resource namespace is not authorized by ExternalPostgres"
 	case "InvalidSecret":
 		message = "The local password or connection Secret is invalid"
 	case "SecretNotFound":

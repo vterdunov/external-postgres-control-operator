@@ -14,7 +14,7 @@ from helper_support import PreparationFixture, measured_runtime
 from support import IMAGE_SHA, checksum
 
 
-CRD_NAMES = {"postgresclusters.postgresql.epco.io", "databaseroles.postgresql.epco.io", "databases.postgresql.epco.io"}
+CRD_NAMES = {"externalpostgres.postgresql.epco.io", "databaseroles.postgresql.epco.io", "databases.postgresql.epco.io"}
 
 
 class CRDBundleTests(unittest.TestCase):

@@ -19,7 +19,7 @@ prepares the exact native client on every node before starting scenario timers.
 The suite verifies one healthy manager, HTTP health/readiness, HTTPS metrics
 with authorized, missing and unauthorized tokens, an authenticated
 PostgreSQL TCP connection, and CRUD for all existing CRDs. The installed
-PostgresCluster controller authenticates real fixture credentials and recovers
+ExternalPostgres controller authenticates real fixture credentials and recovers
 readiness after its Secret is corrupted, repaired, deleted and replaced.
 DatabaseRole scenarios verify generated-source rotation, retain/GC safety, conditional reuse after recreation, delete finalizers paused by authorization removal, and ordinary Lease takeover after leader termination. Database scenarios verify restricted owner/schema transfer with data and table-owner preservation, RESTRICT and connected-session deletion recovery, retain/recreate, authorization-paused cleanup and cancellation of blocked SQL before leader takeover. The R3 permission scenario exercises installed database/schema grants, creator defaults, denied access outside the named-table allowlist, named-table removal with data preservation, and retained grants removed by explicit absent after CR recreation. This describes authored coverage; the [roadmap](../../docs/roadmap.md) records completed validation gates. PostgreSQL runs in `epco-postgres`, separately from `epco-system`.
 

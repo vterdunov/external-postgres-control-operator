@@ -14,7 +14,7 @@ func TestDatabaseConnectionConfiguredPublicCARequiresValidSourceEvenWithTLSDisab
 	for _, scenario := range []string{"missing CA Secret", "empty configured CA key"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, _, _, reconciler, cl, session := connectionFixture(t)
-			cluster := &epco.PostgresCluster{}
+			cluster := &epco.ExternalPostgres{}
 			if err := cl.Get(t.Context(), types.NamespacedName{Namespace: testInfraNamespace, Name: testDescriptorName}, cluster); err != nil {
 				t.Fatal(err)
 			}
@@ -38,7 +38,7 @@ func TestDatabaseConnectionConfiguredPublicCARequiresValidSourceEvenWithTLSDisab
 
 func TestDatabaseConnectionConfiguredPublicCAIsExportedEvenWithAdministrativeTLSDisabled(t *testing.T) {
 	db, _, _, reconciler, cl, session := connectionFixture(t)
-	cluster := &epco.PostgresCluster{}
+	cluster := &epco.ExternalPostgres{}
 	if err := cl.Get(t.Context(), types.NamespacedName{Namespace: testInfraNamespace, Name: testDescriptorName}, cluster); err != nil {
 		t.Fatal(err)
 	}

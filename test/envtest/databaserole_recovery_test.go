@@ -17,6 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const recoveryDescriptorName = "connection"
+
 // This client models a cache snapshot only. Reads of other resources and all
 // writes retain real API server semantics, including resourceVersion conflicts.
 type staleRoleSnapshotClient struct {
@@ -95,10 +97,10 @@ func (*recoveryRoleSession) Close(context.Context) error { return nil }
 
 var _ = Describe("DatabaseRole durable recovery", func() {
 	It("rejects stale initialized=false before source recreation or SQL mutation", func(ctx SpecContext) {
-		cluster := &epco.PostgresCluster{
+		cluster := &epco.ExternalPostgres{
 			Namespace: namespace.Name,
-			Name:      "connection",
-			Spec: epco.PostgresClusterSpec{
+			Name:      recoveryDescriptorName,
+			Spec: epco.ExternalPostgresSpec{
 				Connection:        epco.PostgresConnection{Host: "database.example"},
 				CredentialsSecret: epco.LocalReference{Name: roleTestAdmin},
 				TLS:               &epco.PostgresTLS{Mode: roleTestTLSMode},

@@ -1,6 +1,6 @@
 # Cross-namespace access
 
-Status: accepted as part of the initial [API baseline](api-proposal.md), 2026-10-07. DatabaseRole and Database implement namespace authorization and removal/resumption, including paused finalizers. PostgresCluster connection readiness is implemented independently of this selector; see [implementation status](README.md#implementation-status).
+Status: accepted as part of the initial [API baseline](api-proposal.md), 2026-10-07. DatabaseRole and Database implement namespace authorization and removal/resumption, including paused finalizers. ExternalPostgres connection readiness is implemented independently of this selector; see [implementation status](README.md#implementation-status).
 
 ## Use case and resource placement
 
@@ -8,7 +8,7 @@ The platform team owns one external PostgreSQL connection in an infrastructure n
 
 | Namespace | Resources | Owner |
 | --- | --- | --- |
-| infra | PostgresCluster, its administrative credentials Secret, its CA Secret | Platform team |
+| infra | ExternalPostgres, its administrative credentials Secret, its CA Secret | Platform team |
 | orders | Database, DatabaseRole resources, password sources, connection outputs | Orders service team |
 | billing | Independent Database, DatabaseRole resources, password sources, connection outputs | Billing service team |
 
@@ -24,13 +24,13 @@ cluster:
   namespace: infra
 ```
 
-If namespace is omitted, it resolves to the referencing CR's namespace. Existing manifests keep their meaning. The stored cluster reference is immutable after acceptance, including whether namespace was omitted. A local reference cannot later be rewritten with an explicit namespace; set it at creation if needed. Connection settings in the referenced PostgresCluster remain mutable. Updating its endpoint or recreating the descriptor under the same namespace/name selects the current connection without a stored-UID rebind approval; dependents are reconciled again and their connection outputs are refreshed. This does not migrate data or remove objects from the former server.
+If namespace is omitted, it resolves to the referencing CR's namespace. Existing manifests keep their meaning. The stored cluster reference is immutable after acceptance, including whether namespace was omitted. A local reference cannot later be rewritten with an explicit namespace; set it at creation if needed. Connection settings in the referenced ExternalPostgres remain mutable. Updating its endpoint or recreating the descriptor under the same namespace/name selects the current connection without a stored-UID rebind approval; dependents are reconciled again and their connection outputs are refreshed. This does not migrate data or remove objects from the former server.
 
-Only the cluster reference crosses namespaces in this extension. Database.connectionSecrets[].roleRef remains local to the database namespace. Application password sources remain local to their DatabaseRole. The administrative credentialsSecret and tls.caSecret are resolved in the PostgresCluster namespace.
+Only the cluster reference crosses namespaces in this extension. Database.connectionSecrets[].roleRef remains local to the database namespace. Application password sources remain local to their DatabaseRole. The administrative credentialsSecret and tls.caSecret are resolved in the ExternalPostgres namespace.
 
 ## Namespace selector
 
-Naming a remote PostgresCluster does not authorize its use. The platform team configures PostgresCluster.spec.access.namespaceSelector with the standard metav1.LabelSelector shape. It selects Namespace objects by their metadata.labels, not labels on Database or DatabaseRole resources. Both matchLabels and matchExpressions are supported. [Kubernetes LabelSelector](https://kubernetes.io/docs/reference/kubernetes-api/definitions/label-selector-v1-meta/).
+Naming a remote ExternalPostgres does not authorize its use. The platform team configures ExternalPostgres.spec.access.namespaceSelector with the standard metav1.LabelSelector shape. It selects Namespace objects by their metadata.labels, not labels on Database or DatabaseRole resources. Both matchLabels and matchExpressions are supported. [Kubernetes LabelSelector](https://kubernetes.io/docs/reference/kubernetes-api/definitions/label-selector-v1-meta/).
 
 ```yaml
 access:
@@ -93,7 +93,7 @@ RabbitMQ Messaging Topology Operator similarly reports a condition and stops rec
 
 ## Kubernetes RBAC and Secrets
 
-Service teams can create/update/delete Database and DatabaseRole resources and consume application Secrets in their own namespace. They cannot edit the infrastructure PostgresCluster or its access policy and cannot read its administrative Secret. The manager reads connection descriptors, Namespace labels, and role dependencies, and reconciles namespace-local password sources; its [generated RBAC](../config/rbac/role.yaml) does not establish application-team isolation. Platform RBAC must enforce the team boundaries above. Kubernetes Role/RoleBinding permissions can be granted per namespace. [Kubernetes RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/).
+Service teams can create/update/delete Database and DatabaseRole resources and consume application Secrets in their own namespace. They cannot edit the infrastructure ExternalPostgres or its access policy and cannot read its administrative Secret. The manager reads connection descriptors, Namespace labels, and role dependencies, and reconciles namespace-local password sources; its [generated RBAC](../config/rbac/role.yaml) does not establish application-team isolation. Platform RBAC must enforce the team boundaries above. Kubernetes Role/RoleBinding permissions can be granted per namespace. [Kubernetes RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/).
 
 The shared CA can be copied into each application connection output because it is public trust material. Administrative passwords and client private keys are not copied. Cross-namespace Secret references and roleRef exports are outside the accepted API.
 

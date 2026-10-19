@@ -45,7 +45,7 @@ class RemovalTests(DeliveryCase):
         self.assertTrue({"Namespace", "CustomResourceDefinition", "Deployment"}.issubset(install_kinds))
         self.assertIn(IMAGE, install, "installer must preserve visible version plus immutable digest")
         self.assertIn("Deployment", removal_kinds)
-        self.assertFalse({"Namespace", "CustomResourceDefinition", "Secret", "PostgresCluster", "DatabaseRole", "Database"} & removal_kinds)
+        self.assertFalse({"Namespace", "CustomResourceDefinition", "Secret", "ExternalPostgres", "DatabaseRole", "Database"} & removal_kinds)
         self.assert_no_mutations()
 
     def test_crd_retirement_requires_acknowledgement_and_explicit_context(self):
@@ -157,7 +157,7 @@ class ChartTests(DeliveryCase):
 
     def test_required_manager_settings_and_no_application_or_namespace_resources(self):
         rendered = self.render()
-        forbidden = {"Namespace", "Secret", "PostgresCluster", "DatabaseRole", "Database", "Certificate", "ServiceMonitor", "ValidatingWebhookConfiguration", "MutatingWebhookConfiguration"}
+        forbidden = {"Namespace", "Secret", "ExternalPostgres", "DatabaseRole", "Database", "Certificate", "ServiceMonitor", "ValidatingWebhookConfiguration", "MutatingWebhookConfiguration"}
         self.assertFalse(forbidden.intersection(kind(doc) for doc in documents(rendered)))
         manager = named(rendered, "Deployment", "epco-controller-manager")
         for pattern in (r"runAsNonRoot:\s*true", r"type:\s*RuntimeDefault", r"readOnlyRootFilesystem:\s*true",

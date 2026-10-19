@@ -36,7 +36,7 @@ type r4ConnectionFixture struct {
 	*Fixture
 	api      client.Client
 	scope    *kubeenv.Scope
-	cluster  *epco.PostgresCluster
+	cluster  *epco.ExternalPostgres
 	role     *epco.DatabaseRole
 	source   *corev1.Secret
 	database *epco.Database

@@ -173,11 +173,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.PostgresClusterReconciler{
+	if err := (&controller.ExternalPostgresReconciler{
 		Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(),
 		Builder: configBuilder, Checker: postgres.NewChecker(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to register PostgresCluster controller")
+		setupLog.Error(err, "Failed to register ExternalPostgres controller")
 		os.Exit(1)
 	}
 

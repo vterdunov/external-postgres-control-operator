@@ -64,7 +64,7 @@ spec:
                 description: Cluster identifies the PostgreSQL connection descriptor.
                 properties:
                   name:
-                    description: Name is the PostgresCluster resource name.
+                    description: Name is the ExternalPostgres resource name.
                     maxLength: 253
                     minLength: 1
                     type: string

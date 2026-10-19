@@ -12,7 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-func (r *DatabaseReconciler) prepareConnectionInputs(ctx context.Context, database *epco.Database, cluster *epco.PostgresCluster, config *postgres.Config, secrets map[string]*corev1.Secret) ([]connectionSecretInput, error) {
+func (r *DatabaseReconciler) prepareConnectionInputs(ctx context.Context, database *epco.Database, cluster *epco.ExternalPostgres, config *postgres.Config, secrets map[string]*corev1.Secret) ([]connectionSecretInput, error) {
 	if postgres.IsProtectedDatabase(EffectiveDatabaseName(database), config.Connection.Database) {
 		return nil, &postgres.Failure{Reason: postgres.ProtectedDatabase, Message: "The SQL database is protected from management"}
 	}
@@ -36,7 +36,7 @@ func (r *DatabaseReconciler) prepareConnectionInputs(ctx context.Context, databa
 	return inputs, nil
 }
 
-func (r *DatabaseReconciler) connectionInputs(ctx context.Context, database *epco.Database, cluster *epco.PostgresCluster, config *postgres.Config, secrets map[string]*corev1.Secret) ([]connectionSecretInput, error) {
+func (r *DatabaseReconciler) connectionInputs(ctx context.Context, database *epco.Database, cluster *epco.ExternalPostgres, config *postgres.Config, secrets map[string]*corev1.Secret) ([]connectionSecretInput, error) {
 	if err := r.preflightConnectionNames(ctx, database); err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (r *DatabaseReconciler) preflightConnectionNames(ctx context.Context, datab
 	return nil
 }
 
-func (r *DatabaseReconciler) connectionRole(ctx context.Context, database *epco.Database, cluster *epco.PostgresCluster, config *postgres.Config, entry epco.ConnectionSecret) (*epco.DatabaseRole, error) {
+func (r *DatabaseReconciler) connectionRole(ctx context.Context, database *epco.Database, cluster *epco.ExternalPostgres, config *postgres.Config, entry epco.ConnectionSecret) (*epco.DatabaseRole, error) {
 	role := &epco.DatabaseRole{}
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: database.Namespace, Name: entry.RoleRef.Name}, role); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -161,7 +161,7 @@ func (r *DatabaseReconciler) connectionSource(ctx context.Context, role *epco.Da
 	return source, nil
 }
 
-func (r *DatabaseReconciler) connectionData(ctx context.Context, database *epco.Database, cluster *epco.PostgresCluster, role *epco.DatabaseRole, source *corev1.Secret, entry epco.ConnectionSecret, secrets map[string]*corev1.Secret) (map[string][]byte, error) {
+func (r *DatabaseReconciler) connectionData(ctx context.Context, database *epco.Database, cluster *epco.ExternalPostgres, role *epco.DatabaseRole, source *corev1.Secret, entry epco.ConnectionSecret, secrets map[string]*corev1.Secret) (map[string][]byte, error) {
 	input := postgres.ApplicationConnection{Username: EffectiveRoleName(role), Password: string(source.Data[corev1.BasicAuthPasswordKey]), Host: cluster.Spec.Connection.Host, Port: cluster.Spec.Connection.Port, Database: EffectiveDatabaseName(database), SSLRootCertPath: entry.SSLRootCertPath}
 	if cluster.Spec.TLS != nil {
 		input.SSLMode = cluster.Spec.TLS.Mode
@@ -174,7 +174,7 @@ func (r *DatabaseReconciler) connectionData(ctx context.Context, database *epco.
 	return postgres.BuildConnectionSecretData(input)
 }
 
-func (r *DatabaseReconciler) connectionCA(ctx context.Context, cluster *epco.PostgresCluster, secrets map[string]*corev1.Secret) ([]byte, error) {
+func (r *DatabaseReconciler) connectionCA(ctx context.Context, cluster *epco.ExternalPostgres, secrets map[string]*corev1.Secret) ([]byte, error) {
 	reference := cluster.Spec.TLS.CASecret
 	if reference == nil {
 		return nil, nil

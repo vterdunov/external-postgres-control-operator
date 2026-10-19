@@ -19,7 +19,6 @@ import (
 
 const (
 	permissionDatabaseField     = "database"
-	permissionHostField         = "host"
 	permissionDependencySQLName = "dependency"
 )
 
@@ -69,10 +68,10 @@ var _ = Describe("R3 Database ACL API and dependency watches", func() {
 			"grantor": databaseTestOwnerName, databaseTestOwnerName: databaseTestOwnerName,
 			"databaseOID": int64(12345), "granteeOID": int64(23456), "grantorOID": int64(34567),
 			"pending": "grant", "generation": generation,
-			"grantorCandidates": []any{map[string]any{"name": databaseTestOwnerName, "oid": int64(34567)}},
+			"grantorCandidates": []any{map[string]any{nameField: databaseTestOwnerName, "oid": int64(34567)}},
 			"before": []any{map[string]any{
-				"grantor": map[string]any{"name": databaseTestOwnerName, "oid": int64(34567)}, "grantable": true}}}
-		targets := []any{map[string]any{permissionHostField: "postgres.example.test",
+				"grantor": map[string]any{nameField: databaseTestOwnerName, "oid": int64(34567)}, "grantable": true}}}
+		targets := []any{map[string]any{hostField: descriptorTestHost,
 			"port": int64(5432), permissionDatabaseField: "postgres",
 			"bindingRevision": "descriptor-revision", "bindings": []any{binding}}}
 		setField(db, targets, connectionAPIStatusSubresource, "managedACLTargets")

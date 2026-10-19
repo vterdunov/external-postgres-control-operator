@@ -5,8 +5,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// PostgresClusterSpec defines a connection to an external writable PostgreSQL server.
-type PostgresClusterSpec struct {
+// ExternalPostgresSpec defines a connection to an external writable PostgreSQL server.
+type ExternalPostgresSpec struct {
 	// Connection identifies the administrative endpoint and database.
 	Connection PostgresConnection `json:"connection"`
 	// CredentialsSecret supplies a local basic-auth Secret with username/password.
@@ -15,7 +15,7 @@ type PostgresClusterSpec struct {
 	// +optional
 	TLS *PostgresTLS `json:"tls,omitempty"`
 	// Access optionally selects authorized Namespace objects. Without it, only
-	// references from the PostgresCluster namespace are authorized.
+	// references from the ExternalPostgres namespace are authorized.
 	// +optional
 	Access *ClusterAccess `json:"access,omitempty"`
 	// ReconcileInterval is the interval between periodic reconciliations.
@@ -89,39 +89,39 @@ type ClusterAccess struct {
 	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty"`
 }
 
-// PostgresClusterStatus defines the observed connection state.
-type PostgresClusterStatus struct {
+// ExternalPostgresStatus defines the observed connection state.
+type ExternalPostgresStatus struct {
 	ResourceStatus `json:",inline"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Namespaced,shortName=pgc
+// +kubebuilder:resource:path=externalpostgres,singular=externalpostgres,scope=Namespaced,shortName=epg
 // +kubebuilder:printcolumn:name="Host",type=string,JSONPath=".spec.connection.host"
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
-// PostgresCluster is the API for an external PostgreSQL connection descriptor.
-type PostgresCluster struct {
+// ExternalPostgres is the API for an external PostgreSQL connection descriptor.
+type ExternalPostgres struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitzero"`
-	Spec              PostgresClusterSpec `json:"spec"`
+	Spec              ExternalPostgresSpec `json:"spec"`
 	// +optional
-	Status PostgresClusterStatus `json:"status,omitzero"`
+	Status ExternalPostgresStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true
 
-// PostgresClusterList contains PostgresCluster resources.
-type PostgresClusterList struct {
+// ExternalPostgresList contains ExternalPostgres resources.
+type ExternalPostgresList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitzero"`
-	Items           []PostgresCluster `json:"items"`
+	Items           []ExternalPostgres `json:"items"`
 }
 
 func init() {
 	SchemeBuilder.Register(func(s *runtime.Scheme) error {
-		s.AddKnownTypes(SchemeGroupVersion, &PostgresCluster{}, &PostgresClusterList{})
+		s.AddKnownTypes(SchemeGroupVersion, &ExternalPostgres{}, &ExternalPostgresList{})
 		return nil
 	})
 }

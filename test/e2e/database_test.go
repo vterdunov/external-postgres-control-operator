@@ -61,7 +61,7 @@ func installedDatabase(ctx context.Context, database *epco.Database,
 	return latest
 }
 
-func installedDatabaseOwner(ctx context.Context, cluster *epco.PostgresCluster, name string) {
+func installedDatabaseOwner(ctx context.Context, cluster *epco.ExternalPostgres, name string) {
 	role := &epco.DatabaseRole{Name: strings.ReplaceAll(name, "_", "-"), Namespace: operatorNamespace,
 		Spec: epco.DatabaseRoleSpec{Name: epco.SQLName(name), Cluster: epco.ClusterReference{Name: cluster.Name}}}
 	ExpectWithOffset(1, apiClient.Create(ctx, role)).To(Succeed())

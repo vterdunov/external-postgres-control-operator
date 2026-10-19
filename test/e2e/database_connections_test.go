@@ -309,8 +309,8 @@ var _ = Describe("R4 Installed application connection Secrets", func() {
 				corev1.BasicAuthPasswordKey: fixtureAdmin.Data[corev1.BasicAuthPasswordKey]}}
 		Expect(apiClient.Create(ctx, admin)).To(Succeed())
 		DeferCleanup(func() { deleteObject(admin) })
-		cluster := &epco.PostgresCluster{Namespace: operatorNamespace, Name: "application-connections",
-			Spec: epco.PostgresClusterSpec{
+		cluster := &epco.ExternalPostgres{Namespace: operatorNamespace, Name: "application-connections",
+			Spec: epco.ExternalPostgresSpec{
 				Connection:        epco.PostgresConnection{Host: host, Port: port},
 				CredentialsSecret: epco.LocalReference{Name: admin.Name},
 				TLS:               &epco.PostgresTLS{Mode: installedRoleTLSMode},

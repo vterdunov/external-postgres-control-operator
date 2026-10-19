@@ -87,7 +87,7 @@ var _ = Describe("Managed owner capability namespace watches", func() {
 		}
 		// A similarly named descriptor in the role namespace is a different canonical
 		// cluster. Its local Database must not hide a missing cross-namespace fanout.
-		unrelatedCluster := &epco.PostgresCluster{Namespace: roleNamespace.Name, Name: cluster.Name, Spec: cluster.Spec}
+		unrelatedCluster := &epco.ExternalPostgres{Namespace: roleNamespace.Name, Name: cluster.Name, Spec: cluster.Spec}
 		Expect(roleScope.Create(ctx, unrelatedCluster)).To(Succeed())
 
 		for _, allowed := range []bool{false, true} {

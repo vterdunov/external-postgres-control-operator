@@ -1,5 +1,5 @@
 apiVersion: postgresql.epco.io/v1alpha1
-kind: PostgresCluster
+kind: ExternalPostgres
 metadata:
   name: pg-prod
 spec:

@@ -8,7 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func passwordApplicationReceipt(role *epco.DatabaseRole, cluster *epco.PostgresCluster, source *corev1.Secret) *epco.PasswordApplicationReceipt {
+func passwordApplicationReceipt(role *epco.DatabaseRole, cluster *epco.ExternalPostgres, source *corev1.Secret) *epco.PasswordApplicationReceipt {
 	if source == nil {
 		return nil
 	}

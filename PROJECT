@@ -14,7 +14,7 @@ resources:
     namespaced: true
   domain: epco.io
   group: postgresql
-  kind: PostgresCluster
+  kind: ExternalPostgres
   path: github.com/vterdunov/external-postgres-control-operator/api/v1alpha1
   version: v1alpha1
 - api:

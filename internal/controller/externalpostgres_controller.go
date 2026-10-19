@@ -25,8 +25,8 @@ const secretReferenceIndex = "spec.connectionSecretReferences"
 
 const readyCondition = "Ready"
 
-// PostgresClusterReconciler reports authentication and writable server state.
-type PostgresClusterReconciler struct {
+// ExternalPostgresReconciler reports authentication and writable server state.
+type ExternalPostgresReconciler struct {
 	Client    client.Client
 	APIReader client.Reader
 	Builder   *postgres.ConfigBuilder
@@ -34,17 +34,17 @@ type PostgresClusterReconciler struct {
 	Now       func() time.Time
 }
 
-// +kubebuilder:rbac:groups=postgresql.epco.io,resources=postgresclusters,verbs=get;list;watch
-// +kubebuilder:rbac:groups=postgresql.epco.io,resources=postgresclusters/status,verbs=get;patch;update
+// +kubebuilder:rbac:groups=postgresql.epco.io,resources=externalpostgres,verbs=get;list;watch
+// +kubebuilder:rbac:groups=postgresql.epco.io,resources=externalpostgres/status,verbs=get;patch;update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 // Reconcile checks a snapshot, then discards results if any input changed.
-func (r *PostgresClusterReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
+func (r *ExternalPostgresReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 	reader := r.APIReader
 	if reader == nil {
 		reader = r.Client
 	}
-	cluster := &epco.PostgresCluster{}
+	cluster := &epco.ExternalPostgres{}
 	if err := reader.Get(ctx, request.NamespacedName, cluster); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -61,7 +61,7 @@ func (r *PostgresClusterReconciler) Reconcile(ctx context.Context, request ctrl.
 		interval = config.ReconcileInterval
 		checkError = r.Checker.Check(ctx, config)
 	}
-	latest := &epco.PostgresCluster{}
+	latest := &epco.ExternalPostgres{}
 	if err = reader.Get(ctx, request.NamespacedName, latest); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -103,7 +103,7 @@ func (r *PostgresClusterReconciler) Reconcile(ctx context.Context, request ctrl.
 
 func freshCheck() ctrl.Result { return ctrl.Result{RequeueAfter: time.Millisecond} }
 
-func reconcileInterval(cluster *epco.PostgresCluster) time.Duration {
+func reconcileInterval(cluster *epco.ExternalPostgres) time.Duration {
 	interval, err := time.ParseDuration(string(cluster.Spec.ReconcileInterval))
 	if err != nil || interval <= 0 {
 		return 5 * time.Minute
@@ -111,7 +111,7 @@ func reconcileInterval(cluster *epco.PostgresCluster) time.Duration {
 	return interval
 }
 
-func secretReferences(cluster *epco.PostgresCluster) []string {
+func secretReferences(cluster *epco.ExternalPostgres) []string {
 	refs := []string{cluster.Spec.CredentialsSecret.Name}
 	if config := cluster.Spec.TLS; config != nil && config.Mode != "disable" {
 		if config.CASecret != nil {
@@ -132,7 +132,7 @@ func secretReferences(cluster *epco.PostgresCluster) []string {
 	return unique
 }
 
-func readSecrets(ctx context.Context, reader client.Reader, cluster *epco.PostgresCluster) (map[string]*corev1.Secret, error) {
+func readSecrets(ctx context.Context, reader client.Reader, cluster *epco.ExternalPostgres) (map[string]*corev1.Secret, error) {
 	refs := secretReferences(cluster)
 	secrets := make(map[string]*corev1.Secret, len(refs))
 	for _, name := range refs {
@@ -172,7 +172,7 @@ func sameSecrets(previous, current map[string]*corev1.Secret) bool {
 	return true
 }
 
-func writeStatus(cluster *epco.PostgresCluster, err error, now time.Time) {
+func writeStatus(cluster *epco.ExternalPostgres, err error, now time.Time) {
 	applied := err == nil
 	status := &cluster.Status
 	status.Applied = &applied
@@ -212,7 +212,7 @@ func safeResult(err error) (string, string) {
 }
 
 // SetupWithManager registers namespace-local Secret indexes and lifecycle watches.
-func (r *PostgresClusterReconciler) SetupWithManager(manager ctrl.Manager) error {
+func (r *ExternalPostgresReconciler) SetupWithManager(manager ctrl.Manager) error {
 	if r.Client == nil {
 		r.Client = manager.GetClient()
 	}
@@ -229,22 +229,22 @@ func (r *PostgresClusterReconciler) SetupWithManager(manager ctrl.Manager) error
 	if r.Checker == nil {
 		r.Checker = postgres.NewChecker()
 	}
-	if err := manager.GetFieldIndexer().IndexField(context.Background(), &epco.PostgresCluster{},
-		secretReferenceIndex, func(object client.Object) []string { return secretReferences(object.(*epco.PostgresCluster)) }); err != nil {
+	if err := manager.GetFieldIndexer().IndexField(context.Background(), &epco.ExternalPostgres{},
+		secretReferenceIndex, func(object client.Object) []string { return secretReferences(object.(*epco.ExternalPostgres)) }); err != nil {
 		return err
 	}
 	return ctrl.NewControllerManagedBy(manager).
-		For(&epco.PostgresCluster{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		For(&epco.ExternalPostgres{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.clustersForSecret),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Complete(r)
 }
 
-func (r *PostgresClusterReconciler) clustersForSecret(ctx context.Context, object client.Object) []reconcile.Request {
-	clusters := &epco.PostgresClusterList{}
+func (r *ExternalPostgresReconciler) clustersForSecret(ctx context.Context, object client.Object) []reconcile.Request {
+	clusters := &epco.ExternalPostgresList{}
 	if err := r.Client.List(ctx, clusters, client.InNamespace(object.GetNamespace()),
 		client.MatchingFields{secretReferenceIndex: object.GetName()}); err != nil {
-		ctrl.LoggerFrom(ctx).Error(err, "Unable to list PostgresClusters for Secret")
+		ctrl.LoggerFrom(ctx).Error(err, "Unable to list ExternalPostgres resources for Secret")
 		return nil
 	}
 	requests := make([]reconcile.Request, 0, len(clusters.Items))

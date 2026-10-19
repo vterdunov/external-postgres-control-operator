@@ -51,7 +51,7 @@ const (
 // SQL results and SQLSTATE are asserted: pgx errors may carry connection data.
 type r6Application struct {
 	namespace *corev1.Namespace
-	cluster   *epco.PostgresCluster
+	cluster   *epco.ExternalPostgres
 	database  *epco.Database
 	roles     map[string]*epco.DatabaseRole
 	port      uint16
@@ -161,7 +161,7 @@ func r6Permissions(names ...epco.SQLName) []epco.Permission {
 	return permissions
 }
 
-func r6Platform(ctx context.Context) *epco.PostgresCluster {
+func r6Platform(ctx context.Context) *epco.ExternalPostgres {
 	name := "r6-" + strings.ToLower(rand.Text()[:8])
 	cluster := installedRoleDescriptor(ctx, name, &epco.ClusterAccess{
 		NamespaceSelector: &metav1.LabelSelector{
@@ -190,7 +190,7 @@ func r6NamespaceAccess(ctx context.Context, namespace *corev1.Namespace, allowed
 	})).To(Succeed())
 }
 
-func r6NewApplication(ctx context.Context, cluster *epco.PostgresCluster, port uint16) *r6Application {
+func r6NewApplication(ctx context.Context, cluster *epco.ExternalPostgres, port uint16) *r6Application {
 	app := &r6Application{cluster: cluster, port: port, roles: map[string]*epco.DatabaseRole{},
 		namespace: &corev1.Namespace{GenerateName: "epco-r6-",
 			Labels: map[string]string{installedAccessLabel: installedAllowedLabel}}}

@@ -4,16 +4,16 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.22.0
-  name: postgresclusters.postgresql.epco.io
+  name: externalpostgres.postgresql.epco.io
 spec:
   group: postgresql.epco.io
   names:
-    kind: PostgresCluster
-    listKind: PostgresClusterList
-    plural: postgresclusters
+    kind: ExternalPostgres
+    listKind: ExternalPostgresList
+    plural: externalpostgres
     shortNames:
-    - pgc
-    singular: postgrescluster
+    - epg
+    singular: externalpostgres
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -29,7 +29,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: PostgresCluster is the API for an external PostgreSQL connection
+        description: ExternalPostgres is the API for an external PostgreSQL connection
           descriptor.
         properties:
           apiVersion:
@@ -50,13 +50,13 @@ spec:
           metadata:
             type: object
           spec:
-            description: PostgresClusterSpec defines a connection to an external writable
-              PostgreSQL server.
+            description: ExternalPostgresSpec defines a connection to an external
+              writable PostgreSQL server.
             properties:
               access:
                 description: |-
                   Access optionally selects authorized Namespace objects. Without it, only
-                  references from the PostgresCluster namespace are authorized.
+                  references from the ExternalPostgres namespace are authorized.
                 properties:
                   namespaceSelector:
                     description: |-
@@ -221,7 +221,7 @@ spec:
             - credentialsSecret
             type: object
           status:
-            description: PostgresClusterStatus defines the observed connection state.
+            description: ExternalPostgresStatus defines the observed connection state.
             properties:
               applied:
                 description: Applied reports whether reconciliation succeeded.

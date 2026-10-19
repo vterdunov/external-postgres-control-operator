@@ -18,7 +18,7 @@ import (
 )
 
 type managedOwnerFixture struct {
-	cluster                       *epco.PostgresCluster
+	cluster                       *epco.ExternalPostgres
 	prefix, admin, owner, grantor string
 	role                          *epco.DatabaseRole
 }

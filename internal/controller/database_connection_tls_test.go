@@ -56,7 +56,7 @@ func TestDatabaseConnectionPublicCAAndJDBCRequireHaveMatchingVerification(t *tes
 					t.Fatal(err)
 				}
 			}
-			cluster := &epco.PostgresCluster{}
+			cluster := &epco.ExternalPostgres{}
 			if err := cl.Get(t.Context(), types.NamespacedName{Namespace: testInfraNamespace, Name: testDescriptorName}, cluster); err != nil {
 				t.Fatal(err)
 			}

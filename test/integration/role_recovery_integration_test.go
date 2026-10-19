@@ -100,7 +100,7 @@ func (s *recoveryRoleSession) Apply(ctx context.Context,
 	return result, err
 }
 
-func recoveryCluster(ctx context.Context, scope *kubeenv.Scope, f *Fixture) *epco.PostgresCluster {
+func recoveryCluster(ctx context.Context, scope *kubeenv.Scope, f *Fixture) *epco.ExternalPostgres {
 	ca, err := os.ReadFile(f.Server.TLS.CA)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	ExpectWithOffset(1, scope.Create(ctx, &corev1.Secret{Name: recoveryAdminSecret, Namespace: scope.Namespace.Name,
@@ -109,8 +109,8 @@ func recoveryCluster(ctx context.Context, scope *kubeenv.Scope, f *Fixture) *epc
 			corev1.BasicAuthPasswordKey: []byte(f.Server.password)}})).To(Succeed())
 	ExpectWithOffset(1, scope.Create(ctx, &corev1.Secret{Name: "ca", Namespace: scope.Namespace.Name,
 		Data: map[string][]byte{roleCAKey: ca}})).To(Succeed())
-	cluster := &epco.PostgresCluster{Name: roleSQLAdmin, Namespace: scope.Namespace.Name,
-		Spec: epco.PostgresClusterSpec{Connection: epco.PostgresConnection{Host: loopbackHost,
+	cluster := &epco.ExternalPostgres{Name: roleSQLAdmin, Namespace: scope.Namespace.Name,
+		Spec: epco.ExternalPostgresSpec{Connection: epco.PostgresConnection{Host: loopbackHost,
 			Port: int32(f.Server.port), Database: epco.SQLName(f.Database)},
 			CredentialsSecret: epco.LocalReference{Name: recoveryAdminSecret},
 			TLS: &epco.PostgresTLS{Mode: roleTLSMode,
@@ -151,7 +151,7 @@ var _ = Describe("DatabaseRole combined API and PostgreSQL recovery", Ordered, f
 	var environment *kubeenv.Environment
 	var scope *kubeenv.Scope
 	var fixture *Fixture
-	var cluster *epco.PostgresCluster
+	var cluster *epco.ExternalPostgres
 	var role *epco.DatabaseRole
 
 	BeforeAll(func(ctx SpecContext) {
@@ -346,7 +346,7 @@ var _ = Describe("DatabaseRole combined API and PostgreSQL recovery", Ordered, f
 		current.Spec.Parameters = nil
 		Expect(environment.Client.Update(ctx, current)).To(Succeed())
 		setEndpoint := func(target *Fixture) {
-			latest := &epco.PostgresCluster{}
+			latest := &epco.ExternalPostgres{}
 			Expect(environment.Client.Get(ctx, client.ObjectKeyFromObject(cluster), latest)).To(Succeed())
 			latest.Spec.Connection.Port = int32(target.Server.port)
 			latest.Spec.Connection.Database = epco.SQLName(target.Database)
