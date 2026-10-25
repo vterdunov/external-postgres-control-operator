@@ -7,12 +7,12 @@ Supports PostgreSQL **15, 16, 17, and 18**.
 
 ## Features
 
-- [Roles, databases, schemas, and extensions](examples/api-proposal/full.yaml).
+- [Roles, databases, schemas, and extensions](examples/scenarios/full.yaml).
 - [Separate owner, migration, runtime, and read-only access](examples/microservice/separate-migrations-and-admin-readonly.yaml).
-- [Permissions for specific tables](examples/api-proposal/llm-readonly.yaml), including [grant removal](examples/api-proposal/llm-readonly-after-removal.yaml).
+- [Permissions for specific tables](examples/scenarios/llm-readonly.yaml), including [grant removal](examples/scenarios/llm-readonly-after-removal.yaml).
 - [Generated passwords and application connection Secrets](examples/microservice/service-owner-and-admin-readonly.yaml), or [passwords you provide](examples/microservice/orders-service-password-provided.yaml).
 - [Shared PostgreSQL connections across namespaces](examples/cross-namespace/infra-connection.yaml).
-- [TLS connections](examples/microservice/postgres-connection.yaml), with [AWS RDS examples](examples/api-proposal/aws-rds.yaml).
+- [TLS connections](examples/microservice/postgres-connection.yaml), with [AWS RDS examples](examples/scenarios/aws-rds.yaml).
 
 ## How it works
 
@@ -135,7 +135,7 @@ helm upgrade epco oci://ghcr.io/vterdunov/charts/external-postgres-control-opera
 Pass any custom `--values` options to `helm upgrade`. Both methods keep CRDs on uninstall.
 
 See the [example guide](docs/examples.md) to connect your PostgreSQL server and configure application access.
-The [documentation](docs/README.md) covers the API, lifecycle, and development.
+Browse the [documentation](docs/README.md) for setup, task guides, and the API reference.
 
 ## License
 
