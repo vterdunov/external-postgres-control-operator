@@ -91,6 +91,26 @@ url = "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_macOS_ar
 url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854720"
 provenance = "github-attestations"
 
+[[tools."github:elastic/crd-ref-docs"]]
+version = "0.3.0"
+backend = "github:elastic/crd-ref-docs"
+specifiers = ["0.3.0"]
+
+[tools."github:elastic/crd-ref-docs"."platforms.linux-arm64"]
+checksum = "sha256:b5944fdb924925c905ae71863cf1c8b1a855e55346c7faed5aa5c022c382f9a2"
+url = "https://github.com/elastic/crd-ref-docs/releases/download/v0.3.0/crd-ref-docs_0.3.0_Linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/elastic/crd-ref-docs/releases/assets/349587182"
+
+[tools."github:elastic/crd-ref-docs"."platforms.linux-x64"]
+checksum = "sha256:1ea5cfc51cacd52bff3a3b50d65b33ce4bf61352f0e9766237f689acd6d195aa"
+url = "https://github.com/elastic/crd-ref-docs/releases/download/v0.3.0/crd-ref-docs_0.3.0_Linux_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/elastic/crd-ref-docs/releases/assets/349587180"
+
+[tools."github:elastic/crd-ref-docs"."platforms.macos-arm64"]
+checksum = "sha256:96da8c26d9b503819a5ebbcd24a17bd7ca80364a75107f69c81cab46f1f16392"
+url = "https://github.com/elastic/crd-ref-docs/releases/download/v0.3.0/crd-ref-docs_0.3.0_Darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/elastic/crd-ref-docs/releases/assets/349587190"
+
 [[tools."github:fe3dback/go-arch-lint"]]
 version = "1.19.0"
 backend = "github:fe3dback/go-arch-lint"

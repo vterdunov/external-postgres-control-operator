@@ -16,13 +16,13 @@ root, target = map(Path, sys.argv[1:])
 shutil.copytree(root, target, dirs_exist_ok=True,
                 ignore=shutil.ignore_patterns('.git', 'bin', 'artifacts', '.agent-plans'))
 PY
-(cd "$target" && "$controller_gen" rbac:roleName=manager-role crd webhook paths='./...' output:crd:artifacts:config=config/crd/bases && "$controller_gen" object paths='./...')
+(cd "$target" && "$controller_gen" rbac:roleName=manager-role crd webhook paths='./...' output:crd:artifacts:config=config/crd/bases && "$controller_gen" object paths='./...' && python3 tools/docs.py generate)
 python3 tools/chart.py check
 python3 - "$root" "$target" <<'PY'
 from pathlib import Path
 import sys
 root, target = map(Path, sys.argv[1:])
-patterns = ('**/zz_generated*.go', 'config/crd/bases/*.yaml', 'config/rbac/role.yaml', 'config/webhook/manifests.yaml')
+patterns = ('**/zz_generated*.go', 'config/crd/bases/*.yaml', 'config/rbac/role.yaml', 'config/webhook/manifests.yaml', 'docs/reference/api.md')
 files = set()
 for pattern in patterns:
     files.update(p.relative_to(root) for p in root.glob(pattern))

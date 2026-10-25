@@ -403,8 +403,14 @@ var _ = Describe("Database manager watches", func() {
 			latest := expectDatabaseStatus(ctx, other, metav1.ConditionFalse, "OwnershipConflict")
 			generation := latest.Generation
 			owner = expectDatabaseStatus(ctx, owner, metav1.ConditionTrue, databaseTestReadyCondition)
+			// Advance the server resource version while keeping owner stale for the spec patch.
+			revisionBump := owner.DeepCopy()
+			base := revisionBump.DeepCopy()
+			revisionBump.Annotations = map[string]string{"test.epco.io/concurrent-revision": "advanced"}
+			Expect(environment.Client.Patch(ctx, revisionBump, client.MergeFrom(base))).To(Succeed())
+			previous := owner.DeepCopy()
 			owner.Spec.ManagementPolicy = epco.ManagementObserve
-			Expect(environment.Client.Update(ctx, owner)).To(Succeed())
+			Expect(environment.Client.Patch(ctx, owner, client.MergeFrom(previous))).To(Succeed())
 			owner = expectDatabaseStatus(ctx, owner, metav1.ConditionTrue, "Observed")
 			Expect(owner.Status.HasManagedSQL).To(BeTrue())
 			expectDatabaseStatus(ctx, other, metav1.ConditionFalse, "OwnershipConflict")
@@ -450,16 +456,18 @@ var _ = Describe("Database manager watches", func() {
 			Expect(db.Status.HasManagedSQL).To(BeTrue())
 			applied := db.Status.AppliedGeneration
 			successfulTime := db.Status.LastSuccessfulReconcileTime
+			previous := db.DeepCopy()
 			db.Spec.ManagementPolicy = epco.ManagementObserve
-			Expect(environment.Client.Update(ctx, db)).To(Succeed())
+			Expect(environment.Client.Patch(ctx, db, client.MergeFrom(previous))).To(Succeed())
 			db = expectDatabaseStatus(ctx, db, metav1.ConditionTrue, "Observed")
 			Expect(db.Status.HasManagedSQL).To(BeTrue())
 			Expect(db.Status.Applied).To(BeNil())
 			Expect(db.Status.AppliedGeneration).To(Equal(applied))
 			Expect(db.Status.LastSuccessfulReconcileTime).To(Equal(successfulTime))
+			previous = db.DeepCopy()
 			db.Spec.ManagementPolicy = epco.ManagementManage
 			db.Spec.Ensure = epco.EnsureAbsent
-			Expect(environment.Client.Update(ctx, db)).To(Succeed())
+			Expect(environment.Client.Patch(ctx, db, client.MergeFrom(previous))).To(Succeed())
 			db = expectDatabaseStatus(ctx, db, metav1.ConditionTrue, databaseTestReadyCondition)
 			Expect(db.Status.HasManagedSQL).To(BeTrue())
 			Expect(db.Status.AppliedGeneration).To(Equal(db.Generation))

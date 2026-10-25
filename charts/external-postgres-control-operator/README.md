@@ -8,7 +8,7 @@ external install option; the chart does not manage a Namespace or application CR
 
 Chart version and application version are independent. Released image defaults
 use a visible version tag and verified digest. The checked-in development tag is
-not a published release. See [delivery and releases](../../docs/development.md#delivery-and-releases)
+not a published release. See the root [installation and upgrade guide](../../README.md#install)
 for verified OCI installation, explicit CRD upgrades, route migration and safe removal.
 
 Helm installs CRDs from `crds/` initially but does not upgrade or remove them.

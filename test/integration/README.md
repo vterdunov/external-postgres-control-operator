@@ -1,6 +1,6 @@
 # PostgreSQL integration fixtures
 
-See the [development guide](../../docs/development.md#test-suites) for the full test workflow and [implementation status](../../docs/README.md#implementation-status) for the current controller scope.
+See the [development guide](../../docs/development.md) for the test workflow and [documentation index](../../docs/README.md) for user-facing behavior and API links.
 
 Run `mise run test-integration`. OrbStack or another Docker-compatible daemon must
 be available. `EPCO_PG_VERSION=15|16|17|18` selects a pinned patch image; 16 is the

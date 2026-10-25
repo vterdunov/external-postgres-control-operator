@@ -1,0 +1,64 @@
+name: Documentation
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'README.md'
+      - 'docs/**'
+      - 'examples/**'
+      - 'api/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'config/crd/bases/**'
+      - 'tools/docs.py'
+      - 'tools/crd-ref-docs/**'
+      - 'tools/chart.py'
+      - 'test/documentation/**'
+      - 'test/generated/check.sh'
+      - 'mise.toml'
+      - 'mise.lock'
+      - '.github/workflows/documentation.yml'
+  pull_request:
+    paths:
+      - 'README.md'
+      - 'docs/**'
+      - 'examples/**'
+      - 'api/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'config/crd/bases/**'
+      - 'tools/docs.py'
+      - 'tools/crd-ref-docs/**'
+      - 'tools/chart.py'
+      - 'test/documentation/**'
+      - 'test/generated/check.sh'
+      - 'mise.toml'
+      - 'mise.lock'
+      - '.github/workflows/documentation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  documentation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Set up mise and pinned tools
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.9.15
+      - name: Check documentation
+        run: |
+          mise run test-documentation
+          mise run check-docs
+          mise run check-generated
+      - name: Verify checks did not modify tracked sources
+        if: always()
+        run: git diff --exit-code
