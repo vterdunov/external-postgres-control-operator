@@ -39,6 +39,7 @@ config:
     titleColor: "#3c3836"
     edgeLabelBackground: "#ddc9a4"
   flowchart:
+    wrappingWidth: 200
     nodeSpacing: 24
     rankSpacing: 48
     padding: 16
