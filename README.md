@@ -5,7 +5,7 @@ EPCO connects to existing PostgreSQL servers and keeps database access and appli
 
 Supports PostgreSQL **15, 16, 17, and 18**.
 
-The source examples use the role-oriented permission API for fresh installations. Use a matching CRD/controller release; these examples require a newer schema than the `0.1.9` installation shown below. The breaking permission schema has no legacy conversion, supported in-place upgrade or rollback from the older shape. See the [API compatibility contract](docs/api-proposal.md#admission-and-installation-compatibility).
+`0.2.0` uses `ExternalPostgres` and the role-oriented permission API for fresh installations. Use matching CRDs and controller. Legacy API conversion, in-place upgrades from older schemas and rollback across this API boundary are unsupported. See the [API compatibility contract](docs/api-proposal.md#admission-and-installation-compatibility).
 
 ## Features
 
@@ -71,7 +71,7 @@ Choose Helm or Flux for a fresh installation. Install one EPCO release per Kuber
 
 ```sh
 helm install epco oci://ghcr.io/vterdunov/charts/external-postgres-control-operator \
-  --version 0.1.9 \
+  --version 0.2.0 \
   --namespace epco-system \
   --create-namespace
 ```
@@ -90,7 +90,7 @@ spec:
   interval: 1h
   url: oci://ghcr.io/vterdunov/charts/external-postgres-control-operator
   ref:
-    tag: "0.1.9"
+    tag: "0.2.0"
   layerSelector:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy
