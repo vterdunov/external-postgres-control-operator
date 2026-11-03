@@ -46,28 +46,28 @@ spec:
         name: billing-admin-readonly
   permissions:
     connect:
-      - name: public
+      - role: public
         ensure: absent
-      - name: billing_service
-      - name: billing_admin_readonly
+      - role: billing_service
+      - role: billing_admin_readonly
     temporary:
-      - name: public
+      - role: public
         ensure: absent
   schemas:
     - name: public
       owner: billing_service
       permissions:
         usage:
-          - name: billing_service
-          - name: billing_admin_readonly
+          - role: billing_service
+          - role: billing_admin_readonly
         create:
-          - name: public
+          - role: public
             ensure: absent
-        tables:
-          select:
-            - name: billing_admin_readonly
+      tablePermissions:
+        - role: billing_admin_readonly
+          privileges: [select]
       defaultPrivileges:
         - forRole: billing_service
           tables:
             select:
-              - name: billing_admin_readonly
+              - role: billing_admin_readonly

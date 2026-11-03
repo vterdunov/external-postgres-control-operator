@@ -195,10 +195,8 @@ func (r *DatabaseReconciler) reconcileDatabaseSession(ctx context.Context, datab
 					return r.databaseStatus(ctx, database, false, postgres.ProtectedSchema, "A SQL schema is protected from management", interval)
 				}
 			}
-			if controllerutil.AddFinalizer(database, DatabaseFinalizer) {
-				if err = r.Client.Update(ctx, database); err != nil {
-					return roleWriteResult(err)
-				}
+			if err = r.setDatabaseFinalizer(ctx, database, true); err != nil {
+				return roleWriteResult(err)
 			}
 		}
 	}
@@ -481,10 +479,23 @@ func (r *DatabaseReconciler) databaseError(ctx context.Context, database *epco.D
 	return r.databaseStatus(ctx, database, false, failure.Reason, message, interval)
 }
 func (r *DatabaseReconciler) releaseDatabase(ctx context.Context, database *epco.Database) (ctrl.Result, error) {
-	if !controllerutil.RemoveFinalizer(database, DatabaseFinalizer) {
-		return ctrl.Result{}, nil
+	return roleWriteResult(r.setDatabaseFinalizer(ctx, database, false))
+}
+
+// Metadata-only patches preserve an admitted null selector while typed reads keep
+// its invalid empty selection. Optimistic locking retains normal conflict retries.
+func (r *DatabaseReconciler) setDatabaseFinalizer(ctx context.Context, database *epco.Database, present bool) error {
+	previous := database.DeepCopy()
+	changed := false
+	if present {
+		changed = controllerutil.AddFinalizer(database, DatabaseFinalizer)
+	} else {
+		changed = controllerutil.RemoveFinalizer(database, DatabaseFinalizer)
 	}
-	return roleWriteResult(r.Client.Update(ctx, database))
+	if !changed {
+		return nil
+	}
+	return r.Client.Patch(ctx, database, client.MergeFromWithOptions(previous, client.MergeFromWithOptimisticLock{}))
 }
 
 // ensureDatabaseCurrent rejects SQL/status work for an obsolete desired snapshot.

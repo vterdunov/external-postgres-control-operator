@@ -13,6 +13,7 @@ export EPCO_TEST_RUN_ID="$run_id" EPCO_ARTIFACTS_DIR="$artifacts"
 export EPCO_PG_VERSION="${EPCO_PG_VERSION:-16}"
 binary_dir="$(mktemp -d "${TMPDIR:-/tmp}/epco-integration-bin.XXXXXX")"
 export EPCO_TEST_TMPDIR="$binary_dir"
+export TMPDIR="$binary_dir"
 child_pid=""
 
 # Bound Docker cleanup even if the daemon stops responding.
@@ -55,7 +56,19 @@ cleanup() {
       fi
     done <<< "$containers"
   fi
-  rm -rf -- "$binary_dir"
+  # envtest assets create separate process groups. Match only this run's exact
+  # inherited environment marker, with PID birth checks before every signal.
+  local processes_cleaned=true
+  if ! python3 "$project_dir/test/envtest/processes.py" --run-id "$run_id" \
+    --report "$artifacts/owned-processes.json"; then
+    processes_cleaned=false
+    if [[ "$status" -eq 0 ]]; then status=1; fi
+  fi
+  if [[ "$processes_cleaned" == true ]]; then
+    rm -rf -- "$binary_dir"
+  else
+    printf 'Retained run-owned temporary directory after unverified process cleanup: %s\n' "$binary_dir" >&2
+  fi
   exit "$status"
 }
 interrupt() {

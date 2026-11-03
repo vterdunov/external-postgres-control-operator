@@ -59,10 +59,14 @@ var _ = Describe("Database extension ACL composition with real API and PostgreSQ
 				pkg := fixture.packageFiles(ctx, "",
 					map[string]string{"--omega.sql": "CREATE TABLE @members@ (value integer); " +
 						"INSERT INTO @members@ VALUES (42); CREATE SEQUENCE @sequence@;"})
-				grantee := []epco.Permission{{Name: epco.SQLName(fixture.Role)}}
+				grantee := []epco.Permission{{Role: epco.SQLName(fixture.Role)}}
 				fixture.database.Spec.Extensions = []epco.ExtensionSpec{extensionSpec(pkg.Name, "", "objects", "")}
 				fixture.database.Spec.Schemas[0].Permissions = &epco.SchemaPermissions{Usage: grantee,
-					Tables: &epco.TablePermissions{Select: grantee}, Sequences: &epco.SequencePermissions{Usage: grantee}}
+					Sequences: &epco.SequencePermissions{Usage: grantee}}
+				fixture.database.Spec.Schemas[0].TablePermissions = tablePermissionRules(
+					nil,
+					epco.TablePermissions{Select: grantee},
+				)
 				Expect(fixture.scope.Create(ctx, fixture.database)).To(Succeed())
 				current := fixture.ready(ctx, environment.Client)
 				var value int
@@ -87,6 +91,7 @@ var _ = Describe("Database extension ACL composition with real API and PostgreSQ
 				Expect(managed).To(ContainElements(tableOID, sequenceOID))
 				current.Spec.Extensions[0].Ensure = epco.EnsureAbsent
 				current.Spec.Schemas[0].Permissions = nil
+				current.Spec.Schemas[0].TablePermissions = nil
 				Expect(environment.Client.Update(ctx, current)).To(Succeed())
 				current = fixture.ready(ctx, environment.Client)
 				Expect(extensionCatalog(ctx, fixture.Admin, pkg.Name).Exists).To(BeFalse())
@@ -109,7 +114,7 @@ var _ = Describe("Database extension ACL composition with real API and PostgreSQ
 			pkg := fixture.packageFiles(ctx, "", nil)
 			fixture.database.Spec.Extensions = []epco.ExtensionSpec{extensionSpec(pkg.Name, "", "objects", "")}
 			fixture.database.Spec.Schemas[0].DefaultPrivileges = []epco.DefaultPrivileges{{ForRole: roleSQLAdmin,
-				Tables: &epco.TablePermissions{Select: []epco.Permission{{Name: epco.SQLName(fixture.Role)}}}}}
+				Tables: &epco.TablePermissions{Select: []epco.Permission{{Role: epco.SQLName(fixture.Role)}}}}}
 			Expect(fixture.scope.Create(ctx, fixture.database)).To(Succeed())
 			fixture.ready(ctx, environment.Client)
 			var allowed bool

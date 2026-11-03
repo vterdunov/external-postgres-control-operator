@@ -33,19 +33,17 @@ spec:
   owner: orders_owner
   permissions:
     connect:
-      - name: llm_agent
+      - role: llm_agent
   schemas:
     - name: app
       permissions:
         usage:
-          - name: llm_agent
+          - role: llm_agent
       tablePermissions:
-        - name: orders
-          permissions:
-            select:
-              - name: llm_agent
-        - name: invoices
-          permissions:
-            select:
-              - name: llm_agent
+        - role: llm_agent
+          tables: [orders]
+          privileges: [select]
+        - role: llm_agent
+          tables: [invoices]
+          privileges: [select]
   databaseReclaimPolicy: retain

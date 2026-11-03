@@ -301,8 +301,14 @@ var _ = Describe("Installed Database controller", func() {
 		Expect(lease.Spec.HolderIdentity).NotTo(BeNil())
 		oldHolder := *lease.Spec.HolderIdentity
 		_, stop := installedDatabaseBlocker(ctx, name, "BEGIN; CREATE SCHEMA takeover; SELECT pg_sleep(120); COMMIT")
-		database.Spec.Schemas = []epco.SchemaSpec{{Name: "takeover"}}
-		Expect(apiClient.Update(ctx, database)).To(Succeed())
+		Expect(retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			latest := &epco.Database{}
+			if err := apiClient.Get(ctx, client.ObjectKeyFromObject(database), latest); err != nil {
+				return err
+			}
+			latest.Spec.Schemas = []epco.SchemaSpec{{Name: "takeover"}}
+			return apiClient.Update(ctx, latest)
+		})).To(Succeed())
 		var sqlPID string
 		Eventually(func(g Gomega) {
 			sqlPID = installedDatabaseSQL(ctx, installedDatabasePostgresName,

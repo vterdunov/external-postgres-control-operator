@@ -336,14 +336,16 @@ var _ = Describe("R4 Installed application connection Secrets", func() {
 			Spec: epco.DatabaseSpec{Cluster: serviceRole.Spec.Cluster, Name: installedConnectionDatabase,
 				Owner: installedConnectionService, ReclaimPolicy: epco.ReclaimDelete,
 				Permissions: &epco.DatabasePermissions{Connect: []epco.Permission{
-					{Name: "public", Ensure: epco.EnsureAbsent}, {Name: installedConnectionService},
-					{Name: installedConnectionAdmin}}},
+					{Role: "public", Ensure: epco.EnsureAbsent}, {Role: installedConnectionService},
+					{Role: installedConnectionAdmin}}},
 				Schemas: []epco.SchemaSpec{{Name: "app",
-					Permissions: &epco.SchemaPermissions{Usage: []epco.Permission{{Name: installedConnectionAdmin}}},
+					Permissions: &epco.SchemaPermissions{Usage: []epco.Permission{{Role: installedConnectionAdmin}}},
 					DefaultPrivileges: []epco.DefaultPrivileges{{ForRole: installedConnectionService,
-						Tables: &epco.TablePermissions{Select: []epco.Permission{{Name: installedConnectionAdmin}}}}},
-					TablePermissions: []epco.NamedTablePermissions{{Name: "orders",
-						Permissions: epco.TablePermissions{Select: []epco.Permission{{Name: installedConnectionAdmin}}}}}}},
+						Tables: &epco.TablePermissions{Select: []epco.Permission{{Role: installedConnectionAdmin}}}}},
+					TablePermissions: tablePermissionRules(
+						[]epco.SQLName{"orders"},
+						epco.TablePermissions{Select: []epco.Permission{{Role: installedConnectionAdmin}}},
+					)}},
 				ConnectionSecrets: []epco.ConnectionSecret{
 					{Name: installedConnectionServiceOutput, RoleRef: epco.LocalReference{Name: serviceRole.Name}},
 					{Name: installedConnectionAdminOutput, RoleRef: epco.LocalReference{Name: readerRole.Name}}},

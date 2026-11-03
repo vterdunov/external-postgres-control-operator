@@ -1,8 +1,10 @@
 """Fault checks for the runner without requiring a Kubernetes control plane."""
 
+import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,15 +26,22 @@ target.chmod(0o700)
 """
 
 FAKE_SUITE = """#!/usr/bin/env python3
+import json
 import os
 from pathlib import Path
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 directory = Path(os.environ['RUNNER_STATE'])
-child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'])
-(directory / 'descendant.pid').write_text(str(child.pid))
+scratch = Path(tempfile.mkdtemp(prefix='k8s_test_framework_'))
+(scratch / 'fixture-state').write_text('owned synthetic fixture data')
+(directory / 'scratch.json').write_text(json.dumps({'root': str(Path(__file__).resolve().parent), 'scratch': str(scratch)}))
+child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'], start_new_session=True)
+pending_pid = directory / f'descendant.{os.getpid()}.pending'
+pending_pid.write_text(str(child.pid))
+os.replace(pending_pid, directory / 'descendant.pid')
 def interrupted(signum, frame):
     print('failure diagnostics', flush=True)
     print('cleanup completed', flush=True)
@@ -40,10 +49,10 @@ def interrupted(signum, frame):
 signal.signal(signal.SIGINT, interrupted)
 (directory / 'ready').touch()
 scenario = os.environ['RUNNER_SCENARIO']
-if scenario == 'success':
+if scenario in ('success', 'cleanup-failure'):
     print('suite passed', flush=True)
     sys.exit(0)
-if scenario == 'failure':
+if scenario in ('failure', 'test-and-cleanup-failure'):
     print('failure diagnostics', flush=True)
     sys.exit(7)
 while True:
@@ -69,22 +78,78 @@ class RunnerTests(unittest.TestCase):
             "RUNNER_STATE": str(self.directory),
             "EPCO_ARTIFACTS_DIR": str(self.artifacts),
             "EPCO_TEST_SEED": "42",
+            "TMPDIR": str(self.directory),
         }
 
     def start(self, scenario):
+        pid_path = self.directory / "descendant.pid"
+        pid_path.unlink(missing_ok=True)
+        state_path = self.directory / "scratch.json"
+        state_path.unlink(missing_ok=True)
+        descendant = None
+        scratch = None
+        runner = Path(__file__).with_name("run.py")
+        if scenario in ("cleanup-failure", "test-and-cleanup-failure"):
+            isolated = self.directory / "fault-runner/test/envtest"
+            isolated.mkdir(parents=True, exist_ok=True)
+            (isolated / "run.py").write_bytes(runner.read_bytes())
+            (isolated / "processes_actual.py").write_bytes(Path(__file__).with_name("processes.py").read_bytes())
+            (isolated / "processes.py").write_text(
+                "from pathlib import Path\n"
+                "from processes_actual import cleanup_owned as verified_cleanup\n"
+                "def cleanup_owned(run_id, report_path):\n"
+                "    if Path(report_path).name == 'suite-processes.json':\n"
+                "        return False\n"
+                "    return verified_cleanup(run_id, report_path)\n"
+            )
+            runner = isolated / "run.py"
         process = subprocess.Popen(
-            [sys.executable, str(Path(__file__).with_name("run.py"))],
+            [sys.executable, str(runner)],
             env={**self.environment, "RUNNER_SCENARIO": scenario},
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
 
         def cleanup():
-            if process.poll() is None:
-                process.terminate()
-                process.communicate(timeout=10)
+            try:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.communicate(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.communicate(timeout=3)
+            finally:
+                if descendant is not None:
+                    try:
+                        os.kill(descendant, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                if scratch is not None:
+                    for value in (scratch["scratch"], scratch["root"]):
+                        path = Path(value).resolve()
+                        owned_base = self.directory.resolve()
+                        if path != owned_base and path.is_relative_to(owned_base):
+                            shutil.rmtree(path, ignore_errors=True)
 
         self.addCleanup(cleanup)
+        # Capture each invocation's exact child PID before another signal subtest
+        # reuses the state file, so even a failing RED run cannot leak its worker.
+        deadline = time.monotonic() + 5
+        while not pid_path.exists() and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if pid_path.exists():
+            descendant = int(pid_path.read_text())
+        if state_path.exists():
+            scratch = json.loads(state_path.read_text())
         return process
+
+    def assert_scratch_removed(self):
+        state = json.loads((self.directory / "scratch.json").read_text())
+        root, scratch = Path(state["root"]).resolve(), Path(state["scratch"]).resolve()
+        self.assertTrue(scratch.is_relative_to(root), "default fixture scratch escaped the owned runner root")
+        self.assertFalse(root.exists(), "verified cleanup must remove the owned runner root")
+        self.assertFalse(scratch.exists(), "verified cleanup must remove nested default fixture scratch")
+        self.assertTrue(self.artifacts.exists(), "owned scratch cleanup must retain external diagnostics")
 
     def assert_descendant_stopped(self):
         pid = int((self.directory / "descendant.pid").read_text())
@@ -107,6 +172,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual((self.artifacts / "seed.txt").read_text(), "42\n")
         self.assertIn("suite passed", (self.artifacts / "suite.log").read_text())
         self.assert_descendant_stopped()
+        self.assert_scratch_removed()
 
     def test_failure_preserves_exit_code_and_diagnostics_and_removes_descendants(self):
         process = self.start("failure")
@@ -114,6 +180,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(process.returncode, 7, output)
         self.assertIn("failure diagnostics", (self.artifacts / "suite.log").read_text())
         self.assert_descendant_stopped()
+        self.assert_scratch_removed()
 
     def test_compile_failure_preserves_exit_code_and_diagnostics(self):
         process = self.start("compile-failure")
@@ -138,6 +205,19 @@ class RunnerTests(unittest.TestCase):
                 log = (self.artifacts / "suite.log").read_text()
                 self.assertLess(log.index("failure diagnostics"), log.index("cleanup completed"))
                 self.assert_descendant_stopped()
+                self.assert_scratch_removed()
+
+    def test_unverified_process_cleanup_retains_owned_scratch_and_failure_status(self):
+        for scenario, expected in (("cleanup-failure", 1), ("test-and-cleanup-failure", 7)):
+            with self.subTest(scenario=scenario):
+                process = self.start(scenario)
+                output, _ = process.communicate(timeout=10)
+                self.assertEqual(process.returncode, expected, output)
+                state = json.loads((self.directory / "scratch.json").read_text())
+                self.assertTrue(Path(state["root"]).is_dir(), "unverified cleanup must retain its exact owned root")
+                self.assertTrue(Path(state["scratch"]).is_dir(), "unverified cleanup must retain recovery data")
+                pid = int((self.directory / "descendant.pid").read_text())
+                os.kill(pid, 0)
 
 
 if __name__ == "__main__":

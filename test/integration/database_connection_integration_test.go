@@ -298,11 +298,13 @@ var _ = Describe("R4 application connections with real API and PostgreSQL", Orde
 				switch blocker {
 				case "table":
 					spec.Schemas = []epco.SchemaSpec{{Name: databaseRecoveryApplicationName,
-						TablePermissions: []epco.NamedTablePermissions{{Name: "not-created",
-							Permissions: epco.TablePermissions{Select: r3Permissions(fixture.Role, epco.EnsurePresent)}}}}}
+						TablePermissions: tablePermissionRules(
+							[]epco.SQLName{"not-created"},
+							epco.TablePermissions{Select: r3Permissions(fixture.Role, epco.EnsurePresent)},
+						)}}
 				case "grantee":
 					spec.Permissions.Connect = append(spec.Permissions.Connect,
-						epco.Permission{Name: epco.SQLName(missing), Ensure: epco.EnsurePresent})
+						epco.Permission{Role: epco.SQLName(missing), Ensure: epco.EnsurePresent})
 				case "defaults":
 					spec.DefaultPrivileges = []epco.DefaultPrivileges{{ForRole: epco.SQLName(missing),
 						Tables: &epco.TablePermissions{Select: r3Permissions(fixture.Role, epco.EnsurePresent)}}}

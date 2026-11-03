@@ -64,7 +64,7 @@ var _ = Describe("installed CRD contracts", func() {
 	It("defaults database lifecycle and nested permissions", func(ctx SpecContext) {
 		object := resource("Database")
 		setField(object, []any{map[string]any{
-			nameField: "app", "permissions": map[string]any{"usage": []any{map[string]any{nameField: "reader"}}},
+			nameField: "app", "permissions": map[string]any{"usage": []any{map[string]any{"role": "reader"}}},
 		}}, specField, "schemas")
 		Expect(scope.Create(ctx, object)).To(Succeed())
 		Expect(field(object, specField, "ensure")).To(Equal("present"))

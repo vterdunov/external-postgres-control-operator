@@ -1,6 +1,6 @@
 # User-facing API baseline
 
-Status: accepted initial API baseline, 2026-10-07; connection descriptor renamed to ExternalPostgres on 2026-10-19. See [implementation status](README.md#implementation-status) for schema and runtime coverage. ExternalPostgres connection readiness, DatabaseRole reconciliation, Database/schema/extension lifecycle, declarative ACLs and application connection exports are implemented in the current checkout. Validation gates are recorded in the [roadmap](roadmap.md).
+Status: accepted initial API baseline, 2026-10-07; connection descriptor renamed to ExternalPostgres on 2026-10-19; role-oriented table permission API selected on 2026-11-03 for fresh installations. See [implementation status](README.md#implementation-status) for schema and runtime coverage. ExternalPostgres connection readiness, DatabaseRole reconciliation, Database/schema/extension lifecycle, declarative ACLs and application connection exports are implemented in the current checkout. Validation gates are recorded in the [roadmap](roadmap.md).
 
 Implementation follows the resource fields, defaults, declarative permission reconciliation, password management, and connection Secret contracts defined here and demonstrated in the examples. Changes to this baseline require agreement and corresponding documentation and example updates. Future extensions explicitly described as such are outside the initial implementation scope.
 
@@ -35,14 +35,14 @@ The inspected `DatabaseSpec` does not contain database/schema `permissions`. A s
 | --- | --- |
 | Standard DatabaseRole attributes, passwordSecret, inRoles, reclaim policy | CNPG names and base defaults |
 | Standard Database fields, schemas with name/owner/ensure, extensions, FDWs/servers | CNPG format |
-| Database/schema permission maps | Based on open CNPG proposals, absent from the inspected DatabaseSpec; name/ensure and removal cleanup are this operator's contract |
+| Database/schema permission maps | Based on open CNPG proposals, absent from the inspected DatabaseSpec; role/ensure and removal cleanup are this operator's contract |
 | ExternalPostgres with connection/credentials/TLS and namespace access | External connection descriptor; cluster.name and optional cluster.namespace reference it instead of a CNPG Cluster |
-| defaultPrivileges and named tablePermissions | Extensions for SQL access management |
+| defaultPrivileges and role-oriented tablePermissions | Extensions for SQL access management |
 | passwordGeneration and Database.connectionSecrets | Extensions for generating a role password and exporting a connection to a particular database; output Secret keys follow CNPG |
 | parameters, managementPolicy, membershipPolicy | Operator extensions for role settings, observation, and membership reconciliation |
 | Omitted spec.name resolves to metadata.name | A convenience extension; CNPG requires spec.name |
 
-Matching base fields does not make a complete manifest interchangeable with CNPG. Operator extensions implement the user requirements described in this baseline. Permissions describe desired state: removing a previously declared permission revokes its managed grant. The privilege maps resemble #10826, but entries use name/ensure rather than its name/type command format. This is a deliberate difference from CNPG's FDW/server UsageSpec and the open grant/revoke proposal, selected to keep permission edits declarative.
+Matching base fields does not make a complete manifest interchangeable with CNPG. Operator extensions implement the user requirements described in this baseline. Permissions describe desired state: removing a previously declared permission revokes its managed grant. The privilege maps resemble #10826, but entries use role/ensure rather than its name/type command format. Table permissions use role-oriented rules. These are deliberate differences from CNPG's FDW/server UsageSpec and the open grant/revoke proposal, selected to keep permission edits declarative. FDW/server usage entries retain their CNPG-compatible name/type fields.
 
 ### Why permissions belong to Database
 
@@ -64,11 +64,11 @@ All resources are namespaced. Database and DatabaseRole may reference an Externa
 
 SQL operations use the supplied connection's privileges. A namespace scopes Kubernetes resources and Secret references; PostgreSQL object names still belong to the shared server catalogs. CR/status ownership checks resolve competing declarations of the same SQL object. A separate privilege isolation policy would require additional authorization rules whether references are local or cross-namespace.
 
-`cluster.name` and optional `cluster.namespace` reference a Kubernetes `ExternalPostgres`. `owner`, `inRoles[]`, and `permissions.*[].name` contain SQL names, following CNPG owner/inRoles/UsageSpec. If the operator manages the referenced role, dependent SQL operations wait for it to become ready. Otherwise, that SQL role must already exist on the same PostgreSQL cluster. Initial connection export can use validated credential sources before the role becomes ready, as described below.
+`cluster.name` and optional `cluster.namespace` reference a Kubernetes `ExternalPostgres`. `owner`, `inRoles[]`, and permission `role` fields contain SQL names. If the operator manages the referenced role, dependent SQL operations wait for it to become ready. Otherwise, that SQL role must already exist on the same PostgreSQL cluster. Initial connection export can use validated credential sources before the role becomes ready, as described below.
 
 `Database.connectionSecrets[].roleRef.name` references a Kubernetes `DatabaseRole` so its SQL name and password source can be resolved unambiguously. It is a resource name rather than a SQL grantee name. The role and database must reference the same ExternalPostgres.
 
-`public` in permissions represents the special PUBLIC grantee. The controller emits the PUBLIC keyword without quotes and quotes ordinary SQL identifiers correctly.
+`role: public` in permissions represents the special PUBLIC grantee, case-insensitively. The controller emits the PUBLIC keyword without quotes and quotes ordinary SQL identifiers correctly. A schema with `name: public` is an ordinary schema and is unrelated to this grantee notation.
 
 ## Defaults
 
@@ -101,8 +101,9 @@ SQL operations use the supplied connection's privileges. A namespace scopes Kube
 | `schemas[].ensure`, `extensions[].ensure`, and equivalents | present |
 | `schemas[].owner` | Database owner for a new schema; an existing schema is not reassigned without an explicit owner |
 | `permissions` and `defaultPrivileges` | Initially omitted scopes are unmanaged; removal of grants previously declared within the same CR UID revokes them |
-| `permissions.*[].ensure` | present; absent explicitly requests removal of that grant |
+| `permissions.*[].ensure`, `tablePermissions[].ensure` | present; absent explicitly requests removal of the listed grants |
 | `schemas[].tablePermissions` | Empty list; tables are not created or dropped |
+| `schemas[].tablePermissions[].tables` | Omission selects all tables in the containing schema; a supplied list selects literal names |
 | `managementPolicy` for roles/databases | manage; observe only inspects the SQL object, including ACLs |
 | Existing SQL roles/databases | Create when missing; reconcile existing objects when no competing managing CR is recorded, following CNPG |
 | `ExternalPostgres.connection.port`, `.database` | 5432, postgres |
@@ -289,118 +290,122 @@ Choose either variant during initial configuration. Switching an existing databa
 
 [orders-service-password-provided.yaml](../examples/microservice/orders-service-password-provided.yaml) replaces the service role declaration when choosing a supplied password instead of generation. [orders-service-deployment.yaml](../examples/microservice/orders-service-deployment.yaml) and [orders-admin-deployment.yaml](../examples/microservice/orders-admin-deployment.yaml) demonstrate separate connection Secrets, DATABASE_URL, and a CA mount. Container images are placeholders and must be replaced. The service does not need the input credential Secret name or administrative credentials.
 
-## Permissions based on the CNPG proposals
+## Declarative permissions
 
-Each entry contains a SQL grantee name and an optional ensure: present|absent, defaulting to present. The privilege maps follow the CNPG proposal's structure; desired-state entries and removal cleanup are this operator's contract:
+Database permission maps retain `connect`, `create` and `temporary`; schema maps retain `usage`, `create` and `sequences`. Their grantee entries use required `role` and optional `ensure: present|absent`, defaulting to present:
 
 ```yaml
 permissions:
   connect:
-    - name: public
+    - role: public
       ensure: absent
-    - name: app_reader
-  temporary:
-    - name: public
-      ensure: absent
+    - role: app_user
 schemas:
   - name: app
     permissions:
       usage:
-        - name: app_reader
-      create:
-        - name: app_reader
-          ensure: absent
+        - role: app_user
+      sequences:
+        usage:
+          - role: app_user
+    tablePermissions:
+      - role: app_user
+        tables: [customers, products]
+        privileges: [select]
+      - role: app_user
+        tables: [orders, order_items]
+        privileges: [select, insert]
+      - role: app_user
+        tables: [orders]
+        privileges: [update]
+      - role: orders_reader
+        privileges: [select]
 ```
 
-Database permissions cover CONNECT/CREATE/TEMPORARY. Schema permissions cover USAGE/CREATE. WITH GRANT OPTION and GRANTED BY are excluded from the first public API. There is no `all` field or ALL shorthand in the initial API. Declare individual privileges: tables support select/insert/update/delete/truncate/references/trigger/maintain, sequences support usage/select/update, function defaults support execute, and type defaults support usage. Server-version support is checked during reconciliation. Conflicting entries for a grantee are rejected.
+Each `tablePermissions` rule has required `role` and a nonempty `privileges` list. Optional `tables` and `privileges` are siblings. The supported lowercase privileges are `select`, `insert`, `update`, `delete`, `truncate`, `references`, `trigger` and `maintain`. MAINTAIN requires PostgreSQL 17 or later; unsupported privileges fail preflight before ordinary lifecycle or ACL mutation. WITH GRANT OPTION, GRANTED BY and ALL privilege shorthand are outside this API.
 
-Each entry declares a SQL role and the desired presence of one privilege. name is the SQL grantee name; ensure defaults to present. The controller grants the privilege when missing and maintains it while declared. The normal way to withdraw access is to remove that role from the privilege list. Removing a tablePermissions entry revokes its previously managed grants; removing an entire permission block or replacing it with an empty list does the same for that scope. These edits never drop a table or delete its data.
+The same role can appear in several rules. Above, app_user receives different privileges on different sets and receives SELECT, INSERT and UPDATE on orders through two disjoint privilege rules. Rule, table and privilege ordering do not establish SQL ownership; equivalent regrouping preserves the same semantic declarations. [role-table-permissions.yaml](../examples/api-proposal/role-table-permissions.yaml) provides the complete Database resource and its prerequisites are listed in the [example guide](examples.md).
 
-An optional ensure=absent on the same grantee entry explicitly declares that the privilege must be absent. It also handles privileges that exist before the first reconciliation, such as default PUBLIC CONNECT. Removing an absent entry stops its absence enforcement and does not grant the privilege back. type=grant/revoke is not part of this operator's permissions API. Database.ensure and schemas[].ensure control SQL object lifecycle; ensure on a permission controls only the grant.
+Omitting `tables` selects all current tables in the containing schema, with later tables discovered during periodic reconciliation. Supplying `tables` selects only the listed names. Explicit `tables: []` is rejected at admission. Explicit `tables: null` is preserved by the API and fails reconciliation with InvalidConfiguration/Ready=False before ordinary lifecycle or ACL SQL changes; it never selects all tables. Roles, table names and privilege lists must be nonempty; duplicate table names and privileges are invalid.
 
-Reason for this decision: the manifest must describe the desired permission set, and removing a declared permission must actually remove the access it gave. The user's normal workflow must not require retaining a separate revoke command. An explicit absent state is optional, not a prerequisite for list cleanup. Compatibility with CNPG is preserved where possible, but its proposed omission semantics do not satisfy this requirement.
+Every supplied table name is one literal identifier in the containing schema. Do not prepend the schema name: `tables: [app.orders]` selects a table literally named `app.orders`, not the table `orders` qualified by schema `app`. There is no wildcard, regex or magic all-tables name. For example, `tables: ["*", ALL, ALL_TABLES]` selects those three literal names. Case and embedded quotes are preserved through SQL identifier quoting.
 
-The controller persists the managed permission set and sufficient pending-change information in the live Database CR's status before SQL mutations. Recovery within the same CR UID compares current SQL with the current spec, including removed entries; it must not forget a successfully issued grant if a subsequent status write failed, or blindly replay a grant withdrawn in a newer spec. Keep the resolved object and grantor bindings needed for cleanup after a rename or owner change, and re-resolve them against the current connection. Do not use old object identifiers blindly after an endpoint change, and do not clean up the former server. This is permission bookkeeping, not password snapshots or a separate ownership claim store. Cleanup is limited to managed grants; unrelated grantees are not purged. Ready remains false until required cleanup is confirmed.
+Each ACL tuple has one spec owner. Duplicate tuples are rejected, even if their ensure values agree. A broad rule and a named-table rule for the same schema, role and privilege are also rejected. Different privileges may target the same table and role, as above. Contradictory present/absent overlap fails before ordinary lifecycle or ACL SQL changes. List order supplies no precedence and broad rules cannot have named exceptions.
 
-Deleting the CR removes that status history. A recreated CR, including the same namespace/resource name with a new UID, starts a new permission-management session. With retain, SQL grants survive; leaving them out of the recreated spec does not identify them as former managed grants and does not revoke them. Explicit ensure=absent entries remove historical retained grants. Subsequent edits to the new live CR again use ordinary declarative removal. Credential-source and output-Secret reuse follows its separate retained-Secret contract. History restoration after CR deletion is deferred; the initial implementation creates no grant-history ConfigMap, SQL journal, or controller metadata in SQL comments.
+To withdraw access, remove a table, privilege or rule, or remove the whole tablePermissions block. Within the same CR UID, the operator revokes the corresponding managed grants and preserves remaining desired grants. Removing a schema declaration retains the SQL schema and cleans up its omitted managed permissions. These edits never drop a table or delete data. `ensure: absent` explicitly withdraws the listed privileges and also handles grants predating this management session:
 
-Removing or marking a default privilege absent changes future-object defaults; it does not retroactively remove table privileges created by that default. Existing-table access is managed through tablePermissions or schema-wide table permissions. Removing a schema declaration retains the SQL schema and revokes its omitted managed permissions. Removing an extension declaration retains the extension; permissions continue to follow the remaining ACL declarations. SQL objects are dropped only through their explicit lifecycle settings.
+```yaml
+tablePermissions:
+  - role: app_user
+    tables: [orders]
+    privileges: [insert, update]
+    ensure: absent
+```
 
-### Reading all tables in a schema
+Removing an absent rule stops its absence enforcement and does not grant access back. Database.ensure and schemas[].ensure control SQL object lifecycle; permission ensure controls only grants. PostgreSQL REVOKE is not a DENY: access can still come from PUBLIC, memberships, ownership or independent grants. CONNECT, schema USAGE, table privileges and sequence privileges are separate:
 
-`schemas[].permissions.tables` manages ALL TABLES IN SCHEMA; `sequences` manages ALL SEQUENCES IN SCHEMA. This extends the direction discussed in #7872. Read-only table access requires CONNECT, schema USAGE, and table SELECT. Sequence SELECT is optional when reading sequence state is needed.
+```sql
+GRANT CONNECT ON DATABASE orders TO app_user;
+GRANT USAGE ON SCHEMA app TO app_user;
+GRANT SELECT ON TABLE app.customers, app.products TO app_user;
+GRANT SELECT, INSERT ON TABLE app.orders, app.order_items TO app_user;
+GRANT UPDATE ON TABLE app.orders TO app_user;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA app TO app_user;
+```
+
+INSERT into a SERIAL-backed table may require sequence USAGE in addition to table INSERT. Table permissions add no implicit CREATE, TRUNCATE, sequence or function privileges. `role: public` selects the special PUBLIC grantee; `schemas[].name: public` selects the ordinary schema. For example, a schema CREATE permission with `role: public, ensure: absent` revokes CREATE from PUBLIC on that schema.
+
+### Current tables and future-object defaults
+
+Default privileges retain their privilege maps and required `forRole`; their grantee leaves use `role`:
 
 ```yaml
 schemas:
   - name: app
-    permissions:
-      usage:
-        - name: app_reader
-      tables:
-        select:
-          - name: app_reader
-      sequences:
-        select:
-          - name: app_reader
+    tablePermissions:
+      - role: orders_reader
+        privileges: [select]
     defaultPrivileges:
-      - forRole: app_owner
+      - forRole: orders_owner
         tables:
           select:
-            - name: app_reader
+            - role: orders_reader
+      - forRole: orders_migrator
+        tables:
+          select:
+            - role: orders_reader
 ```
 
-[readonly.yaml](../examples/api-proposal/readonly.yaml) extends the minimal example with a reader group and user and updates the same Database/app resource.
+The broad table rule converges on current and later tables during reconciliation. Default privileges apply immediately when future objects are created and do not change existing tables. `forRole` names the actual creator, while nested `role` names the recipient. A migrator creating under its login needs its own default block; after SET ROLE orders_owner, the owner's block applies. Membership in an owner group does not inherit that group's defaults. Matching SQL is `ALTER DEFAULT PRIVILEGES FOR ROLE orders_migrator IN SCHEMA app GRANT SELECT ON TABLES TO orders_reader`. [PostgreSQL default privileges](https://www.postgresql.org/docs/current/sql-alterdefaultprivileges.html).
 
-Read/write access explicitly grants table SELECT/INSERT/UPDATE/DELETE and sequence USAGE/SELECT. CREATE, TRUNCATE, and EXECUTE are not added implicitly. Owners and migration users are configured separately.
-
-`ALTER DEFAULT PRIVILEGES` applies to the actual object creator. `forRole` is required because the database owner may not create the tables. A migrator creating under its login needs its own block; SET ROLE owner uses the owner's block. Group default privileges are not inherited when creating objects. [PostgreSQL](https://www.postgresql.org/docs/current/sql-alterdefaultprivileges.html).
-
-`Database.spec.defaultPrivileges[]` specifies global defaults within the database, without IN SCHEMA. `schemas[].defaultPrivileges[]` specifies defaults for that schema. Both use forRole and privilege maps. Revoking PUBLIC EXECUTE on future functions needs a global block because a schema-level revoke cannot override a global default grant.
-
-Periodic ACL reconciliation also handles newly created tables. Default privileges grant access immediately when the specified role creates an object, without waiting for the next reconciliation.
+`Database.spec.defaultPrivileges[]` applies globally within that database, without IN SCHEMA; schema blocks use IN SCHEMA. A schema-level revoke cannot override a global default grant, so revoking PUBLIC EXECUTE on future functions needs a global block. Removing or marking a default privilege absent affects future-object defaults; grants already installed on existing objects remain. Sequences use usage/select/update maps, function defaults use execute, and type defaults use usage.
 
 ### Explicit table allowlist for an LLM agent
 
-PostgreSQL supports granting SELECT only on named tables:
+[llm-readonly.yaml](../examples/api-proposal/llm-readonly.yaml) grants a separate LOGIN role SELECT on the existing tables orders and invoices in schema app. The database, owner and tables must already exist, and the operator connection must have the required authority. Add permissions to an existing managing Database CR rather than creating a competing manager. The role has no broad memberships, broad table grants or defaults granting access to future tables.
 
-```sql
-GRANT CONNECT ON DATABASE orders TO llm_agent;
-GRANT USAGE ON SCHEMA app TO llm_agent;
-GRANT SELECT ON TABLE app.orders, app.invoices TO llm_agent;
-```
+A missing named table with present permissions reports DependenciesNotReady/TableNotFound without creating it; absent-only missing targets satisfy absence. A new, unlisted table receives no grant. RENAME cleanup follows the recorded object binding; DROP/recreate resolves and grants the new identity on reconciliation.
 
-The `schemas[].tablePermissions[]` extension declares permissions on existing named tables. The controller does not manage their DDL or data.
+[llm-readonly-after-removal.yaml](../examples/api-proposal/llm-readonly-after-removal.yaml) removes orders from the same live CR's table selection, preserving invoices SELECT and both tables' data. [llm-readonly-with-absent-grant.yaml](../examples/api-proposal/llm-readonly-with-absent-grant.yaml) explicitly removes orders SELECT instead. Apply the original followed by either update.
 
-```yaml
-schemas:
-  - name: app
-    permissions:
-      usage:
-        - name: llm_agent
-    tablePermissions:
-      - name: orders
-        permissions:
-          select:
-            - name: llm_agent
-      - name: invoices
-        permissions:
-          select:
-            - name: llm_agent
-```
+SELECT on allowed tables does not deny access through another path. A restricted agent must not also receive pg_read_all_data, a broad reader membership, ownership or other broad grants. Views and SECURITY DEFINER functions can expose other objects; RLS continues to apply where configured. [GRANT](https://www.postgresql.org/docs/current/sql-grant.html), [views](https://www.postgresql.org/docs/current/sql-createview.html), [functions](https://www.postgresql.org/docs/current/sql-createfunction.html), [row security](https://www.postgresql.org/docs/current/ddl-rowsecurity.html).
 
-[llm-readonly.yaml](../examples/api-proposal/llm-readonly.yaml) provides a separate LOGIN role and management of an existing database. Database orders, owner orders_owner, and tables app.orders/app.invoices must already exist, and the operator connection must have the required privileges. If that SQL database already has a managing Database CR, add these permissions to that CR; do not create a competing manager. llm_agent has no broad memberships, schema-wide table grants, or defaults granting access to future tables.
+### Durable permission management
 
-Every allowed table is named explicitly. A missing table with ensure=present permissions produces DependenciesNotReady/TableNotFound without creating it. A missing table with only absent permissions already satisfies absence. A new table with another name does not automatically receive SELECT for the agent. Dropping and recreating a named table requires another ACL reconciliation. If a managed table is renamed outside its declared name, cleanup must remove the old managed grant using its recorded binding before completing reconciliation. DROP/recreate is distinct from RENAME.
+The controller checkpoints managed bindings and pending changes in the live Database status before corresponding SQL mutations. Recovery compares current SQL with current spec rather than replaying old commands. Object and grantor identities support cleanup after rename, owner change, SQL success followed by failed status publication, and restart. Cleanup removes only managed grants; unrelated grants remain. Ready stays false until required cleanup is confirmed.
 
-To remove SELECT on app.orders, delete its orders entry or remove llm_agent from that entry's select list. Keeping only invoices removes the managed SELECT on orders and preserves invoices SELECT. The table is not dropped. Alternatively, keep the llm_agent entry on orders with ensure=absent.
+Deleting the CR ends that permission-management history. With retain, SQL grants survive. A recreated resource has a new UID and cannot infer that omitted grants were managed by its predecessor; explicit absent rules can clean them up. Ordinary declarative removal resumes for grants managed within the new session. There is no separate grant-history ConfigMap, SQL journal or SQL-comment metadata. Current endpoint changes re-resolve identities on the selected connection without contacting a former server.
 
-[llm-readonly-after-removal.yaml](../examples/api-proposal/llm-readonly-after-removal.yaml) updates the same Kubernetes resources and keeps only invoices. [llm-readonly-with-absent-grant.yaml](../examples/api-proposal/llm-readonly-with-absent-grant.yaml) shows the alternative explicit absent state on orders SELECT. Apply the original followed by either updated state. Both remove the same managed direct grant.
+### Admission and installation compatibility
 
-Cleanup uses PostgreSQL REVOKE, which is not a DENY. Access through another role, PUBLIC, or an independent grant requires separate evaluation; removing one managed direct grant does not eliminate every independent access path.
+The role-oriented permission schema is a breaking API change for fresh installations only. It retains v1alpha1 but does not provide conversion, legacy name-based permission support or migration of existing installations. Use the CRDs and controller from the same release. Existing old-schema fingerprints are not declared compatible by the installation helper; it refuses them before writes. Do not force CRD replacement to bypass that refusal. Rollback between the old and new permission schemas is unsupported; Helm rollback alone does not restore a CRD schema.
 
-SELECT on allowed tables does not deny access to others. Effective privileges include PUBLIC and memberships. A restricted agent must not receive pg_read_all_data, a schema-wide reader membership, object ownership, or other broad grants. Views and SECURITY DEFINER functions can expose other tables and need separate consideration. RLS continues to apply where configured. [GRANT](https://www.postgresql.org/docs/current/sql-grant.html), [Views](https://www.postgresql.org/docs/current/sql-createview.html), [Functions](https://www.postgresql.org/docs/current/sql-createfunction.html), [Row security](https://www.postgresql.org/docs/current/ddl-rowsecurity.html).
+`tablePermissions` is an atomic list for server-side apply. One field manager owns the entire list; separate field managers cannot independently own rules for different roles. Repeated roles remain valid. Table and privilege selection order does not change SQL intent.
 
-Named table management exceeds the CNPG scope discussed in #7872, which proposes ALL TABLES IN SCHEMA. It is justified here by the explicit requirement to restrict an LLM agent to selected tables.
+The selector schema preserves explicit null rather than pruning it into omission. Reconciliation rejects that malformed selector without SQL mutation. Typed reads retain an invalid explicit selection, and status updates preserve the stored null. A full typed spec update can encode that invalid selection as `[]` and be rejected at admission until corrected. Neither path turns it into an all-table rule; supply a valid list or intentionally remove the selector to resolve it.
+
+Use strict client/server field validation when applying manifests, for example `kubectl --context YOUR_CONTEXT apply --validate=strict -f database.yaml`. A misspelled selector is an unknown field, not an explicit table selection. Warn or Ignore paths can prune unknown fields; CEL cannot recover text already pruned, so a typo such as `table` instead of `tables` can leave the intentional omission-as-all behavior. Do not use Warn or Ignore to validate permission manifests.
+
 
 ## ACL reconciliation with a non-superuser connection
 
@@ -518,7 +523,7 @@ The canonical namespace-qualified ExternalPostgres reference, object type, and e
 - Deleting Database with retain preserves SQL objects and ACLs and ends its permission-management history. A recreated CR starts new management; historical retained grants require explicit ensure=absent for cleanup. Removing a permission within the same live CR UID revokes its managed grant. Removing a schema declaration retains the SQL schema and revokes its omitted managed permissions. Removing an extension declaration retains the extension; permissions continue to follow the remaining ACL declarations. ensure=absent on a SQL object requests DROP with RESTRICT; ensure=absent on a permission removes only that grant.
 - Observe changes neither SQL attributes nor permissions and does not generate passwords or publish connection outputs. Database requires ensure=present and databaseReclaimPolicy=retain; DatabaseRole requires databaseRoleReclaimPolicy=retain and has no ensure field. These combinations are enforced at CRD admission. An observer that never managed SQL does not reserve its name; a former manager keeps its recorded management while its CR remains. Existing database ACL management uses normal manage mode with its actual owner and selected settings.
 - A SQL role or database has one managing CR through its canonical connection, across namespaces. Automatically resolving aliases or coordinating independent control planes is outside the initial design. CNPG and this operator need explicit ownership boundaries when using the same SQL objects.
-- Each ACL tuple has one spec owner. Conflicting broad and named-table rules for the same grantee are rejected. User-declared memberships and operator administrative memberships have separate ownership.
+- Each ACL tuple has one spec owner. Duplicate tuples and broad/named overlap for the same schema, role and privilege are rejected. Repeated roles with disjoint tuples are valid. User-declared memberships and operator administrative memberships have separate ownership.
 - Predefined PostgreSQL/service roles and the administrative connection account are protected from adoption, modification, and deletion; permitted memberships in them are considered separately.
 - Ready requires confirmed reconciliation, including declared permissions and connection exports. An initial connection Secret can exist while Ready is false. A positive grant does not prove that every other access path is absent. Effective privileges and errors are reported without promising an audit of function bodies.
 - Passwords and password-bearing DSNs never appear in logs/status. The platform team controls administrative Secrets and ExternalPostgres.

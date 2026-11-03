@@ -50,6 +50,8 @@ mise exec -- python3 tools/chart.py install --package ./epco-release/external-po
 
 Verification checks immutable release attestations, signed assets, OCI digests and each stream's original workflow/source identity. Installation uses the verified local archive, checks existing CRD fingerprints and manager ownership before writes, applies supported CRDs, waits for Established, then invokes Helm with `--skip-crds`. Create the namespace only if absent. Choose one installation route per cluster; the helper refuses a second Helm release or adoption of existing Kustomize/installer RBAC. Route migration requires an explicit separate procedure. Helm rollback changes controller configuration only; the installed schema must be explicitly compatible. First-release same-version rollback proves mechanics, not compatibility between versions.
 
+The role-oriented permission API is a fresh-install-only breaking schema change. Old name-based permission fields and the old table-rule topology have no conversion or migration support. Generated compatibility fingerprints must not declare those old schemas compatible; the helper refuses an incompatible installed fingerprint before writes. A direct kubectl or Flux CRD replacement bypasses that helper check and is not a supported upgrade route across this boundary. Rollback across the boundary is unsupported, including a Helm-only controller rollback. See the [API compatibility contract](api-proposal.md#admission-and-installation-compatibility).
+
 For Flux-managed installations, use the [OCIRepository and HelmRelease example](../README.md#flux). Its `upgrade.crds: CreateReplace` policy updates packaged CRDs before upgrading the controller. Review schema compatibility when selecting a new chart version; the local install helper's fingerprint checks do not run through Flux. CRDs are retained on uninstall.
 
 Chart defaults use UID/GID 65532, non-root execution, RuntimeDefault seccomp, a read-only root filesystem, no privilege escalation and dropped capabilities, compatible with [Pod Security Restricted](https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted). The chart does not label or own the installation namespace. Its enabled NetworkPolicy selects manager Pods and permits HTTPS metrics on port 8443 from the same namespace; kubelet probes remain available. Configure `networkPolicy.metricsIngressPeers` for external monitoring. Put namespace and Pod selectors in the same peer to require both.
@@ -103,8 +105,18 @@ On macOS, the integration and e2e suites use OrbStack's Docker-compatible runtim
 
 Each runner prints its random seed. Set `EPCO_TEST_SEED` to replay it and `EPCO_ARTIFACTS_DIR` to choose the report directory (default under ignored `artifacts/`). Failure diagnostics are retained before teardown; runners handle SIGINT/SIGTERM and clean only resources owned by that run. CI separates unit/race, envtest, generation, PostgreSQL 15/16 integration, and installed PostgreSQL 15-18 e2e. Scheduled/manual integration covers PostgreSQL 15-18 and repeated seeds. Reports and diagnostics are uploaded even on failure. Installed artifacts distinguish expected image pins from measured server/client versions; the stable E2E gate requires all server majors to pass. The isolated PostgreSQL fixture uses 100ms client connection polling and records its effective numeric interval before running scenarios, making closed client sockets observable during blocked SQL without promising server-side fencing.
 
+To replay the GitHub Tests workflow on a branch, pass its optional first seed:
+
+```sh
+mise exec -- gh workflow run test.yml --ref YOUR_BRANCH -f seed=1793726485
+```
+
+The override uses that seed and consecutive values while preserving the workflow's normal run counts and PostgreSQL matrix. Manual and scheduled runs still cover PostgreSQL 15-18 with three seeds; leaving the input blank keeps time-derived seeds. The input accepts nonnegative decimal values whose three-seed sequence fits a signed 64-bit integer, normalizes leading zeros, and rejects invalid values before running tests. It provides no command or test-filter input.
+
 ## API changes and generation
 
 Use the pinned Kubebuilder for subsequent scaffolding; the three baseline resources already exist. Keep scaffold markers and update the Go types and accepted API documentation together. Regenerate derived files by running `mise run generate` followed by `mise run manifests` instead of editing them manually. Run `mise run check-generated` and `mise run test-envtest` to verify the resulting schemas and admission rules.
 
 Local agent implementation plans belong in `.agent-plans/`, which is excluded from Git. Create this directory in a fresh checkout before writing a plan. Plans and all repository documentation use English and refer to the accepted API baseline.
+
+The tablePermissions list is atomic for server-side apply, allowing repeated roles without inventing an entry key. One field manager owns the full list. Normalization expands each rule into the existing semantic ACL declarations; rule grouping and list ordering must not change declaration keys or reset durable status. Database/schema/sequence/default privilege maps retain their structures and use role as the grantee key; forRole remains the actual default-privilege creator. Verify examples with strict API field validation in envtest, separately from YAML parsing, and preserve the same-UID checkpoint/restart cleanup tests.

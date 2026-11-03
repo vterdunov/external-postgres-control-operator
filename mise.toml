@@ -72,7 +72,7 @@ depends = ["test-unit"]
 
 [tasks.test-unit]
 description = "Unit tests with race detection and randomized specs"
-run = ["bash test/unit/run.sh", "python3 test/envtest/runner_test.py", "bash test/e2e/runner_test.sh", "mise run test-architecture"]
+run = ["bash test/unit/run.sh", "python3 test/envtest/runner_test.py", "python3 test/envtest/processes_test.py", "bash test/e2e/runner_test.sh", "mise run test-architecture"]
 
 [tasks.test-architecture]
 description = "Test production architecture boundaries with isolated fixtures"

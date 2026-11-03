@@ -105,12 +105,12 @@ spec:
   tablespace: pg_default
   permissions:
     connect:
-      - name: public
+      - role: public
         ensure: absent
-      - name: orders_reader
-      - name: orders_writer
+      - role: orders_reader
+      - role: orders_writer
     temporary:
-      - name: public
+      - role: public
         ensure: absent
   schemas:
     - name: app
@@ -118,48 +118,43 @@ spec:
       ensure: present
       permissions:
         usage:
-          - name: orders_reader
-          - name: orders_writer
-        tables:
-          select:
-            - name: orders_reader
-            - name: orders_writer
-          insert:
-            - name: orders_writer
-          update:
-            - name: orders_writer
-          delete:
-            - name: orders_writer
+          - role: orders_reader
+          - role: orders_writer
         sequences:
           select:
-            - name: orders_reader
-            - name: orders_writer
+            - role: orders_reader
+            - role: orders_writer
           usage:
-            - name: orders_writer
+            - role: orders_writer
+      tablePermissions:
+        - role: orders_reader
+          privileges: [select]
+        - role: orders_writer
+          privileges: [select, insert, update, delete]
       defaultPrivileges:
         - forRole: orders_owner
           tables:
             select:
-              - name: orders_reader
-              - name: orders_writer
+              - role: orders_reader
+              - role: orders_writer
             insert:
-              - name: orders_writer
+              - role: orders_writer
             update:
-              - name: orders_writer
+              - role: orders_writer
             delete:
-              - name: orders_writer
+              - role: orders_writer
           sequences:
             select:
-              - name: orders_reader
-              - name: orders_writer
+              - role: orders_reader
+              - role: orders_writer
             usage:
-              - name: orders_writer
+              - role: orders_writer
     - name: public
       owner: orders_owner
       ensure: present
       permissions:
         create:
-          - name: public
+          - role: public
             ensure: absent
   extensions:
     - name: pgcrypto

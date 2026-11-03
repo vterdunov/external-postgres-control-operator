@@ -8,9 +8,9 @@
       ]
     },
     "databases.postgresql.epco.io": {
-      "candidateFingerprint": "sha256:c6b0afd1fab56150d8b7a41f24fabed52e9ca82821fd87fb037db5a1ae7b0b93",
+      "candidateFingerprint": "sha256:33d847975b7e8ffb8521eeaeb0e04871f3f6bf266139648bfaec1c959d00f7e5",
       "compatibleFingerprints": [
-        "sha256:c6b0afd1fab56150d8b7a41f24fabed52e9ca82821fd87fb037db5a1ae7b0b93"
+        "sha256:33d847975b7e8ffb8521eeaeb0e04871f3f6bf266139648bfaec1c959d00f7e5"
       ]
     },
     "externalpostgres.postgresql.epco.io": {

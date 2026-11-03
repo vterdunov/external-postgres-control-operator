@@ -92,7 +92,7 @@ func connectionDeclarationConfirmed(database *epco.Database, role string, result
 		return true
 	}
 	for _, declaration := range database.Spec.Permissions.Connect {
-		name := string(declaration.Name)
+		name := string(declaration.Role)
 		if strings.EqualFold(name, "public") {
 			name = databasePublicRole
 		}

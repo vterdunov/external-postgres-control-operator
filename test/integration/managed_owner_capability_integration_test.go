@@ -86,10 +86,10 @@ var _ = Describe("Managed owner capability API and PostgreSQL", Ordered, Continu
 			spec.Owner = epco.SQLName(f.Role)
 			spec.ConnectionSecrets = nil
 			spec.Schemas = []epco.SchemaSpec{{Name: "app", Permissions: &epco.SchemaPermissions{
-				Create: []epco.Permission{{Name: creator.Spec.Name}},
-				Usage:  []epco.Permission{{Name: reader.Spec.Name}, {Name: creator.Spec.Name}}},
+				Create: []epco.Permission{{Role: creator.Spec.Name}},
+				Usage:  []epco.Permission{{Role: reader.Spec.Name}, {Role: creator.Spec.Name}}},
 				DefaultPrivileges: []epco.DefaultPrivileges{{ForRole: creator.Spec.Name,
-					Tables: &epco.TablePermissions{Select: []epco.Permission{{Name: reader.Spec.Name}}}}}}}
+					Tables: &epco.TablePermissions{Select: []epco.Permission{{Role: reader.Spec.Name}}}}}}}
 		})
 		managedOwnerIntegrationReady(ctx, f)
 		Expect(managedOwnerIntegrationSet(ctx, f, string(creator.Spec.Name))).To(BeTrue())
@@ -260,7 +260,7 @@ var _ = Describe("Managed owner capability API and PostgreSQL", Ordered, Continu
 				spec.Owner = epco.SQLName(f.Role)
 				spec.ConnectionSecrets = nil
 				spec.Schemas = []epco.SchemaSpec{{Name: "app", Permissions: &epco.SchemaPermissions{
-					Usage: []epco.Permission{{Name: owner.Spec.Name}, {Name: reader.Spec.Name}}}}}
+					Usage: []epco.Permission{{Role: owner.Spec.Name}, {Role: reader.Spec.Name}}}}}
 			})
 			managedOwnerIntegrationReady(ctx, f)
 			target := f.target()
@@ -268,8 +268,10 @@ var _ = Describe("Managed owner capability API and PostgreSQL", Ordered, Continu
 				quoteIdentifier(string(owner.Spec.Name)))
 			Expect(err).NotTo(HaveOccurred())
 			f.editDatabase(ctx, func(spec *epco.DatabaseSpec) {
-				spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: "probe",
-					Permissions: epco.TablePermissions{Select: []epco.Permission{{Name: reader.Spec.Name}}}}}
+				spec.Schemas[0].TablePermissions = tablePermissionRules(
+					[]epco.SQLName{"probe"},
+					epco.TablePermissions{Select: []epco.Permission{{Role: reader.Spec.Name}}},
+				)
 			})
 			managedOwnerIntegrationReady(ctx, f)
 			Expect(managedOwnerIntegrationSet(ctx, f, string(owner.Spec.Name))).To(BeTrue())

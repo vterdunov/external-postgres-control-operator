@@ -23,8 +23,11 @@ import (
 	epco "github.com/vterdunov/external-postgres-control-operator/api/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -156,7 +159,7 @@ func (app *r6Application) query(ctx context.Context, output *corev1.Secret, sql,
 func r6Permissions(names ...epco.SQLName) []epco.Permission {
 	permissions := make([]epco.Permission, 0, len(names))
 	for _, name := range names {
-		permissions = append(permissions, epco.Permission{Name: name})
+		permissions = append(permissions, epco.Permission{Role: name})
 	}
 	return permissions
 }
@@ -223,37 +226,41 @@ func r6NewApplication(ctx context.Context, cluster *epco.ExternalPostgres, port 
 			ReclaimPolicy: epco.ReclaimDelete,
 			Permissions: &epco.DatabasePermissions{Connect: append(
 				r6Permissions(app.roles[r6Migrator].Spec.Name, runtimeRole, reader, named),
-				epco.Permission{Name: r6Public, Ensure: epco.EnsureAbsent})},
+				epco.Permission{Role: r6Public, Ensure: epco.EnsureAbsent})},
 			Schemas: []epco.SchemaSpec{{Name: installedDatabaseApplicationSchema, Owner: owner,
 				Permissions: &epco.SchemaPermissions{Usage: r6Permissions(runtimeRole, reader, named)},
 				DefaultPrivileges: []epco.DefaultPrivileges{{ForRole: owner,
 					Tables: &epco.TablePermissions{Select: r6Permissions(runtimeRole, reader),
 						Insert: r6Permissions(runtimeRole), Update: r6Permissions(runtimeRole), Delete: r6Permissions(runtimeRole)},
 					Sequences: &epco.SequencePermissions{Usage: r6Permissions(runtimeRole)}}},
-				TablePermissions: []epco.NamedTablePermissions{
-					{Name: r6Orders, Permissions: epco.TablePermissions{Select: r6Permissions(named)}},
-					{Name: r6Invoices, Permissions: epco.TablePermissions{Select: r6Permissions(named)}},
-				}}, {Name: r6Public, Permissions: &epco.SchemaPermissions{
-				Usage:  []epco.Permission{{Name: r6Public, Ensure: epco.EnsureAbsent}},
-				Create: []epco.Permission{{Name: r6Public, Ensure: epco.EnsureAbsent}},
+				TablePermissions: append(tablePermissionRules(
+					[]epco.SQLName{r6Orders},
+					epco.TablePermissions{Select: r6Permissions(named)},
+				), tablePermissionRules(
+					[]epco.SQLName{r6Invoices},
+					epco.TablePermissions{Select: r6Permissions(named)},
+				)...)}, {Name: r6Public, Permissions: &epco.SchemaPermissions{
+				Usage:  []epco.Permission{{Role: r6Public, Ensure: epco.EnsureAbsent}},
+				Create: []epco.Permission{{Role: r6Public, Ensure: epco.EnsureAbsent}},
 			}}},
 		}}
 	for _, name := range []string{r6Migrator, r6Runtime, r6Reader, r6Named} {
 		app.database.Spec.ConnectionSecrets = append(app.database.Spec.ConnectionSecrets,
 			epco.ConnectionSecret{Name: name + "-connection", RoleRef: epco.LocalReference{Name: name}})
 	}
-	// One cleanup owns the complete application. Authorization is restored first;
-	// database deletion removes role dependencies, then role reclaim may proceed.
+	// One cleanup owns the complete application. Restore authorization and finish
+	// workload deletion before SQL cleanup, role reclaim and namespace deletion.
 	DeferCleanup(func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
+		completed := false
+		defer func() {
+			if !completed {
+				app.logCleanupState()
+			}
+		}()
 		r6NamespaceAccess(cleanup, app.namespace, true)
-		jobs, err := kubeClient.BatchV1().Jobs(app.namespace.Name).List(cleanup, metav1.ListOptions{})
-		Expect(err).NotTo(HaveOccurred())
-		for _, job := range jobs.Items {
-			Expect(kubeClient.BatchV1().Jobs(job.Namespace).Delete(cleanup, job.Name,
-				metav1.DeleteOptions{PropagationPolicy: new(metav1.DeletePropagationForeground)})).To(Succeed())
-		}
+		Expect(app.stopJobs(cleanup)).To(Succeed(), "application Jobs and Pods must disappear before SQL cleanup")
 		currentDatabase := &epco.Database{}
 		if apiClient.Get(cleanup, client.ObjectKeyFromObject(app.database), currentDatabase) == nil {
 			if currentDatabase.Spec.ReclaimPolicy != epco.ReclaimDelete {
@@ -275,6 +282,7 @@ func r6NewApplication(ctx context.Context, cluster *epco.ExternalPostgres, port 
 			}
 		}
 		deleteObject(app.namespace)
+		completed = true
 	})
 	ExpectWithOffset(1, apiClient.Create(ctx, suppliedSource)).To(Succeed())
 	for _, name := range []string{r6Owner, r6Migrator, r6Runtime, r6Reader, r6Named} {
@@ -282,6 +290,60 @@ func r6NewApplication(ctx context.Context, cluster *epco.ExternalPostgres, port 
 	}
 	ExpectWithOffset(1, apiClient.Create(ctx, app.database)).To(Succeed())
 	return app
+}
+
+func (app *r6Application) stopJobs(ctx context.Context) error {
+	jobs, err := kubeClient.BatchV1().Jobs(app.namespace.Name).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	for _, job := range jobs.Items {
+		err = kubeClient.BatchV1().Jobs(app.namespace.Name).Delete(ctx, job.Name, metav1.DeleteOptions{
+			Preconditions:     &metav1.Preconditions{UID: new(job.UID)},
+			PropagationPolicy: new(metav1.DeletePropagationForeground),
+		})
+		if err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+	return wait.PollUntilContextCancel(ctx, 100*time.Millisecond, true, func(ctx context.Context) (bool, error) {
+		currentJobs, err := kubeClient.BatchV1().Jobs(app.namespace.Name).List(ctx, metav1.ListOptions{})
+		if err != nil || len(currentJobs.Items) != 0 {
+			return false, err
+		}
+		pods, err := kubeClient.CoreV1().Pods(app.namespace.Name).List(ctx, metav1.ListOptions{})
+		return err == nil && len(pods.Items) == 0, err
+	})
+}
+
+func (app *r6Application) logCleanupState() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	namespace, err := kubeClient.CoreV1().Namespaces().Get(ctx, app.namespace.Name, metav1.GetOptions{})
+	if err != nil {
+		GinkgoWriter.Printf("R6 cleanup namespace=%s inspection error=%v\n", app.namespace.Name, err)
+	} else {
+		GinkgoWriter.Printf("R6 cleanup namespace=%s uid=%s deleting=%v finalizers=%v spec_finalizers=%v conditions=%v\n",
+			namespace.Name, namespace.UID, namespace.DeletionTimestamp, namespace.Finalizers,
+			namespace.Spec.Finalizers, namespace.Status.Conditions)
+	}
+	for _, kind := range []schema.GroupVersionKind{
+		corev1.SchemeGroupVersion.WithKind("PodList"), batchv1.SchemeGroupVersion.WithKind("JobList"),
+		epco.GroupVersion.WithKind("DatabaseList"), epco.GroupVersion.WithKind("DatabaseRoleList"),
+		corev1.SchemeGroupVersion.WithKind("SecretList"), corev1.SchemeGroupVersion.WithKind("ConfigMapList"),
+	} {
+		objects := &metav1.PartialObjectMetadataList{}
+		objects.SetGroupVersionKind(kind)
+		if err = apiClient.List(ctx, objects, client.InNamespace(app.namespace.Name)); err != nil {
+			GinkgoWriter.Printf("R6 cleanup kind=%s namespace=%s inspection error=%v\n", kind.Kind, app.namespace.Name, err)
+			continue
+		}
+		for _, object := range objects.Items {
+			GinkgoWriter.Printf("R6 cleanup kind=%s namespace=%s name=%s uid=%s deleting=%v finalizers=%v owners=%v\n",
+				kind.Kind, object.Namespace, object.Name, object.UID, object.DeletionTimestamp,
+				object.Finalizers, object.OwnerReferences)
+		}
+	}
 }
 
 func (app *r6Application) output(ctx context.Context, name string) *corev1.Secret {

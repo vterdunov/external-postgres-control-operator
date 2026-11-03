@@ -62,8 +62,13 @@ const (
 )
 
 const (
-	aclSelect = "SELECT"
-	aclCreate = "CREATE"
+	aclSelect     = "SELECT"
+	aclCreate     = "CREATE"
+	aclDelete     = "DELETE"
+	aclInsert     = "INSERT"
+	aclTruncate   = "TRUNCATE"
+	aclReferences = "REFERENCES"
+	aclTrigger    = "TRIGGER"
 )
 
 const aclUpdate = "UPDATE"

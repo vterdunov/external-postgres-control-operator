@@ -108,8 +108,9 @@ var _ = Describe("R3 ACL bounded outcome reporting", func() {
 		func(ctx SpecContext) {
 			cluster := createRoleDescriptor(ctx, nil)
 			database := watchedDatabase(cluster, "capacity-report")
-			database.Spec.Schemas = []epco.SchemaSpec{{Name: capacitySchema, Permissions: &epco.SchemaPermissions{
-				Tables: &epco.TablePermissions{Select: []epco.Permission{{Name: capacityReader}}}}}}
+			database.Spec.Schemas = []epco.SchemaSpec{{Name: capacitySchema,
+				TablePermissions: []epco.TablePermissionRule{{Role: capacityReader,
+					Privileges: []epco.TablePrivilege{roleTableSelect}}}}}
 			Expect(scope.Create(ctx, database)).To(Succeed())
 			builder, err := postgres.NewConfigBuilder()
 			Expect(err).NotTo(HaveOccurred())

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	epco "github.com/vterdunov/external-postgres-control-operator/api/v1alpha1"
@@ -149,6 +150,84 @@ func databaseTable(ctx context.Context, db *sql.DB) (int, string) {
 	ExpectWithOffset(1, db.QueryRowContext(ctx, `SELECT value, pg_get_userbyid(relowner)
 		FROM public.preserved JOIN pg_class ON oid='public.preserved'::regclass`).Scan(&value, &owner)).To(Succeed())
 	return value, owner
+}
+
+type databaseCancellationTracer struct {
+	started time.Time
+	target  string
+}
+
+type databaseCancellationTargetKey struct{}
+
+func (t *databaseCancellationTracer) record(stage string, connection *pgx.Conn, target bool, err error) {
+	var pid uint32
+	if connection != nil {
+		pid = connection.PgConn().PID()
+		target = connection.Config().Database == t.target
+	}
+	GinkgoWriter.Printf("database cancellation stage=%s elapsed=%s target=%t backend_pid=%d "+
+		"error_nil=%t error_type=%T reason=%q sqlstate=%q deadline_exceeded=%t canceled=%t\n",
+		stage, time.Since(t.started), target, pid, err == nil, err, failureReason(err), SQLState(err),
+		errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled))
+}
+
+func (t *databaseCancellationTracer) TraceConnectStart(ctx context.Context,
+	data pgx.TraceConnectStartData) context.Context {
+	target := data.ConnConfig.Database == t.target
+	t.record("connect-start", nil, target, nil)
+	return context.WithValue(ctx, databaseCancellationTargetKey{}, target)
+}
+
+func (t *databaseCancellationTracer) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectEndData) {
+	target, _ := ctx.Value(databaseCancellationTargetKey{}).(bool)
+	t.record("connect-end", data.Conn, target, data.Err)
+}
+
+func (t *databaseCancellationTracer) TraceQueryStart(ctx context.Context, connection *pgx.Conn,
+	data pgx.TraceQueryStartData) context.Context {
+	stage := "query-other"
+	query := strings.ToUpper(strings.TrimSpace(data.SQL))
+	for _, prefix := range []string{"BEGIN", archSelect, "SET ROLE", "CREATE SCHEMA", "COMMIT", "ROLLBACK"} {
+		if strings.HasPrefix(query, prefix) {
+			stage = strings.ToLower(strings.ReplaceAll(prefix, " ", "-"))
+			break
+		}
+	}
+	t.record(stage, connection, false, nil)
+	return ctx
+}
+
+func (t *databaseCancellationTracer) TraceQueryEnd(_ context.Context, connection *pgx.Conn,
+	data pgx.TraceQueryEndData) {
+	t.record("query-end", connection, false, data.Err)
+}
+
+func recordDatabaseCancellationBlockers(ctx context.Context, fixture *databaseSQLFixture, lockerPID int, name string) {
+	rows, err := fixture.Server.Admin.QueryContext(ctx, `SELECT pid,
+		COALESCE(datname=$2,false), COALESCE(usename=$3,false),
+		COALESCE(wait_event_type,''), COALESCE(wait_event,'')
+		FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)) ORDER BY pid`, lockerPID, name, fixture.Role)
+	if err != nil {
+		GinkgoWriter.Printf("database cancellation locker_pid=%d blocker_snapshot_error_type=%T sqlstate=%q\n",
+			lockerPID, err, SQLState(err))
+		return
+	}
+	defer func() { _ = rows.Close() }()
+	var count int
+	for rows.Next() {
+		var pid int
+		var databaseMatch, loginMatch bool
+		var waitType, waitEvent string
+		if err := rows.Scan(&pid, &databaseMatch, &loginMatch, &waitType, &waitEvent); err != nil {
+			GinkgoWriter.Printf("database cancellation blocker_snapshot_decode_error_type=%T\n", err)
+			return
+		}
+		count++
+		GinkgoWriter.Printf("database cancellation locker_pid=%d blocked_backend_pid=%d database_match=%t "+
+			"login_match=%t wait_type=%q wait_event=%q\n", lockerPID, pid, databaseMatch, loginMatch, waitType, waitEvent)
+	}
+	GinkgoWriter.Printf("database cancellation locker_pid=%d blocked_backends=%d snapshot_error_type=%T\n",
+		lockerPID, count, rows.Err())
 }
 
 var _ = Describe("Database PostgreSQL reconciliation", func() {
@@ -890,29 +969,73 @@ var _ = Describe("Database PostgreSQL reconciliation", func() {
 
 	It("bounds blocked target work and closes connections on in-flight cancellation", func(ctx SpecContext) {
 		name, owner := fixture.name(), fixture.owner(ctx, true)
-		session := fixture.session(ctx, true, 5*time.Second)
+		trace := &databaseCancellationTracer{started: time.Now(), target: name}
+		config := productionConfig(fixture.Fixture, roleTLSMode, false)
+		config.StatementTimeout = 5 * time.Second
+		config.Connection.Tracer = trace
+		session, err := pgdatabase.NewDatabaseFactory().Open(ctx, config, pgdatabase.DatabaseSessionOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			Expect(session.Close(cleanup)).To(Succeed())
+		})
 		desired := databaseDesired(name, owner)
 		databaseApply(ctx, session, desired)
 		target := fixture.target(name)
 		locker, err := target.BeginTx(ctx, nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { _ = locker.Rollback() })
+		var lockerPID int
+		Expect(locker.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&lockerPID)).To(Succeed())
 		_, err = locker.ExecContext(ctx, "LOCK TABLE pg_catalog.pg_namespace IN ACCESS EXCLUSIVE MODE")
 		Expect(err).NotTo(HaveOccurred())
 		desired.Spec.Schemas = []epco.SchemaSpec{schemaSpec("cancelled", "", "")}
 		canceled, cancel := context.WithCancel(ctx)
-		defer cancel()
 		finished := make(chan error, 1)
+		var result error
+		joined := false
+		var backendPIDs, blockedByLockerPIDs string
+		defer func() {
+			defer cancel()
+			if !joined {
+				diagnostic, stop := context.WithTimeout(context.Background(), time.Second)
+				recordDatabaseCancellationBlockers(diagnostic, fixture, lockerPID, name)
+				stop()
+			}
+			GinkgoWriter.Printf("database cancellation locker_pid=%d target_backend_pids=%q "+
+				"blocked_by_locker_pids=%q\n", lockerPID, backendPIDs, blockedByLockerPIDs)
+			cancel()
+			if !joined {
+				select {
+				case result = <-finished:
+					joined = true
+				case <-time.After(2 * time.Second):
+					Fail("canceled database Apply did not finish before fixture cleanup")
+				}
+			}
+			trace.record("apply-joined", nil, true, result)
+		}()
 		go func() { _, err := session.Apply(canceled, desired); finished <- err }()
 		Eventually(func() (int, error) {
+			select {
+			case result = <-finished:
+				joined = true
+				trace.record("apply-finished-before-lock", nil, true, result)
+				StopTrying("database Apply finished before the lock-waiter barrier").Now()
+			default:
+			}
 			var waiting int
-			err := fixture.Server.Admin.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_activity
-				WHERE datname=$1 AND usename=$2 AND wait_event_type='Lock'`, name, fixture.Role).Scan(&waiting)
+			err := fixture.Server.Admin.QueryRowContext(ctx, `SELECT count(*) FILTER (WHERE wait_event_type='Lock'),
+				COALESCE(string_agg(pid::text, ',' ORDER BY pid), ''),
+				COALESCE(string_agg(pid::text, ',' ORDER BY pid) FILTER (WHERE $3=ANY(pg_blocking_pids(pid))), '')
+				FROM pg_stat_activity WHERE datname=$1 AND usename=$2`, name, fixture.Role, lockerPID).
+				Scan(&waiting, &backendPIDs, &blockedByLockerPIDs)
 			return waiting, err
 		}, 3*time.Second, 20*time.Millisecond).Should(BeNumerically(">", 0))
 		cancel()
-		var result error
 		Eventually(finished, 2*time.Second).Should(Receive(&result))
+		joined = true
 		Expect(result).To(HaveOccurred())
 		Eventually(func() (int, error) {
 			var count int

@@ -22,7 +22,7 @@ func tablePrivilegeLists(p *epco.TablePermissions) []privilegeList {
 	if p == nil {
 		return nil
 	}
-	return []privilegeList{{aclSelect, p.Select}, {"INSERT", p.Insert}, {aclUpdate, p.Update}, {"DELETE", p.Delete}, {"TRUNCATE", p.Truncate}, {"REFERENCES", p.References}, {"TRIGGER", p.Trigger}, {aclMaintain, p.Maintain}}
+	return []privilegeList{{aclSelect, p.Select}, {aclInsert, p.Insert}, {aclUpdate, p.Update}, {aclDelete, p.Delete}, {aclTruncate, p.Truncate}, {aclReferences, p.References}, {aclTrigger, p.Trigger}, {aclMaintain, p.Maintain}}
 }
 func sequencePrivilegeLists(p *epco.SequencePermissions) []privilegeList {
 	if p == nil {
@@ -35,7 +35,7 @@ func aclDeclarations(spec epco.DatabaseSpec) []aclDeclaration {
 	add := func(scope, class, schema, table, creator string, lists []privilegeList) {
 		for _, list := range lists {
 			for _, entry := range list.entries {
-				grantee := string(entry.Name)
+				grantee := string(entry.Role)
 				if strings.EqualFold(grantee, "public") {
 					grantee = aclPublic
 				}
@@ -68,11 +68,22 @@ func aclDeclarations(spec epco.DatabaseSpec) []aclDeclaration {
 		name := string(schema.Name)
 		if p := schema.Permissions; p != nil {
 			add(aclClassSchema, aclClassSchema, name, "", "", []privilegeList{{aclUsage, p.Usage}, {aclCreate, p.Create}})
-			add(aclScopeTables, aclClassTable, name, "", "", tablePrivilegeLists(p.Tables))
 			add(aclScopeSequences, aclClassSequence, name, "", "", sequencePrivilegeLists(p.Sequences))
 		}
-		for _, table := range schema.TablePermissions {
-			add(aclClassTable, aclClassTable, name, string(table.Name), "", tablePrivilegeLists(&table.Permissions))
+		for _, rule := range schema.TablePermissions {
+			for _, privilege := range rule.Privileges {
+				keyword := tablePrivilegeKeyword(privilege)
+				if keyword == "" {
+					continue
+				}
+				grants := []privilegeList{{keyword, []epco.Permission{{Role: rule.Role, Ensure: rule.Ensure}}}}
+				if rule.Tables == nil {
+					add(aclScopeTables, aclClassTable, name, "", "", grants)
+				}
+				for _, table := range rule.Tables {
+					add(aclClassTable, aclClassTable, name, string(table), "", grants)
+				}
+			}
 		}
 		defaults(name, schema.DefaultPrivileges)
 	}
@@ -111,6 +122,9 @@ func (s *databaseSession) PreflightACL(ctx context.Context, desired DatabaseDesi
 	return preflightACL(state, desired.Spec)
 }
 func preflightACL(state *DatabaseState, spec epco.DatabaseSpec) error {
+	if err := validateTablePermissionRules(spec); err != nil {
+		return err
+	}
 	declarations := aclDeclarations(spec)
 	seen := map[string]bool{}
 	for _, d := range declarations {
@@ -138,6 +152,64 @@ func preflightACL(state *DatabaseState, spec epco.DatabaseSpec) error {
 		broad.Declaration = fmt.Sprintf("%q/%q/%q/%q/%q/%q/%q", broad.Scope, broad.Class, broad.Schema, broad.Table, broad.Creator, broad.Privilege, broad.Grantee)
 		if slices.ContainsFunc(declarations, func(other aclDeclaration) bool { return other.binding.Declaration == broad.Declaration }) {
 			return &Failure{InvalidConfiguration, "Broad and named declarations own the same table privilege and grantee"}
+		}
+	}
+	return nil
+}
+
+// Table privilege keywords are trusted constants, never interpolated API strings.
+func tablePrivilegeKeyword(privilege epco.TablePrivilege) string {
+	switch privilege {
+	case "select":
+		return aclSelect
+	case "insert":
+		return aclInsert
+	case "update":
+		return aclUpdate
+	case "delete":
+		return aclDelete
+	case "truncate":
+		return aclTruncate
+	case "references":
+		return aclReferences
+	case "trigger":
+		return aclTrigger
+	case "maintain":
+		return aclMaintain
+	default:
+		return ""
+	}
+}
+
+func validateTablePermissionRules(spec epco.DatabaseSpec) error {
+	invalid := func(message string) error { return &Failure{InvalidConfiguration, message} }
+	for _, schema := range spec.Schemas {
+		if schema.Ensure == epco.EnsureAbsent {
+			continue
+		}
+		for _, rule := range schema.TablePermissions {
+			if rule.Role == "" {
+				return invalid("A table permission rule requires a nonempty role")
+			}
+			if rule.Ensure != "" && rule.Ensure != epco.EnsurePresent && rule.Ensure != epco.EnsureAbsent {
+				return invalid("A table permission rule ensure must be present or absent")
+			}
+			if rule.Tables != nil && len(rule.Tables) == 0 {
+				return invalid("A supplied table permission selector must contain literal table names")
+			}
+			for i, table := range rule.Tables {
+				if table == "" || slices.Contains(rule.Tables[:i], table) {
+					return invalid("Table permission selectors require unique nonempty literal names")
+				}
+			}
+			if len(rule.Privileges) == 0 {
+				return invalid("A table permission rule requires at least one privilege")
+			}
+			for i, privilege := range rule.Privileges {
+				if tablePrivilegeKeyword(privilege) == "" || slices.Contains(rule.Privileges[:i], privilege) {
+					return invalid("Table permission privileges must be unique supported lowercase values")
+				}
+			}
 		}
 	}
 	return nil

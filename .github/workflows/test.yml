@@ -37,11 +37,20 @@ on:
       - '.github/workflows/test.yml'
       - '.github/workflows/test-e2e.yml'
   workflow_dispatch:
+    inputs:
+      seed:
+        description: First replay seed (0..9223372036854775805); blank uses the current time
+        type: string
+        required: false
+        default: ''
   schedule:
     - cron: '0 3 * * 1'
 
 permissions:
   contents: read
+
+env:
+  EPCO_TEST_SEED_OVERRIDE: ${{ inputs.seed }}
 
 jobs:
   fast:
@@ -73,10 +82,30 @@ jobs:
           SUITE: ${{ matrix.suite }}
           EXTENDED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         run: |
+          seed_override="$(python3 - <<'PY'
+          import os
+          import sys
+
+          seed = os.environ.get("EPCO_TEST_SEED_OVERRIDE", "")
+          if seed:
+              if any(character not in "0123456789" for character in seed):
+                  sys.exit("Invalid replay seed: expected a bounded unsigned decimal")
+              seed = seed.lstrip("0") or "0"
+              maximum = "9223372036854775805"
+              if len(seed) > len(maximum) or (len(seed) == len(maximum) and seed > maximum):
+                  sys.exit("Invalid replay seed: outside the supported range")
+          print(seed)
+          PY
+          )"
           runs=1
           if [ "$EXTENDED" = true ] && [ "$SUITE" != check-generated ]; then runs=3; fi
           for run in $(seq 1 "$runs"); do
-            EPCO_TEST_SEED="$(( $(date +%s) + run ))" EPCO_ARTIFACTS_DIR="$PWD/artifacts/$SUITE/$run" mise run "$SUITE"
+            if [ -n "$seed_override" ]; then
+              seed="$((seed_override + (run - 1)))"
+            else
+              seed="$(( $(date +%s) + run ))"
+            fi
+            EPCO_TEST_SEED="$seed" EPCO_ARTIFACTS_DIR="$PWD/artifacts/$SUITE/$run" mise run "$SUITE"
           done
       - name: Verify tests did not modify tracked sources
         if: always()
@@ -118,10 +147,30 @@ jobs:
         env:
           EXTENDED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         run: |
+          seed_override="$(python3 - <<'PY'
+          import os
+          import sys
+
+          seed = os.environ.get("EPCO_TEST_SEED_OVERRIDE", "")
+          if seed:
+              if any(character not in "0123456789" for character in seed):
+                  sys.exit("Invalid replay seed: expected a bounded unsigned decimal")
+              seed = seed.lstrip("0") or "0"
+              maximum = "9223372036854775805"
+              if len(seed) > len(maximum) or (len(seed) == len(maximum) and seed > maximum):
+                  sys.exit("Invalid replay seed: outside the supported range")
+          print(seed)
+          PY
+          )"
           runs=1
           if [ "$EXTENDED" = true ]; then runs=3; fi
           for run in $(seq 1 "$runs"); do
-            EPCO_TEST_SEED="$(( $(date +%s) + run ))" EPCO_ARTIFACTS_DIR="$PWD/artifacts/integration/$run" mise run test-integration
+            if [ -n "$seed_override" ]; then
+              seed="$((seed_override + (run - 1)))"
+            else
+              seed="$(( $(date +%s) + run ))"
+            fi
+            EPCO_TEST_SEED="$seed" EPCO_ARTIFACTS_DIR="$PWD/artifacts/integration/$run" mise run test-integration
           done
       - name: Verify tests did not modify tracked sources
         if: always()

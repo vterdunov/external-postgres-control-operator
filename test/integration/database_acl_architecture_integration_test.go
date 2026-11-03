@@ -334,8 +334,10 @@ var _ = Describe("R3 architecture SQL regression boundaries", Ordered, ContinueO
 						Sequences: &epco.SequencePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)},
 					}
 				} else {
-					spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: archRelation,
-						Permissions: epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)}}}
+					spec.Schemas[0].TablePermissions = tablePermissionRules(
+						[]epco.SQLName{archRelation},
+						epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)},
+					)
 				}
 			})
 			pending := archPendingGrant

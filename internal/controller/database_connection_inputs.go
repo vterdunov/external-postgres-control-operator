@@ -9,7 +9,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 func (r *DatabaseReconciler) prepareConnectionInputs(ctx context.Context, database *epco.Database, cluster *epco.ExternalPostgres, config *postgres.Config, secrets map[string]*corev1.Secret) ([]connectionSecretInput, error) {
@@ -25,10 +24,8 @@ func (r *DatabaseReconciler) prepareConnectionInputs(ctx context.Context, databa
 	if err != nil {
 		return nil, err
 	}
-	if controllerutil.AddFinalizer(database, DatabaseFinalizer) {
-		if err = r.Client.Update(ctx, database); err != nil {
-			return nil, err
-		}
+	if err = r.setDatabaseFinalizer(ctx, database, true); err != nil {
+		return nil, err
 	}
 	if err = r.publishInitialConnectionSecrets(ctx, database, inputs); err != nil {
 		return nil, err

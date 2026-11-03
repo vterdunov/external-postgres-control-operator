@@ -685,21 +685,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               }
@@ -723,21 +723,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               },
@@ -755,21 +755,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               },
@@ -787,21 +787,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               }
@@ -825,21 +825,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               },
@@ -857,21 +857,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               },
@@ -889,21 +889,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               },
@@ -921,21 +921,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               },
@@ -953,21 +953,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               },
@@ -985,21 +985,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               },
@@ -1017,21 +1017,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               },
@@ -1049,21 +1049,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               }
@@ -1087,21 +1087,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               }
@@ -1372,21 +1372,21 @@
                                 ],
                                 "type": "string"
                               },
-                              "name": {
-                                "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                              "role": {
+                                "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                 "minLength": 1,
                                 "pattern": "^[^\u0000]+$",
                                 "type": "string"
                               }
                             },
                             "required": [
-                              "name"
+                              "role"
                             ],
                             "type": "object"
                           },
                           "type": "array",
                           "x-kubernetes-list-map-keys": [
-                            "name"
+                            "role"
                           ],
                           "x-kubernetes-list-type": "map"
                         },
@@ -1404,21 +1404,21 @@
                                 ],
                                 "type": "string"
                               },
-                              "name": {
-                                "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                              "role": {
+                                "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                 "minLength": 1,
                                 "pattern": "^[^\u0000]+$",
                                 "type": "string"
                               }
                             },
                             "required": [
-                              "name"
+                              "role"
                             ],
                             "type": "object"
                           },
                           "type": "array",
                           "x-kubernetes-list-map-keys": [
-                            "name"
+                            "role"
                           ],
                           "x-kubernetes-list-type": "map"
                         },
@@ -1436,21 +1436,21 @@
                                 ],
                                 "type": "string"
                               },
-                              "name": {
-                                "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                              "role": {
+                                "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                 "minLength": 1,
                                 "pattern": "^[^\u0000]+$",
                                 "type": "string"
                               }
                             },
                             "required": [
-                              "name"
+                              "role"
                             ],
                             "type": "object"
                           },
                           "type": "array",
                           "x-kubernetes-list-map-keys": [
-                            "name"
+                            "role"
                           ],
                           "x-kubernetes-list-type": "map"
                         }
@@ -1490,21 +1490,21 @@
                                             ],
                                             "type": "string"
                                           },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                          "role": {
+                                            "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                             "minLength": 1,
                                             "pattern": "^[^\u0000]+$",
                                             "type": "string"
                                           }
                                         },
                                         "required": [
-                                          "name"
+                                          "role"
                                         ],
                                         "type": "object"
                                       },
                                       "type": "array",
                                       "x-kubernetes-list-map-keys": [
-                                        "name"
+                                        "role"
                                       ],
                                       "x-kubernetes-list-type": "map"
                                     }
@@ -1528,21 +1528,21 @@
                                             ],
                                             "type": "string"
                                           },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                          "role": {
+                                            "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                             "minLength": 1,
                                             "pattern": "^[^\u0000]+$",
                                             "type": "string"
                                           }
                                         },
                                         "required": [
-                                          "name"
+                                          "role"
                                         ],
                                         "type": "object"
                                       },
                                       "type": "array",
                                       "x-kubernetes-list-map-keys": [
-                                        "name"
+                                        "role"
                                       ],
                                       "x-kubernetes-list-type": "map"
                                     },
@@ -1560,21 +1560,21 @@
                                             ],
                                             "type": "string"
                                           },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                          "role": {
+                                            "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                             "minLength": 1,
                                             "pattern": "^[^\u0000]+$",
                                             "type": "string"
                                           }
                                         },
                                         "required": [
-                                          "name"
+                                          "role"
                                         ],
                                         "type": "object"
                                       },
                                       "type": "array",
                                       "x-kubernetes-list-map-keys": [
-                                        "name"
+                                        "role"
                                       ],
                                       "x-kubernetes-list-type": "map"
                                     },
@@ -1592,21 +1592,21 @@
                                             ],
                                             "type": "string"
                                           },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                          "role": {
+                                            "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                             "minLength": 1,
                                             "pattern": "^[^\u0000]+$",
                                             "type": "string"
                                           }
                                         },
                                         "required": [
-                                          "name"
+                                          "role"
                                         ],
                                         "type": "object"
                                       },
                                       "type": "array",
                                       "x-kubernetes-list-map-keys": [
-                                        "name"
+                                        "role"
                                       ],
                                       "x-kubernetes-list-type": "map"
                                     }
@@ -1630,21 +1630,21 @@
                                             ],
                                             "type": "string"
                                           },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                          "role": {
+                                            "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                             "minLength": 1,
                                             "pattern": "^[^\u0000]+$",
                                             "type": "string"
                                           }
                                         },
                                         "required": [
-                                          "name"
+                                          "role"
                                         ],
                                         "type": "object"
                                       },
                                       "type": "array",
                                       "x-kubernetes-list-map-keys": [
-                                        "name"
+                                        "role"
                                       ],
                                       "x-kubernetes-list-type": "map"
                                     },
@@ -1662,21 +1662,21 @@
                                             ],
                                             "type": "string"
                                           },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                          "role": {
+                                            "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                             "minLength": 1,
                                             "pattern": "^[^\u0000]+$",
                                             "type": "string"
                                           }
                                         },
                                         "required": [
-                                          "name"
+                                          "role"
                                         ],
                                         "type": "object"
                                       },
                                       "type": "array",
                                       "x-kubernetes-list-map-keys": [
-                                        "name"
+                                        "role"
                                       ],
                                       "x-kubernetes-list-type": "map"
                                     },
@@ -1694,21 +1694,21 @@
                                             ],
                                             "type": "string"
                                           },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                          "role": {
+                                            "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                             "minLength": 1,
                                             "pattern": "^[^\u0000]+$",
                                             "type": "string"
                                           }
                                         },
                                         "required": [
-                                          "name"
+                                          "role"
                                         ],
                                         "type": "object"
                                       },
                                       "type": "array",
                                       "x-kubernetes-list-map-keys": [
-                                        "name"
+                                        "role"
                                       ],
                                       "x-kubernetes-list-type": "map"
                                     },
@@ -1726,21 +1726,21 @@
                                             ],
                                             "type": "string"
                                           },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                          "role": {
+                                            "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                             "minLength": 1,
                                             "pattern": "^[^\u0000]+$",
                                             "type": "string"
                                           }
                                         },
                                         "required": [
-                                          "name"
+                                          "role"
                                         ],
                                         "type": "object"
                                       },
                                       "type": "array",
                                       "x-kubernetes-list-map-keys": [
-                                        "name"
+                                        "role"
                                       ],
                                       "x-kubernetes-list-type": "map"
                                     },
@@ -1758,21 +1758,21 @@
                                             ],
                                             "type": "string"
                                           },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                          "role": {
+                                            "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                             "minLength": 1,
                                             "pattern": "^[^\u0000]+$",
                                             "type": "string"
                                           }
                                         },
                                         "required": [
-                                          "name"
+                                          "role"
                                         ],
                                         "type": "object"
                                       },
                                       "type": "array",
                                       "x-kubernetes-list-map-keys": [
-                                        "name"
+                                        "role"
                                       ],
                                       "x-kubernetes-list-type": "map"
                                     },
@@ -1790,21 +1790,21 @@
                                             ],
                                             "type": "string"
                                           },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                          "role": {
+                                            "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                             "minLength": 1,
                                             "pattern": "^[^\u0000]+$",
                                             "type": "string"
                                           }
                                         },
                                         "required": [
-                                          "name"
+                                          "role"
                                         ],
                                         "type": "object"
                                       },
                                       "type": "array",
                                       "x-kubernetes-list-map-keys": [
-                                        "name"
+                                        "role"
                                       ],
                                       "x-kubernetes-list-type": "map"
                                     },
@@ -1822,21 +1822,21 @@
                                             ],
                                             "type": "string"
                                           },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                          "role": {
+                                            "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                             "minLength": 1,
                                             "pattern": "^[^\u0000]+$",
                                             "type": "string"
                                           }
                                         },
                                         "required": [
-                                          "name"
+                                          "role"
                                         ],
                                         "type": "object"
                                       },
                                       "type": "array",
                                       "x-kubernetes-list-map-keys": [
-                                        "name"
+                                        "role"
                                       ],
                                       "x-kubernetes-list-type": "map"
                                     },
@@ -1854,21 +1854,21 @@
                                             ],
                                             "type": "string"
                                           },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                          "role": {
+                                            "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                             "minLength": 1,
                                             "pattern": "^[^\u0000]+$",
                                             "type": "string"
                                           }
                                         },
                                         "required": [
-                                          "name"
+                                          "role"
                                         ],
                                         "type": "object"
                                       },
                                       "type": "array",
                                       "x-kubernetes-list-map-keys": [
-                                        "name"
+                                        "role"
                                       ],
                                       "x-kubernetes-list-type": "map"
                                     }
@@ -1892,21 +1892,21 @@
                                             ],
                                             "type": "string"
                                           },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                          "role": {
+                                            "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                             "minLength": 1,
                                             "pattern": "^[^\u0000]+$",
                                             "type": "string"
                                           }
                                         },
                                         "required": [
-                                          "name"
+                                          "role"
                                         ],
                                         "type": "object"
                                       },
                                       "type": "array",
                                       "x-kubernetes-list-map-keys": [
-                                        "name"
+                                        "role"
                                       ],
                                       "x-kubernetes-list-type": "map"
                                     }
@@ -1947,7 +1947,7 @@
                             "type": "string"
                           },
                           "permissions": {
-                            "description": "Permissions manages schema, all-table, and all-sequence grants.",
+                            "description": "Permissions manages schema and all-sequence grants.",
                             "properties": {
                               "create": {
                                 "description": "Create declares schema CREATE grants.",
@@ -1963,21 +1963,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               },
@@ -1998,21 +1998,21 @@
                                           ],
                                           "type": "string"
                                         },
-                                        "name": {
-                                          "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                        "role": {
+                                          "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                           "minLength": 1,
                                           "pattern": "^[^\u0000]+$",
                                           "type": "string"
                                         }
                                       },
                                       "required": [
-                                        "name"
+                                        "role"
                                       ],
                                       "type": "object"
                                     },
                                     "type": "array",
                                     "x-kubernetes-list-map-keys": [
-                                      "name"
+                                      "role"
                                     ],
                                     "x-kubernetes-list-type": "map"
                                   },
@@ -2030,21 +2030,21 @@
                                           ],
                                           "type": "string"
                                         },
-                                        "name": {
-                                          "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                        "role": {
+                                          "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                           "minLength": 1,
                                           "pattern": "^[^\u0000]+$",
                                           "type": "string"
                                         }
                                       },
                                       "required": [
-                                        "name"
+                                        "role"
                                       ],
                                       "type": "object"
                                     },
                                     "type": "array",
                                     "x-kubernetes-list-map-keys": [
-                                      "name"
+                                      "role"
                                     ],
                                     "x-kubernetes-list-type": "map"
                                   },
@@ -2062,283 +2062,21 @@
                                           ],
                                           "type": "string"
                                         },
-                                        "name": {
-                                          "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                        "role": {
+                                          "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                           "minLength": 1,
                                           "pattern": "^[^\u0000]+$",
                                           "type": "string"
                                         }
                                       },
                                       "required": [
-                                        "name"
+                                        "role"
                                       ],
                                       "type": "object"
                                     },
                                     "type": "array",
                                     "x-kubernetes-list-map-keys": [
-                                      "name"
-                                    ],
-                                    "x-kubernetes-list-type": "map"
-                                  }
-                                },
-                                "type": "object"
-                              },
-                              "tables": {
-                                "description": "Tables manages grants on all existing tables in this schema.",
-                                "properties": {
-                                  "delete": {
-                                    "description": "Delete declares DELETE grants.",
-                                    "items": {
-                                      "description": "Permission declares a SQL grantee's desired privilege state.",
-                                      "properties": {
-                                        "ensure": {
-                                          "default": "present",
-                                          "description": "Ensure selects presence or explicit removal of this grant only.",
-                                          "enum": [
-                                            "present",
-                                            "absent"
-                                          ],
-                                          "type": "string"
-                                        },
-                                        "name": {
-                                          "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                          "minLength": 1,
-                                          "pattern": "^[^\u0000]+$",
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "name"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    "type": "array",
-                                    "x-kubernetes-list-map-keys": [
-                                      "name"
-                                    ],
-                                    "x-kubernetes-list-type": "map"
-                                  },
-                                  "insert": {
-                                    "description": "Insert declares INSERT grants.",
-                                    "items": {
-                                      "description": "Permission declares a SQL grantee's desired privilege state.",
-                                      "properties": {
-                                        "ensure": {
-                                          "default": "present",
-                                          "description": "Ensure selects presence or explicit removal of this grant only.",
-                                          "enum": [
-                                            "present",
-                                            "absent"
-                                          ],
-                                          "type": "string"
-                                        },
-                                        "name": {
-                                          "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                          "minLength": 1,
-                                          "pattern": "^[^\u0000]+$",
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "name"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    "type": "array",
-                                    "x-kubernetes-list-map-keys": [
-                                      "name"
-                                    ],
-                                    "x-kubernetes-list-type": "map"
-                                  },
-                                  "maintain": {
-                                    "description": "Maintain declares MAINTAIN grants.",
-                                    "items": {
-                                      "description": "Permission declares a SQL grantee's desired privilege state.",
-                                      "properties": {
-                                        "ensure": {
-                                          "default": "present",
-                                          "description": "Ensure selects presence or explicit removal of this grant only.",
-                                          "enum": [
-                                            "present",
-                                            "absent"
-                                          ],
-                                          "type": "string"
-                                        },
-                                        "name": {
-                                          "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                          "minLength": 1,
-                                          "pattern": "^[^\u0000]+$",
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "name"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    "type": "array",
-                                    "x-kubernetes-list-map-keys": [
-                                      "name"
-                                    ],
-                                    "x-kubernetes-list-type": "map"
-                                  },
-                                  "references": {
-                                    "description": "References declares REFERENCES grants.",
-                                    "items": {
-                                      "description": "Permission declares a SQL grantee's desired privilege state.",
-                                      "properties": {
-                                        "ensure": {
-                                          "default": "present",
-                                          "description": "Ensure selects presence or explicit removal of this grant only.",
-                                          "enum": [
-                                            "present",
-                                            "absent"
-                                          ],
-                                          "type": "string"
-                                        },
-                                        "name": {
-                                          "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                          "minLength": 1,
-                                          "pattern": "^[^\u0000]+$",
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "name"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    "type": "array",
-                                    "x-kubernetes-list-map-keys": [
-                                      "name"
-                                    ],
-                                    "x-kubernetes-list-type": "map"
-                                  },
-                                  "select": {
-                                    "description": "Select declares SELECT grants.",
-                                    "items": {
-                                      "description": "Permission declares a SQL grantee's desired privilege state.",
-                                      "properties": {
-                                        "ensure": {
-                                          "default": "present",
-                                          "description": "Ensure selects presence or explicit removal of this grant only.",
-                                          "enum": [
-                                            "present",
-                                            "absent"
-                                          ],
-                                          "type": "string"
-                                        },
-                                        "name": {
-                                          "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                          "minLength": 1,
-                                          "pattern": "^[^\u0000]+$",
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "name"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    "type": "array",
-                                    "x-kubernetes-list-map-keys": [
-                                      "name"
-                                    ],
-                                    "x-kubernetes-list-type": "map"
-                                  },
-                                  "trigger": {
-                                    "description": "Trigger declares TRIGGER grants.",
-                                    "items": {
-                                      "description": "Permission declares a SQL grantee's desired privilege state.",
-                                      "properties": {
-                                        "ensure": {
-                                          "default": "present",
-                                          "description": "Ensure selects presence or explicit removal of this grant only.",
-                                          "enum": [
-                                            "present",
-                                            "absent"
-                                          ],
-                                          "type": "string"
-                                        },
-                                        "name": {
-                                          "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                          "minLength": 1,
-                                          "pattern": "^[^\u0000]+$",
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "name"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    "type": "array",
-                                    "x-kubernetes-list-map-keys": [
-                                      "name"
-                                    ],
-                                    "x-kubernetes-list-type": "map"
-                                  },
-                                  "truncate": {
-                                    "description": "Truncate declares TRUNCATE grants.",
-                                    "items": {
-                                      "description": "Permission declares a SQL grantee's desired privilege state.",
-                                      "properties": {
-                                        "ensure": {
-                                          "default": "present",
-                                          "description": "Ensure selects presence or explicit removal of this grant only.",
-                                          "enum": [
-                                            "present",
-                                            "absent"
-                                          ],
-                                          "type": "string"
-                                        },
-                                        "name": {
-                                          "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                          "minLength": 1,
-                                          "pattern": "^[^\u0000]+$",
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "name"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    "type": "array",
-                                    "x-kubernetes-list-map-keys": [
-                                      "name"
-                                    ],
-                                    "x-kubernetes-list-type": "map"
-                                  },
-                                  "update": {
-                                    "description": "Update declares UPDATE grants.",
-                                    "items": {
-                                      "description": "Permission declares a SQL grantee's desired privilege state.",
-                                      "properties": {
-                                        "ensure": {
-                                          "default": "present",
-                                          "description": "Ensure selects presence or explicit removal of this grant only.",
-                                          "enum": [
-                                            "present",
-                                            "absent"
-                                          ],
-                                          "type": "string"
-                                        },
-                                        "name": {
-                                          "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                          "minLength": 1,
-                                          "pattern": "^[^\u0000]+$",
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "name"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    "type": "array",
-                                    "x-kubernetes-list-map-keys": [
-                                      "name"
+                                      "role"
                                     ],
                                     "x-kubernetes-list-type": "map"
                                   }
@@ -2359,21 +2097,21 @@
                                       ],
                                       "type": "string"
                                     },
-                                    "name": {
-                                      "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
+                                    "role": {
+                                      "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                       "minLength": 1,
                                       "pattern": "^[^\u0000]+$",
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "name"
+                                    "role"
                                   ],
                                   "type": "object"
                                 },
                                 "type": "array",
                                 "x-kubernetes-list-map-keys": [
-                                  "name"
+                                  "role"
                                 ],
                                 "x-kubernetes-list-type": "map"
                               }
@@ -2381,290 +2119,67 @@
                             "type": "object"
                           },
                           "tablePermissions": {
-                            "description": "TablePermissions targets existing named tables without managing their DDL.",
+                            "description": "TablePermissions declares role privileges on named tables or all tables by omission.\nRules are atomic for apply ownership and may repeat a role with disjoint tuples.",
                             "items": {
-                              "description": "NamedTablePermissions declares privileges on one existing table.",
+                              "description": "TablePermissionRule declares one role's privileges on selected existing tables.",
                               "properties": {
-                                "name": {
-                                  "description": "Name is the existing SQL table name, without schema qualification.",
+                                "ensure": {
+                                  "default": "present",
+                                  "description": "Ensure selects presence or explicit removal of the listed grants only.",
+                                  "enum": [
+                                    "present",
+                                    "absent"
+                                  ],
+                                  "type": "string"
+                                },
+                                "privileges": {
+                                  "description": "Privileges lists individual lowercase table privileges.",
+                                  "items": {
+                                    "description": "TablePrivilege is one supported table privilege.",
+                                    "enum": [
+                                      "select",
+                                      "insert",
+                                      "update",
+                                      "delete",
+                                      "truncate",
+                                      "references",
+                                      "trigger",
+                                      "maintain"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "minItems": 1,
+                                  "type": "array",
+                                  "x-kubernetes-list-type": "set"
+                                },
+                                "role": {
+                                  "description": "Role is the SQL grantee; public represents PostgreSQL PUBLIC.",
                                   "minLength": 1,
                                   "pattern": "^[^\u0000]+$",
                                   "type": "string"
                                 },
-                                "permissions": {
-                                  "description": "Permissions declares grants without creating or dropping the table.",
-                                  "properties": {
-                                    "delete": {
-                                      "description": "Delete declares DELETE grants.",
-                                      "items": {
-                                        "description": "Permission declares a SQL grantee's desired privilege state.",
-                                        "properties": {
-                                          "ensure": {
-                                            "default": "present",
-                                            "description": "Ensure selects presence or explicit removal of this grant only.",
-                                            "enum": [
-                                              "present",
-                                              "absent"
-                                            ],
-                                            "type": "string"
-                                          },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                            "minLength": 1,
-                                            "pattern": "^[^\u0000]+$",
-                                            "type": "string"
-                                          }
-                                        },
-                                        "required": [
-                                          "name"
-                                        ],
-                                        "type": "object"
-                                      },
-                                      "type": "array",
-                                      "x-kubernetes-list-map-keys": [
-                                        "name"
-                                      ],
-                                      "x-kubernetes-list-type": "map"
-                                    },
-                                    "insert": {
-                                      "description": "Insert declares INSERT grants.",
-                                      "items": {
-                                        "description": "Permission declares a SQL grantee's desired privilege state.",
-                                        "properties": {
-                                          "ensure": {
-                                            "default": "present",
-                                            "description": "Ensure selects presence or explicit removal of this grant only.",
-                                            "enum": [
-                                              "present",
-                                              "absent"
-                                            ],
-                                            "type": "string"
-                                          },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                            "minLength": 1,
-                                            "pattern": "^[^\u0000]+$",
-                                            "type": "string"
-                                          }
-                                        },
-                                        "required": [
-                                          "name"
-                                        ],
-                                        "type": "object"
-                                      },
-                                      "type": "array",
-                                      "x-kubernetes-list-map-keys": [
-                                        "name"
-                                      ],
-                                      "x-kubernetes-list-type": "map"
-                                    },
-                                    "maintain": {
-                                      "description": "Maintain declares MAINTAIN grants.",
-                                      "items": {
-                                        "description": "Permission declares a SQL grantee's desired privilege state.",
-                                        "properties": {
-                                          "ensure": {
-                                            "default": "present",
-                                            "description": "Ensure selects presence or explicit removal of this grant only.",
-                                            "enum": [
-                                              "present",
-                                              "absent"
-                                            ],
-                                            "type": "string"
-                                          },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                            "minLength": 1,
-                                            "pattern": "^[^\u0000]+$",
-                                            "type": "string"
-                                          }
-                                        },
-                                        "required": [
-                                          "name"
-                                        ],
-                                        "type": "object"
-                                      },
-                                      "type": "array",
-                                      "x-kubernetes-list-map-keys": [
-                                        "name"
-                                      ],
-                                      "x-kubernetes-list-type": "map"
-                                    },
-                                    "references": {
-                                      "description": "References declares REFERENCES grants.",
-                                      "items": {
-                                        "description": "Permission declares a SQL grantee's desired privilege state.",
-                                        "properties": {
-                                          "ensure": {
-                                            "default": "present",
-                                            "description": "Ensure selects presence or explicit removal of this grant only.",
-                                            "enum": [
-                                              "present",
-                                              "absent"
-                                            ],
-                                            "type": "string"
-                                          },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                            "minLength": 1,
-                                            "pattern": "^[^\u0000]+$",
-                                            "type": "string"
-                                          }
-                                        },
-                                        "required": [
-                                          "name"
-                                        ],
-                                        "type": "object"
-                                      },
-                                      "type": "array",
-                                      "x-kubernetes-list-map-keys": [
-                                        "name"
-                                      ],
-                                      "x-kubernetes-list-type": "map"
-                                    },
-                                    "select": {
-                                      "description": "Select declares SELECT grants.",
-                                      "items": {
-                                        "description": "Permission declares a SQL grantee's desired privilege state.",
-                                        "properties": {
-                                          "ensure": {
-                                            "default": "present",
-                                            "description": "Ensure selects presence or explicit removal of this grant only.",
-                                            "enum": [
-                                              "present",
-                                              "absent"
-                                            ],
-                                            "type": "string"
-                                          },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                            "minLength": 1,
-                                            "pattern": "^[^\u0000]+$",
-                                            "type": "string"
-                                          }
-                                        },
-                                        "required": [
-                                          "name"
-                                        ],
-                                        "type": "object"
-                                      },
-                                      "type": "array",
-                                      "x-kubernetes-list-map-keys": [
-                                        "name"
-                                      ],
-                                      "x-kubernetes-list-type": "map"
-                                    },
-                                    "trigger": {
-                                      "description": "Trigger declares TRIGGER grants.",
-                                      "items": {
-                                        "description": "Permission declares a SQL grantee's desired privilege state.",
-                                        "properties": {
-                                          "ensure": {
-                                            "default": "present",
-                                            "description": "Ensure selects presence or explicit removal of this grant only.",
-                                            "enum": [
-                                              "present",
-                                              "absent"
-                                            ],
-                                            "type": "string"
-                                          },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                            "minLength": 1,
-                                            "pattern": "^[^\u0000]+$",
-                                            "type": "string"
-                                          }
-                                        },
-                                        "required": [
-                                          "name"
-                                        ],
-                                        "type": "object"
-                                      },
-                                      "type": "array",
-                                      "x-kubernetes-list-map-keys": [
-                                        "name"
-                                      ],
-                                      "x-kubernetes-list-type": "map"
-                                    },
-                                    "truncate": {
-                                      "description": "Truncate declares TRUNCATE grants.",
-                                      "items": {
-                                        "description": "Permission declares a SQL grantee's desired privilege state.",
-                                        "properties": {
-                                          "ensure": {
-                                            "default": "present",
-                                            "description": "Ensure selects presence or explicit removal of this grant only.",
-                                            "enum": [
-                                              "present",
-                                              "absent"
-                                            ],
-                                            "type": "string"
-                                          },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                            "minLength": 1,
-                                            "pattern": "^[^\u0000]+$",
-                                            "type": "string"
-                                          }
-                                        },
-                                        "required": [
-                                          "name"
-                                        ],
-                                        "type": "object"
-                                      },
-                                      "type": "array",
-                                      "x-kubernetes-list-map-keys": [
-                                        "name"
-                                      ],
-                                      "x-kubernetes-list-type": "map"
-                                    },
-                                    "update": {
-                                      "description": "Update declares UPDATE grants.",
-                                      "items": {
-                                        "description": "Permission declares a SQL grantee's desired privilege state.",
-                                        "properties": {
-                                          "ensure": {
-                                            "default": "present",
-                                            "description": "Ensure selects presence or explicit removal of this grant only.",
-                                            "enum": [
-                                              "present",
-                                              "absent"
-                                            ],
-                                            "type": "string"
-                                          },
-                                          "name": {
-                                            "description": "Name is the SQL grantee; public represents PostgreSQL PUBLIC.",
-                                            "minLength": 1,
-                                            "pattern": "^[^\u0000]+$",
-                                            "type": "string"
-                                          }
-                                        },
-                                        "required": [
-                                          "name"
-                                        ],
-                                        "type": "object"
-                                      },
-                                      "type": "array",
-                                      "x-kubernetes-list-map-keys": [
-                                        "name"
-                                      ],
-                                      "x-kubernetes-list-type": "map"
-                                    }
+                                "tables": {
+                                  "description": "Tables contains literal names in the containing schema; omission selects all tables.\nExplicit null is retained as an invalid selection for rejection before SQL.",
+                                  "items": {
+                                    "description": "SQLName is a nonempty PostgreSQL identifier. Server-specific byte limits are\nchecked by the reconciler; identifiers are never truncated.",
+                                    "minLength": 1,
+                                    "pattern": "^[^\u0000]+$",
+                                    "type": "string"
                                   },
-                                  "type": "object"
+                                  "minItems": 1,
+                                  "nullable": true,
+                                  "type": "array",
+                                  "x-kubernetes-list-type": "set"
                                 }
                               },
                               "required": [
-                                "name",
-                                "permissions"
+                                "privileges",
+                                "role"
                               ],
                               "type": "object"
                             },
                             "type": "array",
-                            "x-kubernetes-list-map-keys": [
-                              "name"
-                            ],
-                            "x-kubernetes-list-type": "map"
+                            "x-kubernetes-list-type": "atomic"
                           }
                         },
                         "required": [

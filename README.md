@@ -5,6 +5,8 @@ EPCO connects to existing PostgreSQL servers and keeps database access and appli
 
 Supports PostgreSQL **15, 16, 17, and 18**.
 
+The source examples use the role-oriented permission API for fresh installations. Use a matching CRD/controller release; these examples require a newer schema than the `0.1.9` installation shown below. The breaking permission schema has no legacy conversion, supported in-place upgrade or rollback from the older shape. See the [API compatibility contract](docs/api-proposal.md#admission-and-installation-compatibility).
+
 ## Features
 
 - [Roles, databases, schemas, and extensions](examples/api-proposal/full.yaml).
@@ -117,6 +119,8 @@ spec:
 ```
 
 ### Upgrades
+
+These steps apply only between compatible schemas. They do not support the fresh-install-only role-oriented permission change: old schema fingerprints are refused by the installation helper, and direct CRD replacement or Helm rollback does not provide conversion. Follow the selected release's compatibility contract before changing an existing installation.
 
 With Flux, update `spec.ref.tag` in the OCIRepository. Flux updates the CRDs before upgrading the operator.
 

@@ -24,6 +24,15 @@ suite CA. Fixture clients expose a database administrator and a restricted login
 catalog assertions and SQL execution both check grant/revoke behavior. SQL
 readiness uses an authenticated `SELECT 1` over the same TLS connection as tests.
 
+PGDATA uses a container-local tmpfs bounded to 1 GiB at the existing explicit
+`/var/lib/postgresql/data` path for PostgreSQL 15-18. This avoids host-volume
+checkpoint sync stalls during repeated owned database creation and deletion.
+PostgreSQL fsync and synchronous_commit remain enabled and are checked at runtime;
+SQL, checkpoint, client and cleanup deadlines are unchanged. The suite exercises
+controller/client restart recovery and does not require data to survive destruction
+of its disposable server container. Container and data teardown remain owned by
+the same run label.
+
 Production ExternalPostgres client tests cover all six TLS modes, transport order
 and fallback, hostname and CA verification, required client certificates,
 incorrect credentials, read-only sessions, recovery after repaired inputs, and
@@ -36,6 +45,23 @@ Call `Fixture.Close` after assertions, and on failure save `Server.Diagnostics`
 before `Server.Close`. Clients can be closed repeatedly. Cleanup deletes the exact
 labelled container and fixture database/role names. It leaves unrelated Docker
 resources untouched. The runner also handles failed startup, SIGINT and SIGTERM.
+
+Each invocation assigns a unique `EPCO_TEST_RUN_ID` inherited by test and envtest
+processes. After failure diagnostics, the runner verifies exact environment
+ownership and PID birth identities before bounded TERM/KILL cleanup, including
+API-server and etcd processes in separate process groups. Linux and Darwin use
+native process environment inspection; arguments and executable names cannot
+prove ownership. Cleanup reports contain only safe PID metadata, with no raw
+arguments or environment values. The standalone envtest runner uses the same
+ownership helper. Existing nonzero and signal exit statuses are preserved.
+Runtime temporary directories, including default envtest work directories, stay
+inside the runner's owned temporary root. That root is removed only after process
+cleanup is verified. Otherwise the runner retains it for recovery, reports its
+path, and turns a successful suite result into a failure.
+
+Integration assertions format structured PostgreSQL connection failures through
+safe error strings, retaining operation and cleanup context in wrapped and joined
+errors. Gomega does not expand their credential-bearing connection configuration.
 
 Fixture SQL cleanup uses a separate pinned administrator connection bounded by
 its cleanup context. Its shorter statement timeout is disabled only on that

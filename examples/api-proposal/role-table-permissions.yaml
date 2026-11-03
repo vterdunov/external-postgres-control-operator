@@ -1,0 +1,34 @@
+apiVersion: postgresql.epco.io/v1alpha1
+kind: Database
+metadata:
+  name: orders
+spec:
+  cluster:
+    name: pg-prod
+  name: orders
+  owner: orders_owner
+  permissions:
+    connect:
+      - role: public
+        ensure: absent
+      - role: app_user
+      - role: orders_reader
+  schemas:
+    - name: app
+      owner: orders_owner
+      permissions:
+        usage:
+          - role: app_user
+          - role: orders_reader
+      tablePermissions:
+        - role: app_user
+          tables: [customers, products]
+          privileges: [select]
+        - role: app_user
+          tables: [orders, order_items]
+          privileges: [select, insert]
+        - role: app_user
+          tables: [orders]
+          privileges: [update]
+        - role: orders_reader
+          privileges: [select]

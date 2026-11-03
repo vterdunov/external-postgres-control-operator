@@ -71,9 +71,9 @@ var _ = Describe("R6 Installed application scenarios", func() {
 			Expect(apiClient.Get(ctx, client.ObjectKeyFromObject(app.database), app.database)).To(Succeed())
 			before := app.database.DeepCopy()
 			app.database.Spec.Schemas[0].DefaultPrivileges[0].Sequences = &epco.SequencePermissions{
-				Usage: []epco.Permission{{Name: app.roles[r6Runtime].Spec.Name, Ensure: epco.EnsureAbsent}}}
+				Usage: []epco.Permission{{Role: app.roles[r6Runtime].Spec.Name, Ensure: epco.EnsureAbsent}}}
 			app.database.Spec.Schemas[0].Permissions.Sequences = &epco.SequencePermissions{
-				Usage: []epco.Permission{{Name: app.roles[r6Runtime].Spec.Name, Ensure: epco.EnsureAbsent}}}
+				Usage: []epco.Permission{{Role: app.roles[r6Runtime].Spec.Name, Ensure: epco.EnsureAbsent}}}
 			Expect(apiClient.Patch(ctx, app.database, client.MergeFrom(before))).To(Succeed())
 			app.ready(ctx)
 			Expect(app.query(ctx, runtimeOutput,

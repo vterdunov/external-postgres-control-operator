@@ -38,7 +38,7 @@ func installedACLLogin(ctx context.Context, role, query string, allowed bool) st
 }
 
 func installedACLPermission(role string) []epco.Permission {
-	return []epco.Permission{{Name: epco.SQLName(role)}}
+	return []epco.Permission{{Role: epco.SQLName(role)}}
 }
 
 var _ = Describe("R3 Installed Database permissions", func() {
@@ -92,29 +92,36 @@ var _ = Describe("R3 Installed Database permissions", func() {
 			"CREATE SEQUENCE app.order_ids")
 		databaseBefore := database.DeepCopy()
 		database.Spec.Permissions = &epco.DatabasePermissions{Connect: []epco.Permission{
-			{Name: "public", Ensure: epco.EnsureAbsent}, {Name: service}, {Name: reader}, {Name: llm},
+			{Role: "public", Ensure: epco.EnsureAbsent}, {Role: service}, {Role: reader}, {Role: llm},
 		}}
 		database.Spec.Schemas = []epco.SchemaSpec{{Name: installedDatabaseApplicationSchema,
 			Permissions: &epco.SchemaPermissions{
-				Usage: []epco.Permission{{Name: service}, {Name: reader}, {Name: llm}},
-				Tables: &epco.TablePermissions{
-					Select: []epco.Permission{{Name: service}, {Name: reader}},
-					Insert: installedACLPermission(service), Update: installedACLPermission(service),
-					Delete: installedACLPermission(service),
-				},
+				Usage:     []epco.Permission{{Role: service}, {Role: reader}, {Role: llm}},
 				Sequences: &epco.SequencePermissions{Usage: installedACLPermission(service)},
 			},
 			DefaultPrivileges: []epco.DefaultPrivileges{{ForRole: owner,
-				Tables: &epco.TablePermissions{Select: []epco.Permission{{Name: service}, {Name: reader}},
+				Tables: &epco.TablePermissions{Select: []epco.Permission{{Role: service}, {Role: reader}},
 					Insert: installedACLPermission(service), Update: installedACLPermission(service),
 					Delete: installedACLPermission(service)},
 				Sequences: &epco.SequencePermissions{Usage: installedACLPermission(service)},
 			}},
-			TablePermissions: []epco.NamedTablePermissions{
-				{Name: "orders", Permissions: epco.TablePermissions{Select: installedACLPermission(llm)}},
-				{Name: "invoices", Permissions: epco.TablePermissions{Select: installedACLPermission(llm)}},
-			},
+			TablePermissions: append(tablePermissionRules(
+				[]epco.SQLName{"orders"},
+				epco.TablePermissions{Select: installedACLPermission(llm)},
+			), tablePermissionRules(
+				[]epco.SQLName{"invoices"},
+				epco.TablePermissions{Select: installedACLPermission(llm)},
+			)...),
 		}}
+		database.Spec.Schemas[0].TablePermissions = append(database.Spec.Schemas[0].TablePermissions,
+			tablePermissionRules(
+				nil,
+				epco.TablePermissions{
+					Select: []epco.Permission{{Role: service}, {Role: reader}},
+					Insert: installedACLPermission(service), Update: installedACLPermission(service),
+					Delete: installedACLPermission(service),
+				},
+			)...)
 		Expect(apiClient.Patch(ctx, database, client.MergeFrom(databaseBefore))).To(Succeed())
 		database = installedDatabase(ctx, database, metav1.ConditionTrue, "Ready")
 		Expect(installedACLLogin(ctx, admin, "SELECT current_user", true)).To(Equal(admin))
@@ -156,8 +163,10 @@ var _ = Describe("R3 Installed Database permissions", func() {
 		Expect(recreated.UID).NotTo(Equal(retainedUID))
 		Expect(installedACLLogin(ctx, llm, "SELECT value FROM app.invoices", true)).To(Equal("7"))
 		recreatedBefore := recreated.DeepCopy()
-		recreated.Spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: "invoices",
-			Permissions: epco.TablePermissions{Select: []epco.Permission{{Name: llm, Ensure: epco.EnsureAbsent}}}}}
+		recreated.Spec.Schemas[0].TablePermissions = tablePermissionRules(
+			[]epco.SQLName{"invoices"},
+			epco.TablePermissions{Select: []epco.Permission{{Role: llm, Ensure: epco.EnsureAbsent}}},
+		)
 		Expect(apiClient.Patch(ctx, recreated, client.MergeFrom(recreatedBefore))).To(Succeed())
 		recreated = installedDatabase(ctx, recreated, metav1.ConditionTrue, "Ready")
 		installedACLLogin(ctx, llm, "SELECT * FROM app.invoices", false)
