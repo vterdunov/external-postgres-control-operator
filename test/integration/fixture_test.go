@@ -12,6 +12,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
 )
 
 // TestMain also lets the outer runner collect redacted diagnostics after interruption.
@@ -30,6 +31,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestFixtures(t *testing.T) {
+	formatter := format.RegisterCustomFormatter(formatConnectionFailure)
+	defer format.UnregisterCustomFormatter(formatter)
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "PostgreSQL fixture units")
 }

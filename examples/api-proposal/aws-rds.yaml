@@ -97,33 +97,33 @@ spec:
   owner: orders_owner
   permissions:
     connect:
-      - name: orders_reader
-      - name: orders_migrator
+      - role: orders_reader
+      - role: orders_migrator
   schemas:
     - name: app
       owner: orders_owner
       permissions:
         usage:
-          - name: orders_reader
-        tables:
-          select:
-            - name: orders_reader
+          - role: orders_reader
         sequences:
           select:
-            - name: orders_reader
+            - role: orders_reader
+      tablePermissions:
+        - role: orders_reader
+          privileges: [select]
       defaultPrivileges:
         - forRole: orders_owner
           tables:
             select:
-              - name: orders_reader
+              - role: orders_reader
           sequences:
             select:
-              - name: orders_reader
+              - role: orders_reader
         - forRole: orders_migrator
           tables:
             select:
-              - name: orders_reader
+              - role: orders_reader
           sequences:
             select:
-              - name: orders_reader
+              - role: orders_reader
   databaseReclaimPolicy: retain

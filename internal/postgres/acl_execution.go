@@ -17,7 +17,7 @@ func validACLPrivilege(b epco.ACLBinding) bool {
 	case aclClassSchema:
 		allowed = []string{aclUsage, aclCreate}
 	case aclClassTable:
-		allowed = []string{aclSelect, "INSERT", aclUpdate, "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", aclMaintain}
+		allowed = []string{aclSelect, aclInsert, aclUpdate, aclDelete, aclTruncate, aclReferences, aclTrigger, aclMaintain}
 	case aclClassSequence:
 		allowed = []string{aclUsage, aclSelect, aclUpdate}
 	case aclClassFunction:

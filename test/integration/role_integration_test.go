@@ -409,9 +409,47 @@ var _ = Describe("DatabaseRole PostgreSQL reconciliation", func() {
 
 	It("cleans uppercase managed parameter names after declaration removal", func(ctx SpecContext) {
 		name := roleName(fixture)
-		session := roleSession(ctx, fixture, false)
+		config := productionConfig(fixture, roleTLSMode, false)
+		config.Connection.User, config.Connection.Password = roleSQLAdmin, fixture.Server.password
+		tracer := &administrativeQueryTracer{}
+		config.Connection.Tracer = tracer
+		session, err := pgroles.NewRoleFactory().Open(ctx, config)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			Expect(session.Close(cleanup)).To(Succeed())
+		})
+		started := time.Now()
 		result, err := session.Apply(ctx, pgroles.RoleDesired{Name: name, Spec: epco.DatabaseRoleSpec{
 			Parameters: map[string]string{roleUpperWorkMemorySetting: roleWorkMemory}}})
+		elapsed := time.Since(started)
+		stages := make([]string, 0, len(tracer.queries))
+		var backendPID uint32
+		for _, query := range tracer.queries {
+			backendPID = query.connection.PgConn().PID()
+			stage := "other"
+			switch {
+			case strings.EqualFold(query.sql, "begin"):
+				stage = "begin"
+			case strings.HasPrefix(query.sql, "SELECT"):
+				stage = "catalog-read"
+			case strings.HasPrefix(query.sql, "CREATE ROLE"):
+				stage = "create-role"
+			case strings.HasPrefix(query.sql, "ALTER ROLE"):
+				stage = "alter-role"
+			case strings.EqualFold(query.sql, "commit"):
+				stage = "commit"
+			case strings.EqualFold(query.sql, "rollback"):
+				stage = "rollback"
+			}
+			stages = append(stages, stage)
+		}
+		GinkgoWriter.Printf("uppercase parameter first Apply: elapsed=%s statement_timeout=%s connect_timeout=%s "+
+			"error_type=%T reason=%q sqlstate=%q deadline_exceeded=%t canceled=%t parent_deadline_exceeded=%t "+
+			"backend_pid=%d stages=%v\n", elapsed, config.StatementTimeout, config.ConnectTimeout,
+			err, failureReason(err), SQLState(err), errors.Is(err, context.DeadlineExceeded),
+			errors.Is(err, context.Canceled), errors.Is(ctx.Err(), context.DeadlineExceeded), backendPID, stages)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(roleSettings(ctx, fixture, name, false)).To(ConsistOf("work_mem=3MB"))
 		_, err = session.Apply(ctx, pgroles.RoleDesired{Name: name, TrackedParameters: result.Parameters})

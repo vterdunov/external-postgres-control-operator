@@ -33,11 +33,11 @@ func (e *Environment) NewScope(ctx context.Context, prefix string) (*Scope, *cor
 	return scope, namespace, nil
 }
 
-func (s *Scope) Create(ctx context.Context, object client.Object) error {
+func (s *Scope) Create(ctx context.Context, object client.Object, options ...client.CreateOption) error {
 	if object.GetNamespace() != s.Namespace.Name {
 		return fmt.Errorf("object namespace %q is outside scope %q", object.GetNamespace(), s.Namespace.Name)
 	}
-	if err := s.Client.Create(ctx, object); err != nil {
+	if err := s.Client.Create(ctx, object, options...); err != nil {
 		return err
 	}
 	s.objects = append(s.objects, object.DeepCopyObject().(client.Object))
@@ -71,8 +71,9 @@ func (s *Scope) Cleanup(ctx context.Context) error {
 				return fmt.Errorf("ownership changed for %T %s", object, client.ObjectKeyFromObject(object))
 			}
 			if len(object.GetFinalizers()) > 0 {
+				previous := object.DeepCopyObject().(client.Object)
 				object.SetFinalizers(nil)
-				return s.Client.Update(ctx, object)
+				return s.Client.Patch(ctx, object, client.MergeFromWithOptions(previous, client.MergeFromWithOptimisticLock{}))
 			}
 			return nil
 		})

@@ -118,6 +118,7 @@ func Start(ctx context.Context, options Options) (_ *Server, resultErr error) {
 	}
 	_, err = s.docker(ctx, "run", "--detach", "--name", s.Container, "--label", "epco.test.run="+s.RunID,
 		"--publish", "127.0.0.1::5432", "--env-file", envFile,
+		"--mount", "type=tmpfs,target=/var/lib/postgresql/data,tmpfs-size=1073741824,tmpfs-mode=0700",
 		"--mount", "type=bind,source="+s.tempDir+",target=/fixtures,readonly",
 		"--entrypoint", "/bin/sh", image, "-ec", stageKeys)
 	if err != nil {

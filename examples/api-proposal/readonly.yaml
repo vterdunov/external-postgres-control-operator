@@ -30,23 +30,23 @@ spec:
   owner: app
   permissions:
     connect:
-      - name: app_reader
+      - role: app_reader
   schemas:
     - name: public
       permissions:
         usage:
-          - name: app_reader
-        tables:
-          select:
-            - name: app_reader
+          - role: app_reader
         sequences:
           select:
-            - name: app_reader
+            - role: app_reader
+      tablePermissions:
+        - role: app_reader
+          privileges: [select]
       defaultPrivileges:
         - forRole: app
           tables:
             select:
-              - name: app_reader
+              - role: app_reader
           sequences:
             select:
-              - name: app_reader
+              - role: app_reader

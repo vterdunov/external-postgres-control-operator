@@ -103,9 +103,9 @@ var _ = Describe("R3 Database ACL API and dependency watches", func() {
 			db := watchedDatabase(cluster, "permission-dependency")
 			if creator {
 				db.Spec.DefaultPrivileges = []epco.DefaultPrivileges{{ForRole: permissionDependencySQLName,
-					Tables: &epco.TablePermissions{Select: []epco.Permission{{Name: "external-reader"}}}}}
+					Tables: &epco.TablePermissions{Select: []epco.Permission{{Role: "external-reader"}}}}}
 			} else {
-				db.Spec.Permissions = &epco.DatabasePermissions{Create: []epco.Permission{{Name: permissionDependencySQLName}}}
+				db.Spec.Permissions = &epco.DatabasePermissions{Create: []epco.Permission{{Role: permissionDependencySQLName}}}
 			}
 			Expect(scope.Create(ctx, db)).To(Succeed())
 			latest := expectDatabaseStatus(ctx, db, metav1.ConditionFalse, "DependenciesNotReady")

@@ -255,14 +255,17 @@ class Smoke:
         self.database_spec = {
             "cluster": {"name": "postgres"}, "name": self.database, "owner": self.roles["owner"],
             "databaseReclaimPolicy": "retain",
-            "permissions": {"connect": [{"name": self.roles[name]} for name in ("supplied", "generated")] + [{"name": "public", "ensure": "absent"}]},
-            "schemas": [{"name": "app", "owner": self.roles["owner"], "permissions": {"usage": [{"name": self.roles[name]} for name in ("supplied", "generated")]}}],
+            "permissions": {"connect": [{"role": self.roles[name]} for name in ("supplied", "generated")] + [{"role": "public", "ensure": "absent"}]},
+            "schemas": [{"name": "app", "owner": self.roles["owner"], "permissions": {"usage": [{"role": self.roles[name]} for name in ("supplied", "generated")]}}],
             "connectionSecrets": [{"name": name + "-connection", "roleRef": {"name": name}} for name in ("supplied", "generated")],
         }
         self.apply(self.resource("Database", "application", self.database_spec))
         self.ready_application()
         self.sql(f'CREATE TABLE app.orders (value integer NOT NULL); ALTER TABLE app.orders OWNER TO "{self.roles["owner"]}"; INSERT INTO app.orders VALUES (42)', self.database)
-        self.database_spec["schemas"][0]["tablePermissions"] = [{"name": "orders", "permissions": {"select": [{"name": self.roles[name]} for name in ("supplied", "generated")]}}]
+        self.database_spec["schemas"][0]["tablePermissions"] = [
+            {"role": self.roles[name], "tables": ["orders"], "privileges": ["select"]}
+            for name in ("supplied", "generated")
+        ]
         self.apply(self.resource("Database", "application", self.database_spec))
         self.ready_application()
         for name in ("supplied", "generated"):
@@ -354,7 +357,9 @@ class Smoke:
         self.ready_application()
         self.assert_retained(baseline, "reinstall retains live CR histories and credential provenance")
         old_uid = baseline["database/application"]["uid"]
-        self.database_spec["schemas"][0]["tablePermissions"][0]["permissions"]["select"] = [{"name": self.roles["supplied"]}]
+        self.database_spec["schemas"][0]["tablePermissions"] = [
+            {"role": self.roles["supplied"], "tables": ["orders"], "privileges": ["select"]}
+        ]
         self.apply(self.resource("Database", "application", self.database_spec))
         self.ready_application()
         require(self.get("database", "application", self.app_namespace)["metadata"]["uid"] == old_uid, "declarative revoke must occur within retained CR UID")

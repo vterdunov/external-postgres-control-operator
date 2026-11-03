@@ -67,69 +67,64 @@ spec:
         name: orders-migrator
   permissions:
     connect:
-      - name: public
+      - role: public
         ensure: absent
-      - name: orders_migrator
-      - name: orders_service
-      - name: orders_admin_readonly
+      - role: orders_migrator
+      - role: orders_service
+      - role: orders_admin_readonly
     temporary:
-      - name: public
+      - role: public
         ensure: absent
   schemas:
     - name: public
       owner: orders_owner
       permissions:
         usage:
-          - name: orders_service
-          - name: orders_admin_readonly
+          - role: orders_service
+          - role: orders_admin_readonly
         create:
-          - name: public
+          - role: public
             ensure: absent
-        tables:
-          select:
-            - name: orders_service
-            - name: orders_admin_readonly
-          insert:
-            - name: orders_service
-          update:
-            - name: orders_service
-          delete:
-            - name: orders_service
         sequences:
           usage:
-            - name: orders_service
+            - role: orders_service
           select:
-            - name: orders_service
+            - role: orders_service
+      tablePermissions:
+        - role: orders_service
+          privileges: [select, insert, update, delete]
+        - role: orders_admin_readonly
+          privileges: [select]
       defaultPrivileges:
         - forRole: orders_owner
           tables:
             select:
-              - name: orders_service
-              - name: orders_admin_readonly
+              - role: orders_service
+              - role: orders_admin_readonly
             insert:
-              - name: orders_service
+              - role: orders_service
             update:
-              - name: orders_service
+              - role: orders_service
             delete:
-              - name: orders_service
+              - role: orders_service
           sequences:
             usage:
-              - name: orders_service
+              - role: orders_service
             select:
-              - name: orders_service
+              - role: orders_service
         - forRole: orders_migrator
           tables:
             select:
-              - name: orders_service
-              - name: orders_admin_readonly
+              - role: orders_service
+              - role: orders_admin_readonly
             insert:
-              - name: orders_service
+              - role: orders_service
             update:
-              - name: orders_service
+              - role: orders_service
             delete:
-              - name: orders_service
+              - role: orders_service
           sequences:
             usage:
-              - name: orders_service
+              - role: orders_service
             select:
-              - name: orders_service
+              - role: orders_service

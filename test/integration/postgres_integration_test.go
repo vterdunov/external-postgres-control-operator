@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"os"
 	"time"
@@ -58,6 +59,21 @@ var _ = Describe("PostgreSQL fixtures", func() {
 		err := fixture.Limited.QueryRowContext(ctx, "SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()").Scan(&ssl)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ssl).To(BeTrue())
+		var fsync, synchronousCommit string
+		Expect(fixture.Admin.QueryRowContext(ctx,
+			"SELECT current_setting('fsync'),current_setting('synchronous_commit')").
+			Scan(&fsync, &synchronousCommit)).To(Succeed())
+		Expect(fsync).To(Equal("on"))
+		Expect(synchronousCommit).To(Equal("on"))
+		var dataDirectory string
+		Expect(fixture.Admin.QueryRowContext(ctx, "SHOW data_directory").Scan(&dataDirectory)).To(Succeed())
+		Expect(dataDirectory).To(Equal("/var/lib/postgresql/data"))
+		mountJSON, err := postgres.docker(ctx, "inspect", "--format", "{{json .Mounts}}", postgres.Container)
+		Expect(err).NotTo(HaveOccurred())
+		type dataMount struct{ Type, Destination string }
+		var mounts []dataMount
+		Expect(json.Unmarshal([]byte(mountJSON), &mounts)).To(Succeed())
+		Expect(mounts).To(ContainElement(dataMount{Type: "tmpfs", Destination: dataDirectory}))
 		err = fixture.Admin.QueryRowContext(ctx,
 			"SELECT rolsuper,rolcreatedb,rolcreaterole FROM pg_roles WHERE rolname=$1", fixture.Role).
 			Scan(&superuser, &createdb, &createrole)

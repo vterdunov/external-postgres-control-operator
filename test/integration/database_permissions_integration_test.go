@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"database/sql"
+	"encoding/json/v2"
 	"errors"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -100,7 +102,7 @@ func (f *r3SQLFixture) ready(ctx context.Context) {
 }
 
 func r3Permissions(name string, ensure epco.EnsureOption) []epco.Permission {
-	return []epco.Permission{{Name: epco.SQLName(name), Ensure: ensure}}
+	return []epco.Permission{{Role: epco.SQLName(name), Ensure: ensure}}
 }
 
 // Catalog assertions distinguish direct grants from inherited/effective rights.
@@ -249,6 +251,122 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 		Expect(err).NotTo(HaveOccurred())
 		fixture.exec(ctx, "CREATE SCHEMA app AUTHORIZATION "+quoteIdentifier(base.Role))
 		Expect(scope.Create(ctx, fixture.database)).To(Succeed())
+	}, NodeTimeout(30*time.Second))
+
+	It("preserves role-rule history through regrouping narrowing and withdrawal", func(ctx SpecContext) {
+		fixture.table(ctx, "customers")
+		fixture.table(ctx, "orders")
+		setRules := func(rules string) {
+			fixture.update(ctx, func(spec *epco.DatabaseSpec) {
+				var selected epco.SchemaSpec
+				Expect(json.Unmarshal([]byte(`{"name":"app","tablePermissions":`+rules+`}`), &selected)).To(Succeed())
+				spec.Schemas[0].TablePermissions = selected.TablePermissions
+			})
+		}
+		setRules(`[{"role":"` + fixture.reader + `","tables":["customers","orders"],"privileges":["select","insert"]}]`)
+		fixture.ready(ctx)
+		before := recoveredDatabase(ctx, environment.Client, fixture.database)
+		Expect(before.Status.ManagedACLTargets).To(HaveLen(1))
+		Expect(before.Status.ManagedACLTargets[0].Bindings).To(HaveLen(4))
+		setRules(`[{"role":"` + fixture.reader + `","tables":["orders","customers"],"privileges":["insert"]},` +
+			`{"role":"` + fixture.reader + `","tables":["customers","orders"],"privileges":["select"]}]`)
+		fixture.ready(ctx)
+		after := recoveredDatabase(ctx, environment.Client, fixture.database)
+		Expect(after.UID).To(Equal(before.UID))
+		Expect(after.Status.ManagedACLTargets[0].Bindings).To(HaveLen(4))
+		for _, old := range before.Status.ManagedACLTargets[0].Bindings {
+			Expect(after.Status.ManagedACLTargets[0].Bindings).To(ContainElement(SatisfyAll(
+				HaveField("Declaration", old.Declaration), HaveField("GrantorOID", old.GrantorOID),
+				HaveField("ObjectOID", old.ObjectOID), HaveField("Before", old.Before),
+				HaveField("BindingRevision", old.BindingRevision))), "semantic regrouping must retain cleanup provenance")
+		}
+		setRules(`[{"role":"` + fixture.reader + `","tables":["orders"],"privileges":["select"]}]`)
+		fixture.ready(ctx)
+		Expect(fixture.direct(ctx, "table", "app.customers", fixture.reader, "SELECT")).To(BeFalse())
+		Expect(fixture.direct(ctx, "table", "app.customers", fixture.reader, "INSERT")).To(BeFalse())
+		Expect(fixture.direct(ctx, "table", "app.orders", fixture.reader, "SELECT")).To(BeTrue())
+		Expect(fixture.direct(ctx, "table", "app.orders", fixture.reader, "INSERT")).To(BeFalse())
+		setRules(`[{"role":"` + fixture.reader + `","privileges":["select"]}]`)
+		fixture.ready(ctx)
+		Expect(fixture.direct(ctx, "table", "app.customers", fixture.reader, "SELECT")).To(BeTrue())
+		fixture.table(ctx, "later")
+		fixture.ready(ctx)
+		Expect(fixture.direct(ctx, "table", "app.later", fixture.reader, "SELECT")).To(BeTrue())
+		setRules(`[{"role":"` + fixture.reader + `","tables":["orders"],"privileges":["select"]}]`)
+		fixture.ready(ctx)
+		Expect(fixture.direct(ctx, "table", "app.customers", fixture.reader, "SELECT")).To(BeFalse())
+		Expect(fixture.direct(ctx, "table", "app.later", fixture.reader, "SELECT")).To(BeFalse())
+		Expect(fixture.direct(ctx, "table", "app.orders", fixture.reader, "SELECT")).To(BeTrue())
+		setRules(`[]`)
+		fixture.ready(ctx)
+		Expect(fixture.direct(ctx, "table", "app.orders", fixture.reader, "SELECT")).To(BeFalse())
+		for _, table := range []string{"customers", "orders", "later"} {
+			var value int
+			Expect(fixture.target.QueryRowContext(ctx,
+				"SELECT value FROM app."+quoteIdentifier(table)).Scan(&value)).To(Succeed())
+			Expect(value).To(Equal(42), "permission withdrawal must retain table data")
+		}
+	}, NodeTimeout(40*time.Second))
+
+	It("recovers a committed table-rule grant after failed completion and withdrawal", func(ctx SpecContext) {
+		fixture.table(ctx, "pending_rule")
+		fixture.ready(ctx)
+		fixture.update(ctx, func(spec *epco.DatabaseSpec) {
+			var selected epco.SchemaSpec
+			Expect(json.Unmarshal([]byte(`{"name":"app","tablePermissions":[{"role":"`+fixture.reader+
+				`","tables":["pending_rule"],"privileges":["select"]}]}`), &selected)).To(Succeed())
+			spec.Schemas[0].TablePermissions = selected.TablePermissions
+		})
+		blocked := &r3StatusClient{Client: environment.Client, reject: func(*epco.Database) bool { return true }}
+		reconciler := databaseRecoveryReconciler(blocked, pg.NewDatabaseFactory())
+		Eventually(func() bool {
+			_, _ = reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(fixture.database)})
+			return blocked.failed.Load() > 0
+		}).WithContext(ctx).WithTimeout(5 * time.Second).Should(BeTrue())
+		Expect(fixture.direct(ctx, "table", "app.pending_rule", fixture.reader, "SELECT")).To(BeFalse())
+		completed := &r3StatusClient{Client: environment.Client, reject: func(*epco.Database) bool {
+			return fixture.direct(ctx, "table", "app.pending_rule", fixture.reader, "SELECT")
+		}}
+		reconciler = databaseRecoveryReconciler(completed, pg.NewDatabaseFactory())
+		Eventually(func() bool {
+			_, _ = reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(fixture.database)})
+			return completed.failed.Load() > 0
+		}).WithContext(ctx).WithTimeout(5 * time.Second).Should(BeTrue())
+		Expect(fixture.direct(ctx, "table", "app.pending_rule", fixture.reader, "SELECT")).To(BeTrue())
+		current := recoveredDatabase(ctx, environment.Client, fixture.database)
+		Expect(current.Status.ManagedACLTargets[0].Bindings).NotTo(BeEmpty())
+		uid := current.UID
+		fixture.update(ctx, func(spec *epco.DatabaseSpec) { spec.Schemas[0].TablePermissions = nil })
+		fixture.ready(ctx)
+		Expect(fixture.direct(ctx, "table", "app.pending_rule", fixture.reader, "SELECT")).To(BeFalse(),
+			"a new reconciler must use current rules to clean up persisted pending intent")
+		Expect(recoveredDatabase(ctx, environment.Client, fixture.database).UID).To(Equal(uid))
+	}, NodeTimeout(35*time.Second))
+
+	It("rejects persisted null table selectors before lifecycle or ACL SQL", func(ctx SpecContext) {
+		fixture.table(ctx, "null_selector")
+		fixture.ready(ctx)
+		before := recoveredDatabase(ctx, environment.Client, fixture.database)
+		var originalLimit int64
+		const query = "SELECT datconnlimit FROM pg_database WHERE datname=$1"
+		Expect(fixture.Admin.QueryRowContext(ctx, query,
+			string(fixture.database.Spec.Name)).Scan(&originalLimit)).To(Succeed())
+		object := &unstructured.Unstructured{}
+		object.SetGroupVersionKind(epco.GroupVersion.WithKind("Database"))
+		Expect(environment.Client.Get(ctx, client.ObjectKeyFromObject(fixture.database), object)).To(Succeed())
+		Expect(unstructured.SetNestedSlice(object.Object, []any{map[string]any{
+			"name": databaseRecoveryApplicationName, "tablePermissions": []any{map[string]any{
+				"role": fixture.reader, "tables": nil, "privileges": []any{"select"}}}}}, "spec", "schemas")).To(Succeed())
+		Expect(unstructured.SetNestedField(object.Object, originalLimit+7, "spec", "connectionLimit")).To(Succeed())
+		Expect(environment.Client.Update(ctx, object)).To(Succeed())
+		current := fixture.pending(ctx, pg.InvalidConfiguration)
+		Expect(current.Status.AppliedGeneration).To(Equal(before.Status.AppliedGeneration))
+		Expect(current.Status.ManagedACLTargets).To(Equal(before.Status.ManagedACLTargets))
+		var actualLimit int64
+		Expect(fixture.Admin.QueryRowContext(ctx, query, string(fixture.database.Spec.Name)).Scan(&actualLimit)).To(Succeed())
+		Expect(actualLimit).To(Equal(originalLimit), "invalid selector preflight must precede database lifecycle mutation")
+		Expect(fixture.direct(ctx, "table", "app.null_selector", fixture.reader, "SELECT")).To(BeFalse(),
+			"explicit null must never widen into a schema-wide SELECT grant")
 	}, NodeTimeout(30*time.Second))
 
 	It("grants exactly declared database and schema privileges and repairs drift", func(ctx SpecContext) {
@@ -436,9 +554,12 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 		fixture.update(ctx, func(spec *epco.DatabaseSpec) {
 			p := r3Permissions(fixture.reader, epco.EnsurePresent)
 			spec.Schemas[0].Permissions = &epco.SchemaPermissions{Usage: p,
-				Tables: &epco.TablePermissions{Select: p, Insert: p, Update: p, Delete: p,
-					Truncate: p, References: p, Trigger: p},
 				Sequences: &epco.SequencePermissions{Usage: p, Select: p, Update: p}}
+			spec.Schemas[0].TablePermissions = tablePermissionRules(
+				nil,
+				epco.TablePermissions{
+					Select: p, Insert: p, Update: p, Delete: p, Truncate: p, References: p, Trigger: p},
+			)
 		})
 		fixture.ready(ctx)
 		for _, privilege := range []string{"SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"} {
@@ -556,8 +677,10 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 			spec.Schemas[0].Permissions = &epco.SchemaPermissions{Usage: r3Permissions(fixture.reader, epco.EnsurePresent)}
 			for _, name := range []string{r3AllowedTable, "also_allowed"} {
 				spec.Schemas[0].TablePermissions = append(spec.Schemas[0].TablePermissions,
-					epco.NamedTablePermissions{Name: epco.SQLName(name),
-						Permissions: epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)}})
+					tablePermissionRules(
+						[]epco.SQLName{epco.SQLName(name)},
+						epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)},
+					)...)
 			}
 		})
 		fixture.ready(ctx)
@@ -585,8 +708,10 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 
 	It("keeps lifecycle ownership while a named table is missing and converges when it appears", func(ctx SpecContext) {
 		fixture.update(ctx, func(spec *epco.DatabaseSpec) {
-			spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: r3MissingTable,
-				Permissions: epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)}}}
+			spec.Schemas[0].TablePermissions = tablePermissionRules(
+				[]epco.SQLName{r3MissingTable},
+				epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)},
+			)
 		})
 		current := fixture.pending(ctx, "DependenciesNotReady")
 		Expect(current.Status.HasManagedSQL).To(BeTrue(),
@@ -606,8 +731,10 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 		fixture.ready(ctx)
 		Expect(fixture.direct(ctx, "table", "app.r3_missing", fixture.reader, "SELECT")).To(BeTrue())
 		fixture.update(ctx, func(spec *epco.DatabaseSpec) {
-			spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: "only_absent",
-				Permissions: epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsureAbsent)}}}
+			spec.Schemas[0].TablePermissions = tablePermissionRules(
+				[]epco.SQLName{"only_absent"},
+				epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsureAbsent)},
+			)
 		})
 		fixture.ready(ctx)
 		Expect(fixture.direct(ctx, "table", "app.r3_missing", fixture.reader, "SELECT")).To(BeFalse())
@@ -616,8 +743,10 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 	It("follows renamed managed bindings for cleanup and treats DROP/recreate as a new table", func(ctx SpecContext) {
 		fixture.table(ctx, r3AllowedTable)
 		fixture.update(ctx, func(spec *epco.DatabaseSpec) {
-			spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: r3AllowedTable,
-				Permissions: epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)}}}
+			spec.Schemas[0].TablePermissions = tablePermissionRules(
+				[]epco.SQLName{r3AllowedTable},
+				epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)},
+			)
 		})
 		fixture.ready(ctx)
 		fixture.exec(ctx, "ALTER TABLE app.r3_allowed RENAME TO renamed")
@@ -647,8 +776,10 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 					spec.DefaultPrivileges = []epco.DefaultPrivileges{{ForRole: epco.SQLName(fixture.Role),
 						Tables: &epco.TablePermissions{Select: p, Maintain: p}}}
 				} else {
-					spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: "maintenance",
-						Permissions: epco.TablePermissions{Select: p, Maintain: p}}}
+					spec.Schemas[0].TablePermissions = tablePermissionRules(
+						[]epco.SQLName{"maintenance"},
+						epco.TablePermissions{Select: p, Maintain: p},
+					)
 				}
 			})
 			if fixture.version < 170000 {
@@ -688,8 +819,10 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 				" WITH GRANT OPTION")
 			fixture.update(ctx, func(spec *epco.DatabaseSpec) {
 				p := r3Permissions(fixture.reader, epco.EnsurePresent)
-				spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: "partial",
-					Permissions: epco.TablePermissions{Select: p, Insert: p}}}
+				spec.Schemas[0].TablePermissions = tablePermissionRules(
+					[]epco.SQLName{"partial"},
+					epco.TablePermissions{Select: p, Insert: p},
+				)
 			})
 			fixture.pending(ctx, "InsufficientPrivileges")
 			Expect(fixture.direct(ctx, "table", "app.partial", fixture.reader, "INSERT")).To(BeFalse())
@@ -727,8 +860,10 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 		}
 		Expect(count()).To(Equal(2))
 		fixture.update(ctx, func(spec *epco.DatabaseSpec) {
-			spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: "multiple_grantors",
-				Permissions: epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)}}}
+			spec.Schemas[0].TablePermissions = tablePermissionRules(
+				[]epco.SQLName{"multiple_grantors"},
+				epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)},
+			)
 		})
 		fixture.ready(ctx)
 		fixture.update(ctx, func(spec *epco.DatabaseSpec) { spec.Schemas[0].TablePermissions = nil })
@@ -748,8 +883,10 @@ var _ = Describe("R3 declarative permissions with real API and PostgreSQL", Orde
 			" WITH GRANT OPTION; RESET ROLE; SET ROLE "+quoteIdentifier(fixture.reader)+
 			"; GRANT SELECT ON app.dependent TO "+quoteIdentifier(fixture.other)+"; RESET ROLE")
 		fixture.update(ctx, func(spec *epco.DatabaseSpec) {
-			spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: "dependent",
-				Permissions: epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)}}}
+			spec.Schemas[0].TablePermissions = tablePermissionRules(
+				[]epco.SQLName{"dependent"},
+				epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)},
+			)
 		})
 		fixture.ready(ctx)
 		fixture.update(ctx, func(spec *epco.DatabaseSpec) { spec.Schemas[0].TablePermissions = nil })

@@ -8,17 +8,20 @@ import (
 	"errors"
 	"net"
 	"os"
-	"path/filepath"
+	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	epco "github.com/vterdunov/external-postgres-control-operator/api/v1alpha1"
 	pgcheck "github.com/vterdunov/external-postgres-control-operator/internal/postgres"
+	"github.com/vterdunov/external-postgres-control-operator/test/utils"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -95,8 +98,96 @@ func failureReason(err error) string {
 	}
 	return ""
 }
+
+func recordFixtureAuthentication(ctx context.Context, f *Fixture, policy, stage string) {
+	diagnostic, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var hbaPath, dataDirectory string
+	var loaded time.Time
+	err := f.Server.Admin.QueryRowContext(diagnostic,
+		"SELECT current_setting('hba_file'), current_setting('data_directory'), pg_conf_load_time()").
+		Scan(&hbaPath, &dataDirectory, &loaded)
+	GinkgoWriter.Printf("HBA fixture policy=%s stage=%s same_server=%t hba_file=%q data_directory=%q "+
+		"backend_config_load_time=%s metadata_error_type=%T sqlstate=%q\n",
+		policy, stage, f.Server == postgres, hbaPath, dataDirectory,
+		loaded.UTC().Format(time.RFC3339Nano), err, SQLState(err))
+	// This view describes disk contents, not proof of the last successfully loaded rules.
+	rows, err := f.Server.Admin.QueryContext(diagnostic, `SELECT line_number, type, COALESCE(address,''),
+	 COALESCE(netmask,''), auth_method, COALESCE('clientcert=verify-ca'=ANY(options),false), error IS NULL
+	 FROM pg_hba_file_rules WHERE $1=ANY(database) AND $2=ANY(user_name) ORDER BY line_number`, f.Database, f.Role)
+	if err != nil {
+		GinkgoWriter.Printf("HBA fixture policy=%s stage=%s row_query_error_type=%T sqlstate=%q\n",
+			policy, stage, err, SQLState(err))
+		return
+	}
+	defer func() { _ = rows.Close() }()
+	var count, rejected, certificates int
+	for rows.Next() {
+		var line int
+		var transport, address, mask, authentication string
+		var certificate, valid bool
+		if err := rows.Scan(&line, &transport, &address, &mask, &authentication, &certificate, &valid); err != nil {
+			GinkgoWriter.Printf("HBA fixture policy=%s stage=%s row_decode_error_type=%T\n", policy, stage, err)
+			return
+		}
+		count++
+		if authentication == "reject" {
+			rejected++
+		}
+		if certificate {
+			certificates++
+		}
+		family := "ipv4"
+		if strings.Contains(address, ":") {
+			family = "ipv6"
+		} else if address == "all" || address == "" {
+			family = "any-or-local"
+		}
+		GinkgoWriter.Printf("HBA fixture policy=%s stage=%s line=%d transport=%s address=%q netmask=%q "+
+			"address_family=%s authentication=%s clientcert_verify_ca=%t valid=%t\n",
+			policy, stage, line, transport, address, mask, family, authentication, certificate, valid)
+	}
+	expectedCertificates := 0
+	if policy == "client-cert" {
+		expectedCertificates = 1
+	}
+	GinkgoWriter.Printf("HBA fixture policy=%s stage=%s fixture_rows=%d reject_rows=%d expected_reject_rows=1 "+
+		"clientcert_rows=%d expected_clientcert_rows=%d row_error_type=%T\n",
+		policy, stage, count, rejected, certificates, expectedCertificates, rows.Err())
+}
+
+func recordFixtureAuthenticationCandidate(ctx context.Context, f *Fixture, mode string) {
+	config := productionConfig(f, mode, false)
+	connect, cancel := context.WithTimeout(ctx, config.ConnectTimeout)
+	candidate, err := pgx.ConnectConfig(connect, config.Connection.Copy())
+	cancel()
+	GinkgoWriter.Printf("HBA fresh candidate mode=%s connected=%t error_type=%T reason=%q sqlstate=%q "+
+		"deadline_exceeded=%t canceled=%t\n", mode, err == nil, err, failureReason(err), SQLState(err),
+		errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled))
+	if err != nil {
+		return
+	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = candidate.Close(cleanup)
+	}()
+	query, cancel := context.WithTimeout(ctx, config.StatementTimeout)
+	defer cancel()
+	var address, role, database string
+	var family int
+	var encrypted bool
+	err = candidate.QueryRow(query, `SELECT COALESCE(inet_client_addr()::text,''),
+	 COALESCE(family(inet_client_addr()),0), current_user, current_database(),
+	 COALESCE((SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()),false)`).
+		Scan(&address, &family, &role, &database, &encrypted)
+	GinkgoWriter.Printf("HBA fresh candidate mode=%s backend_pid=%d client_address=%q address_family=%d "+
+		"sql_role=%q sql_database=%q ssl=%t metadata_error_type=%T sqlstate=%q\n",
+		mode, candidate.PgConn().PID(), address, family, role, database, encrypted, err, SQLState(err))
+}
+
 func setFixtureAuthentication(ctx context.Context, f *Fixture, policy string) {
-	fixtureDir := GinkgoT().TempDir()
+	server := f.Server
 	// Match only this fixture; suite administrator and other fixtures remain usable.
 	var rule string
 	switch policy {
@@ -108,42 +199,30 @@ func setFixtureAuthentication(ctx context.Context, f *Fixture, policy string) {
 	case "tls":
 		rule = "hostnossl " + f.Database + " " + f.Role + " 0.0.0.0/0 reject\n"
 	}
-	var original string
-	Expect(postgres.Admin.QueryRowContext(ctx, "SELECT pg_read_file('pg_hba.conf')").Scan(&original)).To(Succeed())
-	write := func(content string) {
-		path := filepath.Join(fixtureDir, "pg_hba.conf")
-		Expect(os.WriteFile(path, []byte(content), 0600)).To(Succeed())
-		_, err := postgres.docker(ctx, "cp", path, postgres.Container+":/var/lib/postgresql/data/pg_hba.conf")
+	var hbaPath, original string
+	Expect(server.Admin.QueryRowContext(ctx,
+		"SELECT current_setting('hba_file'), pg_read_file(current_setting('hba_file'))").
+		Scan(&hbaPath, &original)).To(Succeed())
+	write := func(ctx context.Context, content string) {
+		// Docker archive copies do not reach PGDATA's mounted tmpfs. Write from
+		// inside the container, preserving the active file's owner and permissions.
+		command := exec.CommandContext(ctx, "docker", "exec", "-i", "--user", "postgres", server.Container,
+			"sh", "-c", `cat > "$1"`, "sh", hbaPath)
+		command.Stdin = strings.NewReader(content)
+		_, err := utils.Run(command)
 		Expect(err).NotTo(HaveOccurred())
-		_,
-			err = postgres.docker(ctx,
-			"exec",
-			postgres.Container,
-			"chown",
-			"postgres:postgres",
-			"/var/lib/postgresql/data/pg_hba.conf")
-		Expect(err).NotTo(HaveOccurred())
-		_, err = postgres.Admin.ExecContext(ctx, "SELECT pg_reload_conf()")
+		var observed string
+		Expect(server.Admin.QueryRowContext(ctx, "SELECT pg_read_file($1)", hbaPath).Scan(&observed)).To(Succeed())
+		matches := observed == content
+		Expect(matches).To(BeTrue(), "the active HBA file must contain the intended fixture policy")
+		_, err = server.Admin.ExecContext(ctx, "SELECT pg_reload_conf()")
 		Expect(err).NotTo(HaveOccurred())
 	}
-	write(rule + original)
+	recordFixtureAuthentication(ctx, f, policy, "before-reload")
 	DeferCleanup(func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		path := filepath.Join(fixtureDir, "pg_hba.conf")
-		Expect(os.WriteFile(path, []byte(original), 0600)).To(Succeed())
-		_, err := postgres.docker(cleanup, "cp", path, postgres.Container+":/var/lib/postgresql/data/pg_hba.conf")
-		Expect(err).NotTo(HaveOccurred())
-		_,
-			err = postgres.docker(cleanup,
-			"exec",
-			postgres.Container,
-			"chown",
-			"postgres:postgres",
-			"/var/lib/postgresql/data/pg_hba.conf")
-		Expect(err).NotTo(HaveOccurred())
-		_, err = postgres.Admin.ExecContext(cleanup, "SELECT pg_reload_conf()")
-		Expect(err).NotTo(HaveOccurred())
+		write(cleanup, original)
 		Eventually(func() error {
 			return pgcheck.NewChecker().Check(cleanup,
 				productionConfig(f,
@@ -151,19 +230,32 @@ func setFixtureAuthentication(ctx context.Context, f *Fixture, policy string) {
 					false))
 		}).WithContext(cleanup).WithTimeout(5 * time.Second).Should(Succeed())
 	})
+	write(ctx, rule+original)
 	// Reload signals are processed asynchronously; verify the desired rule is parsed.
 	Eventually(func() bool {
 		var valid bool
-		err := postgres.Admin.QueryRowContext(ctx,
+		err := server.Admin.QueryRowContext(ctx,
 			"SELECT count(*)>0 AND bool_and(error IS NULL) FROM pg_hba_file_rules").Scan(&valid)
 		return err == nil && valid
 	}).WithContext(ctx).Should(BeTrue())
+	recordFixtureAuthentication(ctx, f, policy, "after-reload-disk-rules")
 	forbiddenMode := "disable"
 	if policy == "plaintext" {
 		forbiddenMode = tlsRequire
 	}
+	recordedCandidate := false
 	Eventually(func() string {
-		return failureReason(pgcheck.NewChecker().Check(ctx, productionConfig(f, forbiddenMode, false)))
+		err := pgcheck.NewChecker().Check(ctx, productionConfig(f, forbiddenMode, false))
+		reason := failureReason(err)
+		GinkgoWriter.Printf("HBA forbidden checker policy=%s mode=%s error_nil=%t error_type=%T reason=%q "+
+			"sqlstate=%q deadline_exceeded=%t canceled=%t\n", policy, forbiddenMode, err == nil, err, reason, SQLState(err),
+			errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled))
+		if err == nil && !recordedCandidate {
+			recordedCandidate = true
+			recordFixtureAuthentication(ctx, f, policy, "forbidden-checker-success")
+			recordFixtureAuthenticationCandidate(ctx, f, forbiddenMode)
+		}
+		return reason
 	}).WithContext(ctx).WithTimeout(5 * time.Second).Should(Equal("ConnectionUnavailable"))
 }
 

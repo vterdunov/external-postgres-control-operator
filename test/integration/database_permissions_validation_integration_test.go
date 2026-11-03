@@ -140,8 +140,10 @@ var _ = Describe("R3 independent grantor provenance validation", Ordered, Contin
 
 	declareReader := func(ctx context.Context) {
 		fixture.update(ctx, func(spec *epco.DatabaseSpec) {
-			spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: validationGrantorTable,
-				Permissions: epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)}}}
+			spec.Schemas[0].TablePermissions = tablePermissionRules(
+				[]epco.SQLName{validationGrantorTable},
+				epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)},
+			)
 		})
 	}
 
@@ -163,10 +165,15 @@ var _ = Describe("R3 independent grantor provenance validation", Ordered, Contin
 			fixture.update(ctx, func(spec *epco.DatabaseSpec) {
 				spec.ConnectionLimit = new(originalLimit + 7)
 				spec.Permissions = &epco.DatabasePermissions{Create: r3Permissions(fixture.reader, epco.EnsurePresent)}
-				spec.Schemas[0].Permissions = &epco.SchemaPermissions{
-					Tables: &epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)}}
-				spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: variation.table,
-					Permissions: epco.TablePermissions{Select: r3Permissions(fixture.reader, variation.ensure)}}}
+				spec.Schemas[0].TablePermissions = append(
+					tablePermissionRules(
+						nil,
+						epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsurePresent)},
+					),
+					tablePermissionRules(
+						[]epco.SQLName{variation.table},
+						epco.TablePermissions{Select: r3Permissions(fixture.reader, variation.ensure)},
+					)...)
 			})
 			current := fixture.pending(ctx, pg.InvalidConfiguration)
 			Expect(current.Status.AppliedGeneration).To(Equal(before.Status.AppliedGeneration))
@@ -287,8 +294,10 @@ var _ = Describe("R3 independent grantor provenance validation", Ordered, Contin
 				Tables: &epco.TablePermissions{Select: r3Permissions(fixture.Role, epco.EnsureAbsent)}}}
 			spec.Schemas = []epco.SchemaSpec{{Name: r3Schema,
 				Permissions: &epco.SchemaPermissions{Usage: r3Permissions(fixture.Role, epco.EnsureAbsent)},
-				TablePermissions: []epco.NamedTablePermissions{{Name: validationGrantorTable,
-					Permissions: epco.TablePermissions{Select: r3Permissions(fixture.Role, epco.EnsureAbsent)}}},
+				TablePermissions: tablePermissionRules(
+					[]epco.SQLName{validationGrantorTable},
+					epco.TablePermissions{Select: r3Permissions(fixture.Role, epco.EnsureAbsent)},
+				),
 				DefaultPrivileges: []epco.DefaultPrivileges{{ForRole: epco.SQLName(fixture.Role),
 					Tables: &epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsureAbsent)}}}}}
 		})
@@ -378,8 +387,10 @@ var _ = Describe("R3 independent grantor provenance validation", Ordered, Contin
 		Expect(condition.Reason).To(Equal(pg.ACLBindingUnresolved))
 		Expect(current.Status.ManagedACLTargets).NotTo(BeEmpty())
 		fixture.update(ctx, func(spec *epco.DatabaseSpec) {
-			spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: validationGrantorTable,
-				Permissions: epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsureAbsent)}}}
+			spec.Schemas[0].TablePermissions = tablePermissionRules(
+				[]epco.SQLName{validationGrantorTable},
+				epco.TablePermissions{Select: r3Permissions(fixture.reader, epco.EnsureAbsent)},
+			)
 		})
 		fixture.ready(ctx)
 		Expect(validationGrantorRow(ctx, fixture, fixture.other)).To(BeFalse(),

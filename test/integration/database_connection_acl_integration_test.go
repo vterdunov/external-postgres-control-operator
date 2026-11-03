@@ -57,8 +57,10 @@ var _ = Describe("R4 connection refresh preserves R3 owner and child ACL respons
 				spec.Permissions = &epco.DatabasePermissions{Connect: grants, Create: grants, Temporary: grants}
 				spec.Schemas = []epco.SchemaSpec{{Name: databaseRecoveryApplicationName,
 					Permissions: &epco.SchemaPermissions{Usage: grants},
-					TablePermissions: []epco.NamedTablePermissions{{Name: "managed_values",
-						Permissions: epco.TablePermissions{Select: grants}}},
+					TablePermissions: tablePermissionRules(
+						[]epco.SQLName{"managed_values"},
+						epco.TablePermissions{Select: grants},
+					),
 					DefaultPrivileges: []epco.DefaultPrivileges{{ForRole: roleSQLAdmin,
 						Tables: &epco.TablePermissions{Select: grants}}}}}
 			})

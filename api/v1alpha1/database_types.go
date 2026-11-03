@@ -161,7 +161,7 @@ type SchemaSpec struct {
 	// Owner is applied explicitly; new schemas otherwise use the database owner.
 	// +optional
 	Owner SQLName `json:"owner,omitempty"`
-	// Permissions manages schema, all-table, and all-sequence grants.
+	// Permissions manages schema and all-sequence grants.
 	// +optional
 	Permissions *SchemaPermissions `json:"permissions,omitempty"`
 	// DefaultPrivileges contains schema-local defaults for actual creator roles.
@@ -169,11 +169,11 @@ type SchemaSpec struct {
 	// +listMapKey=forRole
 	// +optional
 	DefaultPrivileges []DefaultPrivileges `json:"defaultPrivileges,omitempty"`
-	// TablePermissions targets existing named tables without managing their DDL.
-	// +listType=map
-	// +listMapKey=name
+	// TablePermissions declares role privileges on named tables or all tables by omission.
+	// Rules are atomic for apply ownership and may repeat a role with disjoint tuples.
+	// +listType=atomic
 	// +optional
-	TablePermissions []NamedTablePermissions `json:"tablePermissions,omitempty"`
+	TablePermissions []TablePermissionRule `json:"tablePermissions,omitempty"`
 }
 
 // ExtensionSpec declares a PostgreSQL extension.

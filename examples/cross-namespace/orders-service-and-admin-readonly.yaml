@@ -46,28 +46,28 @@ spec:
         name: orders-admin-readonly
   permissions:
     connect:
-      - name: public
+      - role: public
         ensure: absent
-      - name: orders_service
-      - name: orders_admin_readonly
+      - role: orders_service
+      - role: orders_admin_readonly
     temporary:
-      - name: public
+      - role: public
         ensure: absent
   schemas:
     - name: public
       owner: orders_service
       permissions:
         usage:
-          - name: orders_service
-          - name: orders_admin_readonly
+          - role: orders_service
+          - role: orders_admin_readonly
         create:
-          - name: public
+          - role: public
             ensure: absent
-        tables:
-          select:
-            - name: orders_admin_readonly
+      tablePermissions:
+        - role: orders_admin_readonly
+          privileges: [select]
       defaultPrivileges:
         - forRole: orders_service
           tables:
             select:
-              - name: orders_admin_readonly
+              - role: orders_admin_readonly

@@ -162,7 +162,7 @@ var _ = Describe("R3 Database ACL durable recovery", Ordered, ContinueOnFailure,
 
 	setCreate := func(ctx context.Context) {
 		database = recoveredDatabase(ctx, environment.Client, database)
-		database.Spec.Permissions = &epco.DatabasePermissions{Create: []epco.Permission{{Name: epco.SQLName(grantee)}}}
+		database.Spec.Permissions = &epco.DatabasePermissions{Create: []epco.Permission{{Role: epco.SQLName(grantee)}}}
 		Expect(environment.Client.Update(ctx, database)).To(Succeed())
 	}
 
@@ -256,7 +256,7 @@ var _ = Describe("R3 Database ACL durable recovery", Ordered, ContinueOnFailure,
 		Expect(permissionRecoveryHistory(replacement)).To(BeEmpty())
 		Expect(permissionDatabaseGrant(ctx, fixture, string(spec.Name), grantee, "CREATE")).To(BeTrue())
 		replacement.Spec.Permissions = &epco.DatabasePermissions{Create: []epco.Permission{{
-			Name: epco.SQLName(grantee), Ensure: epco.EnsureAbsent}}}
+			Role: epco.SQLName(grantee), Ensure: epco.EnsureAbsent}}}
 		Expect(environment.Client.Update(ctx, replacement)).To(Succeed())
 		recoverDatabaseReady(ctx, environment.Client,
 			databaseRecoveryReconciler(environment.Client, pg.NewDatabaseFactory()), replacement)
@@ -268,10 +268,12 @@ var _ = Describe("R3 Database ACL durable recovery", Ordered, ContinueOnFailure,
 		r := databaseRecoveryReconciler(environment.Client, pg.NewDatabaseFactory())
 		recoveryDatabaseGone(ctx, environment.Client, r, database)
 		database = &epco.Database{Name: database.Name, Namespace: database.Namespace, Spec: database.Spec}
-		database.Spec.Schemas[0].TablePermissions = []epco.NamedTablePermissions{{Name: "missing",
-			Permissions: epco.TablePermissions{Select: []epco.Permission{{Name: epco.SQLName(grantee)}}}}}
+		database.Spec.Schemas[0].TablePermissions = tablePermissionRules(
+			[]epco.SQLName{"missing"},
+			epco.TablePermissions{Select: []epco.Permission{{Role: epco.SQLName(grantee)}}},
+		)
 		database.Spec.Schemas[0].DefaultPrivileges = []epco.DefaultPrivileges{{ForRole: epco.SQLName(fixture.Role),
-			Tables: &epco.TablePermissions{Select: []epco.Permission{{Name: epco.SQLName(grantee)}}}}}
+			Tables: &epco.TablePermissions{Select: []epco.Permission{{Role: epco.SQLName(grantee)}}}}}
 		Expect(scope.Create(ctx, database)).To(Succeed())
 		Eventually(func(g Gomega) {
 			_, reconcileErr := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(database)})
@@ -313,7 +315,7 @@ var _ = Describe("R3 Database ACL durable recovery", Ordered, ContinueOnFailure,
 	It("cleans omitted schema grants while preserving schema and data", func(ctx SpecContext) {
 		database = recoveredDatabase(ctx, environment.Client, database)
 		database.Spec.Schemas[0].Permissions = &epco.SchemaPermissions{
-			Usage: []epco.Permission{{Name: epco.SQLName(grantee)}}}
+			Usage: []epco.Permission{{Role: epco.SQLName(grantee)}}}
 		Expect(environment.Client.Update(ctx, database)).To(Succeed())
 		database = recoverDatabaseReady(ctx, environment.Client,
 			databaseRecoveryReconciler(environment.Client, pg.NewDatabaseFactory()), database)
@@ -488,9 +490,12 @@ var _ = Describe("R3 Database ACL durable recovery", Ordered, ContinueOnFailure,
 			"END LOOP; END $fixture$")
 		Expect(err).NotTo(HaveOccurred())
 		database = recoveredDatabase(ctx, environment.Client, database)
-		database.Spec.Schemas[0].Permissions = &epco.SchemaPermissions{Tables: &epco.TablePermissions{
-			Select: []epco.Permission{{Name: epco.SQLName(grantee)}},
-			Insert: []epco.Permission{{Name: epco.SQLName(grantee)}}}}
+		database.Spec.Schemas[0].TablePermissions = tablePermissionRules(
+			nil,
+			epco.TablePermissions{
+				Select: []epco.Permission{{Role: epco.SQLName(grantee)}},
+				Insert: []epco.Permission{{Role: epco.SQLName(grantee)}}},
+		)
 		Expect(environment.Client.Update(ctx, database)).To(Succeed())
 		permissionRecoveryReconcile(ctx, databaseRecoveryReconciler(environment.Client, pg.NewDatabaseFactory()), database)
 		database = recoveredDatabase(ctx, environment.Client, database)
