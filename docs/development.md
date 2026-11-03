@@ -105,6 +105,14 @@ On macOS, the integration and e2e suites use OrbStack's Docker-compatible runtim
 
 Each runner prints its random seed. Set `EPCO_TEST_SEED` to replay it and `EPCO_ARTIFACTS_DIR` to choose the report directory (default under ignored `artifacts/`). Failure diagnostics are retained before teardown; runners handle SIGINT/SIGTERM and clean only resources owned by that run. CI separates unit/race, envtest, generation, PostgreSQL 15/16 integration, and installed PostgreSQL 15-18 e2e. Scheduled/manual integration covers PostgreSQL 15-18 and repeated seeds. Reports and diagnostics are uploaded even on failure. Installed artifacts distinguish expected image pins from measured server/client versions; the stable E2E gate requires all server majors to pass. The isolated PostgreSQL fixture uses 100ms client connection polling and records its effective numeric interval before running scenarios, making closed client sockets observable during blocked SQL without promising server-side fencing.
 
+To replay the GitHub Tests workflow on a branch, pass its optional first seed:
+
+```sh
+mise exec -- gh workflow run test.yml --ref YOUR_BRANCH -f seed=1793726485
+```
+
+The override uses that seed and consecutive values while preserving the workflow's normal run counts and PostgreSQL matrix. Manual and scheduled runs still cover PostgreSQL 15-18 with three seeds; leaving the input blank keeps time-derived seeds. The input accepts nonnegative decimal values whose three-seed sequence fits a signed 64-bit integer, normalizes leading zeros, and rejects invalid values before running tests. It provides no command or test-filter input.
+
 ## API changes and generation
 
 Use the pinned Kubebuilder for subsequent scaffolding; the three baseline resources already exist. Keep scaffold markers and update the Go types and accepted API documentation together. Regenerate derived files by running `mise run generate` followed by `mise run manifests` instead of editing them manually. Run `mise run check-generated` and `mise run test-envtest` to verify the resulting schemas and admission rules.
