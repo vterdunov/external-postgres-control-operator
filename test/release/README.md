@@ -44,7 +44,11 @@ repository/source/ref, a completed successful `Runtime acceptance` job and the
 artifact's ownership and exact `release-runtime-<attempt>` name. The downloaded `release-runtime.json` binds the exact
 subjects and both source identities. The current release run may still be in
 progress while its runtime job has completed. Existing image-release proof is
-checked separately from the chart-source gates.
+checked separately from the chart-source gates. A chart run records its fresh
+lifecycle and a reference to the immutable image release's signed, durable
+`release-runtime.json` and eight-cell runtime matrix; it does not rerun the
+operator matrix. Older full-matrix chart evidence remains valid. The original
+image proof must be complete even if its Actions artifact has expired.
 
 External boundaries use normal `gh`, `crane`, `helm` and `cosign` executables
 from PATH. The fixtures record commands, source claims, authentication state,

@@ -440,6 +440,36 @@ def original_image(manifest, directory):
     return original['image']
 
 
+
+def durable_image_runtime(original, directory):
+    """Validate durable image acceptance after the immutable release is verified."""
+    message = 'image release lacks complete durable runtime proof; publish a new image release'
+    require(original.get('stream') == 'image', message)
+    payload = original.get('measured_runtime')
+    entries = [entry for entry in original.get('assets', []) if entry.get('kind') == 'runtime_evidence']
+    require(isinstance(payload, dict) and len(entries) == 1, message)
+    asset = asset_path(directory, entries[0].get('path'))
+    require(checksum(asset) == entries[0].get('sha256') and json.loads(asset.read_text()) == payload, message)
+    expected = {'repository': REPOSITORY, 'stream': 'image', 'tag': original['tag'], 'source_sha': original['source_sha'],
+                'image_source_sha': original['image']['source_sha'], 'image_index_digest': original['image']['index_digest'],
+                'chart_digest': None, 'subjects': subjects(original),
+                'gates': {'platforms': 'success', 'runtime': 'success', 'lifecycle': 'success', 'pg15-18': 'success'}}
+    require(all(payload.get(key) == value for key, value in expected.items()), message)
+    reports = payload.get('observed_runtime')
+    require(isinstance(reports, list) and len(reports) == 8, message)
+    clean = [clean_installed(report, original) for report in reports]
+    require({(report['observations'][0]['architecture'], report['pg_major']) for report in clean}
+            == {(arch, str(pg)) for arch in ('amd64', 'arm64') for pg in (15, 16, 17, 18)}, message)
+    return {'release_tag': original['tag'], 'source_sha': original['source_sha'],
+            'image_index_digest': original['image']['index_digest'], 'runtime_sha256': checksum(asset)}
+
+
+def reused_image_runtime(manifest):
+    with tempfile.TemporaryDirectory(prefix='epco-original-runtime-') as temporary:
+        directory = Path(temporary)
+        original_image(manifest, directory)
+        return durable_image_runtime(downloaded_manifest(directory), directory)
+
 def runtime_proof(manifest):
     proof = manifest.get('runtime_evidence', {})
     require(isinstance(proof.get('run_id'), int) and isinstance(proof.get('artifact_id'), int), 'trusted runtime run/artifact coordinates required')
@@ -459,12 +489,21 @@ def runtime_proof(manifest):
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         require(archive.namelist() == ['release-runtime.json'], 'unexpected runtime artifact contents')
         payload = json.loads(archive.read('release-runtime.json'))
+    reused = payload.get('reused_image_runtime')
+    if 'reused_image_runtime' in manifest:
+        require(reused == manifest['reused_image_runtime'], 'chart runtime evidence must bind the preflight image proof')
+    if reused is not None:
+        require(manifest['stream'] == 'chart' and reused == reused_image_runtime(manifest), 'reused image runtime proof mismatch')
+        require('observed_runtime' not in payload and 'observed_lifecycle' in payload, 'chart runtime evidence must contain fresh lifecycle observations')
     expected = {'repository': REPOSITORY, 'stream': manifest['stream'], 'tag': manifest['tag'], 'source_sha': manifest['source_sha'],
                 'image_source_sha': manifest['image']['source_sha'], 'image_index_digest': manifest['image']['index_digest'],
                 'chart_digest': manifest.get('chart', {}).get('digest'), 'subjects': subjects(manifest),
-                'gates': {'platforms': 'success', 'runtime': 'success', 'lifecycle': 'success', 'pg15-18': 'success'}}
+                'gates': ({'platforms': 'reused', 'runtime': 'reused', 'lifecycle': 'success', 'pg15-18': 'reused'} if reused is not None
+                          else {'platforms': 'success', 'runtime': 'success', 'lifecycle': 'success', 'pg15-18': 'success'})}
     require(all(payload.get(key) == value for key, value in expected.items()), 'runtime evidence does not bind accepted subjects/source/gates')
     sanitized = dict(expected)
+    if reused is not None:
+        sanitized['reused_image_runtime'] = reused
     if 'observed_runtime' in payload:
         sanitized['observed_runtime'] = [clean_installed(report, manifest) for report in payload['observed_runtime']]
         require(len(sanitized['observed_runtime']) == 8 and {(report['observations'][0]['architecture'], report['pg_major'])
@@ -661,9 +700,19 @@ def main():
             if existing and existing.get('draft') is True and checkpoint_record(existing) and args.phase == 'preflight':
                 with tempfile.TemporaryDirectory(prefix='epco-preflight-checkpoint-') as temporary:
                     manifest = download_checkpoint(existing, Path(temporary), manifest)
+            legacy_draft = False
+            if (args.stream == 'chart' and existing and existing.get('draft') is True
+                    and not (checkpoint_record(existing) and len(existing['assets']) == 2)):
+                with tempfile.TemporaryDirectory(prefix='epco-verified-draft-') as temporary:
+                    saved = download_release(existing, Path(temporary), expected=manifest, locked=False)
+                    legacy_draft = 'measured_runtime' in saved and 'reused_image_runtime' not in saved['measured_runtime']
+                    if args.phase == 'preflight':
+                        manifest = saved
             if args.stream == 'chart':
                 with tempfile.TemporaryDirectory(prefix='epco-release-image-') as temporary:
                     manifest['image'] = original_image(manifest, Path(temporary))
+                    if not legacy_draft:
+                        manifest['reused_image_runtime'] = durable_image_runtime(downloaded_manifest(Path(temporary)), Path(temporary))
             if args.phase == 'preflight':
                 reference = (IMAGE if args.stream == 'image' else CHART) + ':' + version(manifest['tag'].removeprefix('chart-v').removeprefix('v'))
                 require(command('crane', 'digest', reference, allow_absent=True) is None or existing is not None, 'version tag already exists without a recoverable draft; refusing overwrite')

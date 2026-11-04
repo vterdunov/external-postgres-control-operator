@@ -62,6 +62,29 @@ def measured_runtime(manifest, directory):
                                              for index, gate in enumerate(gates)] + security_lifecycle_gates()}}
 
 
+def attach_image_runtime(fixture):
+    directory = fixture.root / "accepted-image"
+    original = copy.deepcopy(fixture.state["releases"]["v0.1.0"]["_manifest"])
+    validation_chart = directory / "external-postgres-control-operator-0.0.0-image-validation.tgz"
+    validation_chart.write_bytes(b"image validation chart")
+    runtime = measured_runtime(original, directory)
+    validation_chart.unlink()
+    asset = directory / "release-runtime.json"
+    asset.write_text(json.dumps(runtime, sort_keys=True))
+    original["measured_runtime"] = runtime
+    original["assets"] = [entry for entry in original["assets"] if entry["kind"] not in ("evidence", "runtime_evidence")]
+    original["assets"].append({"kind": "runtime_evidence", "path": asset.name, "sha256": checksum(asset.read_bytes())})
+    evidence = {**original, "image_source_sha": IMAGE_SHA, "image_index_digest": original["image"]["index_digest"], "chart_digest": None}
+    evidence_file = directory / "release-evidence.json"
+    evidence_file.write_text(json.dumps(evidence))
+    original["assets"].append({"kind": "evidence", "path": evidence_file.name, "sha256": checksum(evidence_file.read_bytes())})
+    (directory / "SHA256SUMS").write_text("".join(f'{entry["sha256"]}  {entry["path"]}\n' for entry in original["assets"]))
+    (directory / "manifest.json").write_text(json.dumps(original))
+    fixture.state["releases"]["v0.1.0"] = fixture.release(original, directory)
+    return {"release_tag": original["tag"], "source_sha": original["source_sha"],
+            "image_index_digest": original["image"]["index_digest"], "runtime_sha256": checksum(asset.read_bytes())}
+
+
 class PreparationFixture(ReleaseFixture):
     def __init__(self, directory, stream="chart"):
         helm = shutil.which("helm")
@@ -130,6 +153,10 @@ class PreparationFixture(ReleaseFixture):
         seed["completed"] = False
         if self.stream == "chart":
             seed["image"] = copy.deepcopy(self.manifest["image"])
+            original = self.state["releases"]["v0.1.0"]["_manifest"]
+            entry = next(asset for asset in original["assets"] if asset["kind"] == "runtime_evidence")
+            seed["reused_image_runtime"] = {"release_tag": original["tag"], "source_sha": original["source_sha"],
+                                            "image_index_digest": original["image"]["index_digest"], "runtime_sha256": entry["sha256"]}
         path = self.root / "preflight.json"
         path.write_text(json.dumps(seed))
         self.state["versions"].pop((CHART + ":0.2.1") if self.stream == "chart" else (IMAGE + ":0.1.0"), None)

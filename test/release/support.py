@@ -74,6 +74,13 @@ class ReleaseFixture:
         image_dir.mkdir()
         image_manifest = self.make_manifest(image_dir, "image")
         self.state = self.make_state(image_manifest, image_dir)
+        if stream == "chart":
+            from helper_support import attach_image_runtime, measured_runtime
+            marker = attach_image_runtime(self)
+            payload = self.state["runtime_payload"]
+            payload["gates"] = {"platforms": "reused", "runtime": "reused", "lifecycle": "success", "pg15-18": "reused"}
+            payload["reused_image_runtime"] = marker
+            payload["observed_lifecycle"] = measured_runtime(self.manifest, self.manifest_path.parent)["observed_lifecycle"]
         self.bin = self.root / "bin"
         self.bin.mkdir()
         for tool in ("gh", "crane", "cosign", "helm", "docker"):

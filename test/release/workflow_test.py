@@ -15,6 +15,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class WorkflowReleaseContractTests(unittest.TestCase):
+    def test_lint_runs_for_all_branches_and_pull_requests_not_tags(self):
+        triggers = self.workflows(include_lint=True)["lint"]["on"]
+        self.assertEqual(triggers["push"], {"branches": ["**"]})
+        self.assertIn("pull_request", triggers)
+        self.assertIsNone(triggers["pull_request"], "All pull requests must continue to run lint")
+
     def test_image_preparation_pins_buildkit_and_qemu_to_catalog_mirrors(self):
         catalog = json.loads((ROOT / "test/images/catalog.json").read_text())["images"]
         references = {entry["name"]: entry["destination"] + "@" + entry["source"].rsplit("@", 1)[1]
@@ -28,7 +34,7 @@ class WorkflowReleaseContractTests(unittest.TestCase):
         self.assertEqual(emulators[0].get("with", {}).get("image"), references["binfmt"],
                          "The QEMU installer must use the accepted immutable binfmt mirror")
 
-    def workflows(self):
+    def workflows(self, include_lint=False):
         helm = shutil.which("helm")
         self.assertIsNotNone(helm, "Run workflow structure tests with pinned mise tools")
         with tempfile.TemporaryDirectory(prefix="epco-release-workflows-") as temporary:
@@ -36,9 +42,10 @@ class WorkflowReleaseContractTests(unittest.TestCase):
             (chart / "templates").mkdir()
             (chart / "inputs").mkdir()
             (chart / "Chart.yaml").write_text("apiVersion: v2\nname: release-workflow-reader\nversion: 0.0.0\n")
-            for stream in ("image", "chart"):
-                shutil.copyfile(ROOT / f".github/workflows/release-{stream}.yml", chart / "inputs" / f"{stream}.yaml")
-            (chart / "templates/parsed.yaml").write_text('{"image":{{ .Files.Get "inputs/image.yaml" | fromYaml | toJson }},"chart":{{ .Files.Get "inputs/chart.yaml" | fromYaml | toJson }}}')
+            for stream in ("image", "chart", "lint"):
+                source = "lint.yml" if stream == "lint" else f"release-{stream}.yml"
+                shutil.copyfile(ROOT / ".github/workflows" / source, chart / "inputs" / f"{stream}.yaml")
+            (chart / "templates/parsed.yaml").write_text('{"image":{{ .Files.Get "inputs/image.yaml" | fromYaml | toJson }},"chart":{{ .Files.Get "inputs/chart.yaml" | fromYaml | toJson }},"lint":{{ .Files.Get "inputs/lint.yaml" | fromYaml | toJson }}}')
             result = subprocess.run([helm, "template", "workflow-reader", str(chart)], capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
             workflows = json.loads(result.stdout[result.stdout.index("{"):])
@@ -46,7 +53,7 @@ class WorkflowReleaseContractTests(unittest.TestCase):
             for workflow in workflows.values():
                 if "on" not in workflow and "true" in workflow:
                     workflow["on"] = workflow.pop("true")
-            return workflows
+            return workflows if include_lint else {key: workflows[key] for key in ("image", "chart")}
 
     def test_entire_image_and_chart_streams_share_repository_wide_queued_lock(self):
         workflows = self.workflows()
@@ -89,9 +96,30 @@ class WorkflowReleaseContractTests(unittest.TestCase):
             self.assertEqual(inherited.get("contents"), "read", "Keep default workflow token read-only")
             preflight = workflow["jobs"]["preflight"].get("permissions", inherited)
             self.assertEqual(preflight.get("contents"), "write", f"{stream} preflight must be able to list draft checkpoints")
-            for name in ("runtime", "lifecycle"):
+            for name in (("runtime", "lifecycle") if stream == "image" else ("lifecycle",)):
                 permissions = workflow["jobs"][name].get("permissions", inherited)
                 self.assertEqual(permissions.get("contents"), "read", f"{stream} {name} must not write release contents")
+
+    def test_chart_acceptance_installs_tools_for_image_proof_verification(self):
+        steps = self.workflows()["chart"]["jobs"]["acceptance"]["steps"]
+        mise = [step for step in steps if step.get("uses", "").startswith("jdx/mise-action@")]
+        self.assertEqual(len(mise), 1)
+        args = mise[0].get("with", {}).get("install_args")
+        self.assertTrue(args is None or {"uv", "gh", "crane", "helm", "aqua:sigstore/cosign"}.issubset(set(args.split())),
+                        "Chart acceptance needs pinned tools to verify the immutable image release")
+
+    def test_chart_reuses_image_matrix_but_runs_its_own_lifecycle(self):
+        workflows = self.workflows()
+        image = workflows["image"]["jobs"]
+        chart = workflows["chart"]["jobs"]
+        matrix = image["runtime"]["strategy"]["matrix"]
+        self.assertEqual(set(matrix["postgres"]), {15, 16, 17, 18})
+        self.assertEqual({platform["architecture"] for platform in matrix["platform"]}, {"amd64", "arm64"})
+        self.assertIn("runtime", image["acceptance"]["needs"])
+        self.assertIn("lifecycle", image["acceptance"]["needs"])
+        self.assertNotIn("runtime", chart, "Chart releases must reuse the selected image's verified matrix")
+        self.assertIn("lifecycle", chart["acceptance"]["needs"], "Current chart lifecycle must gate publication")
+        self.assertIn("acceptance", chart["publish"]["needs"])
 
     def test_trusted_tag_preflight_can_read_private_registry_and_draft_checkpoint(self):
         for stream, workflow in self.workflows().items():

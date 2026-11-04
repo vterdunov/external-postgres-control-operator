@@ -163,6 +163,8 @@ def chart_candidate(manifest, directory):
     with tempfile.TemporaryDirectory(prefix='epco-released-image-') as temporary:
         original = Path(temporary)
         release.original_image(manifest, original)
+        reused = release.durable_image_runtime(release.downloaded_manifest(original), original)
+        release.require(manifest.get('reused_image_runtime') == reused, 'preflight image runtime proof mismatch')
         for entry in image['generated_inputs']:
             shutil.copyfile(original / entry['path'], directory / entry['path'])
             manifest['assets'].append({key: value for key, value in entry.items() if key != 'source_sha'})
@@ -203,6 +205,8 @@ def prepare(preflight, directory):
         # Resume only verified complete drafts. Never rebuild an existing OCI tag.
         recovered = (release.download_checkpoint(record, directory, manifest) if release.checkpoint_record(record)
                      and len(record['assets']) == 2 else release.download_release(record, directory, expected=manifest, locked=False))
+        if recovered['stream'] == 'chart' and 'measured_runtime' not in recovered:
+            recovered['reused_image_runtime'] = manifest['reused_image_runtime']
         if recovered['stream'] == 'image':
             if not (directory / 'external-postgres-control-operator-0.0.0-image-validation.tgz').is_file():
                 validation_chart(recovered['image'], directory)
@@ -348,28 +352,33 @@ def measured_versions(report):
 
 def aggregate(manifest_path, reports, output):
     manifest = json.loads(manifest_path.read_text())
-    installed = [release.clean_installed(json.loads(path.read_text()), manifest) for path in reports.rglob('release-installed.json')]
-    release.require(len(installed) == 8, 'runtime requires PostgreSQL 15-18 on both release architectures')
-    matrix = set()
-    for report in installed:
-        release.require(report['source_sha'] == manifest['source_sha'] and report['image_source_sha'] == manifest['image']['source_sha']
-                        and report['subjects'] == release.subjects(manifest), 'installed evidence source/subject mismatch')
-        arches = {entry['architecture'] for entry in report['observations']}
-        release.require(len(arches) == 1, 'runtime report contains ambiguous architecture')
-        architecture = next(iter(arches))
-        platform = next((entry for entry in manifest['image']['platforms'] if entry['architecture'] == architecture), None)
-        release.require(platform is not None, 'unaccepted runtime architecture')
-        release.require(isinstance(report.get('context'), str) and re.fullmatch(r'kind-epco-e2e-[a-z0-9-]+', report['context']), 'runtime fixture context is not owned')
-        release.require(isinstance(report.get('leaseUID'), str) and re.fullmatch(r'[A-Za-z0-9-]{1,128}', report['leaseUID']), 'observed leader Lease UID is required')
-        for observation in report['observations']:
-            image_id = observation.get('imageID', '')
-            measured = re.search(r'sha256:[a-f0-9]{64}$', image_id) if isinstance(image_id, str) else None
-            release.require(measured and measured[0] in (platform['digest'], manifest['image']['index_digest'])
-                            and observation.get('platform_digest') == platform['digest'], 'observed Pod imageID/platform digest mismatch')
-            release.require(isinstance(observation.get('podUID'), str) and re.fullmatch(r'[A-Za-z0-9-]{1,128}', observation['podUID']), 'observed Pod UID is required')
-        measured_versions(report)
-        matrix.add((arches.pop(), report['pg_major']))
-    release.require(matrix == {(arch, str(pg)) for arch in ('amd64', 'arm64') for pg in (15, 16, 17, 18)}, 'runtime matrix coverage is incomplete')
+    installed = []
+    if manifest['stream'] == 'image' or 'reused_image_runtime' not in manifest:
+        installed = [release.clean_installed(json.loads(path.read_text()), manifest) for path in reports.rglob('release-installed.json')]
+        release.require(len(installed) == 8, 'runtime requires PostgreSQL 15-18 on both release architectures')
+        matrix = set()
+        for report in installed:
+            release.require(report['source_sha'] == manifest['source_sha'] and report['image_source_sha'] == manifest['image']['source_sha']
+                            and report['subjects'] == release.subjects(manifest), 'installed evidence source/subject mismatch')
+            arches = {entry['architecture'] for entry in report['observations']}
+            release.require(len(arches) == 1, 'runtime report contains ambiguous architecture')
+            architecture = next(iter(arches))
+            platform = next((entry for entry in manifest['image']['platforms'] if entry['architecture'] == architecture), None)
+            release.require(platform is not None, 'unaccepted runtime architecture')
+            release.require(isinstance(report.get('context'), str) and re.fullmatch(r'kind-epco-e2e-[a-z0-9-]+', report['context']), 'runtime fixture context is not owned')
+            release.require(isinstance(report.get('leaseUID'), str) and re.fullmatch(r'[A-Za-z0-9-]{1,128}', report['leaseUID']), 'observed leader Lease UID is required')
+            for observation in report['observations']:
+                image_id = observation.get('imageID', '')
+                measured = re.search(r'sha256:[a-f0-9]{64}$', image_id) if isinstance(image_id, str) else None
+                release.require(measured and measured[0] in (platform['digest'], manifest['image']['index_digest'])
+                                and observation.get('platform_digest') == platform['digest'], 'observed Pod imageID/platform digest mismatch')
+                release.require(isinstance(observation.get('podUID'), str) and re.fullmatch(r'[A-Za-z0-9-]{1,128}', observation['podUID']), 'observed Pod UID is required')
+            measured_versions(report)
+            matrix.add((arches.pop(), report['pg_major']))
+        release.require(matrix == {(arch, str(pg)) for arch in ('amd64', 'arm64') for pg in (15, 16, 17, 18)}, 'runtime matrix coverage is incomplete')
+    else:
+        reused = release.reused_image_runtime(manifest)
+        release.require(manifest.get('reused_image_runtime') == reused, 'preflight image runtime proof mismatch')
     lifecycle_paths = list(reports.rglob('delivery-lifecycle.json'))
     release.require(len(lifecycle_paths) == 1, 'single complete lifecycle evidence is required')
     lifecycle = release.clean_lifecycle(json.loads(lifecycle_paths[0].read_text()), manifest)
@@ -391,11 +400,17 @@ def aggregate(manifest_path, reports, output):
     measured = [entry['podImageID'] for entry in gates if 'podImageID' in entry]
     allowed = {entry['digest'] for entry in manifest['image']['platforms']} | {manifest['image']['index_digest']}
     release.require(measured and all('sha256:' + value.split('sha256:')[-1] in allowed for value in measured), 'lifecycle Pod imageIDs do not match selected signed subjects')
-    write(output, {'repository': release.REPOSITORY, 'stream': manifest['stream'], 'tag': manifest['tag'], 'source_sha': manifest['source_sha'],
-                   'image_source_sha': manifest['image']['source_sha'], 'image_index_digest': manifest['image']['index_digest'],
-                   'chart_digest': manifest.get('chart', {}).get('digest'), 'subjects': release.subjects(manifest),
-                   'gates': {'platforms': 'success', 'runtime': 'success', 'lifecycle': 'success', 'pg15-18': 'success'},
-                   'observed_runtime': installed, 'observed_lifecycle': lifecycle})
+    record = {'repository': release.REPOSITORY, 'stream': manifest['stream'], 'tag': manifest['tag'], 'source_sha': manifest['source_sha'],
+              'image_source_sha': manifest['image']['source_sha'], 'image_index_digest': manifest['image']['index_digest'],
+              'chart_digest': manifest.get('chart', {}).get('digest'), 'subjects': release.subjects(manifest),
+              'gates': {'platforms': 'success', 'runtime': 'success', 'lifecycle': 'success', 'pg15-18': 'success'},
+              'observed_lifecycle': lifecycle}
+    if manifest['stream'] == 'image' or 'reused_image_runtime' not in manifest:
+        record['observed_runtime'] = installed
+    else:
+        record['gates'] = {'platforms': 'reused', 'runtime': 'reused', 'lifecycle': 'success', 'pg15-18': 'reused'}
+        record['reused_image_runtime'] = reused
+    write(output, record)
 
 
 def bind_runtime(manifest_path, artifact_id):

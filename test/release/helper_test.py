@@ -28,6 +28,71 @@ LIFECYCLE_GATES = (
 )
 
 
+class DurableImageRuntimeTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="epco-durable-image-runtime-")
+        self.addCleanup(temporary.cleanup)
+        self.fixture = ReleaseFixture(Path(temporary.name) / "fixture", stream="image")
+        self.directory = self.fixture.manifest_path.parent
+        self.manifest = self.fixture.manifest
+        (self.directory / "external-postgres-control-operator-0.0.0-image-validation.tgz").write_bytes(b"validation chart")
+        self.runtime = measured_runtime(self.manifest, self.directory)
+
+    def invoke(self, change=None, change_manifest=None):
+        payload = copy.deepcopy(self.runtime)
+        if change:
+            change(payload)
+        runtime_file = self.directory / "release-runtime.json"
+        runtime_file.write_text(json.dumps(payload, sort_keys=True))
+        manifest = copy.deepcopy(self.manifest)
+        manifest["measured_runtime"] = copy.deepcopy(payload)
+        manifest["assets"].append({"kind": "runtime_evidence", "path": runtime_file.name,
+                                   "sha256": checksum(runtime_file.read_bytes())})
+        if change_manifest:
+            change_manifest(manifest)
+        path = self.directory / "durable-test-manifest.json"
+        path.write_text(json.dumps(manifest))
+        code = ("import json,sys; from pathlib import Path; sys.path.insert(0, 'tools'); "
+                "from release import durable_image_runtime; "
+                "print(json.dumps(durable_image_runtime(json.loads(Path(sys.argv[1]).read_text()), Path(sys.argv[2]))))")
+        return subprocess.run([sys.executable, "-c", code, str(path), str(self.directory)],
+                              cwd=ROOT, env=self.fixture.env, text=True, capture_output=True, timeout=15)
+
+    def test_complete_signed_image_matrix_is_reusable_without_actions_artifact(self):
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        proof = json.loads(result.stdout)
+        self.assertEqual(proof, {"release_tag": "v0.1.0", "source_sha": IMAGE_SHA,
+                                 "image_index_digest": INDEX,
+                                 "runtime_sha256": checksum((self.directory / "release-runtime.json").read_bytes())})
+        self.assertFalse(any(call["tool"] == "gh" and "actions" in call["args"] for call in self.fixture.calls()))
+
+    def test_mismatched_embedded_record_and_missing_or_wrong_asset_are_rejected(self):
+        mutations = (
+            lambda m: m["measured_runtime"].update(source_sha="f" * 40),
+            lambda m: m.pop("measured_runtime"),
+            lambda m: m["assets"].pop(),
+            lambda m: m["assets"][-1].update(sha256="f" * 64),
+            lambda m: m["assets"].append(copy.deepcopy(m["assets"][-1])),
+        )
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                self.assertNotEqual(self.invoke(change_manifest=mutate).returncode, 0)
+
+    def test_wrong_source_digest_or_incomplete_matrix_cannot_be_reused(self):
+        mutations = (
+            lambda p: p.update(source_sha="f" * 40),
+            lambda p: p.update(image_index_digest="sha256:" + "f" * 64),
+            lambda p: p["observed_runtime"].pop(),
+            lambda p: p["observed_runtime"].__setitem__(0, copy.deepcopy(p["observed_runtime"][1])),
+            lambda p: p["observed_runtime"][0].update(source_sha="f" * 40),
+            lambda p: p["gates"].update(runtime="failure"),
+        )
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                self.assertNotEqual(self.invoke(mutate).returncode, 0)
+
+
 class RuntimeAggregateTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="epco-release-aggregate-")
@@ -264,13 +329,16 @@ class RuntimePersistenceTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="epco-measured-release-")
         self.addCleanup(temporary.cleanup)
-        self.fixture = ReleaseFixture(temporary.name)
+        self.fixture = ReleaseFixture(temporary.name, stream="image")
+        (self.fixture.manifest_path.parent / "external-postgres-control-operator-0.0.0-image-validation.tgz").write_bytes(b"image validation chart")
         payload = self.fixture.state["runtime_payload"]
+        payload.pop("reused_image_runtime", None)
+        payload["gates"] = {"platforms": "success", "runtime": "success", "lifecycle": "success", "pg15-18": "success"}
         payload["observed_runtime"] = []
         for architecture, digest in (("amd64", AMD64), ("arm64", ARM64)):
             for postgres in (15, 16, 17, 18):
                 payload["observed_runtime"].append({
-                    "source_sha": CHART_SHA, "image_source_sha": IMAGE_SHA, "subjects": payload["subjects"],
+                    "source_sha": IMAGE_SHA, "image_source_sha": IMAGE_SHA, "subjects": payload["subjects"],
                     "pg_major": str(postgres), "context": f"kind-epco-e2e-{architecture}-pg{postgres}",
                     "observations": [{"imageID": "ghcr.io/example@" + digest, "architecture": architecture,
                                       "platform_digest": digest, "podUID": f"pod-{architecture}-pg{postgres}"}],
@@ -278,16 +346,16 @@ class RuntimePersistenceTests(unittest.TestCase):
                     "fixture_observed": "server observed version: " + {15: "15.19", 16: "16.15", 17: "17.11", 18: "18.6"}[postgres] + "\nclient observed version: 16.15\n",
                 })
         payload["observed_lifecycle"] = {
-            "scope": "selected artifact lifecycle", "imageSourceSHA": IMAGE_SHA, "chartSourceSHA": CHART_SHA,
+            "scope": "selected artifact lifecycle", "imageSourceSHA": IMAGE_SHA, "chartSourceSHA": IMAGE_SHA,
             "imageReference": IMAGE + ":0.1.0@" + INDEX,
-            "chartArchiveSHA256": checksum((self.fixture.manifest_path.parent / self.fixture.manifest["chart"]["archive"]).read_bytes()),
+            "chartArchiveSHA256": checksum((self.fixture.manifest_path.parent / "external-postgres-control-operator-0.0.0-image-validation.tgz").read_bytes()),
             "gates": [{"gate": gate, "result": "passed", **({"podImageID": "ghcr.io/example@" + AMD64} if index == 0 else {})}
                       for index, gate in enumerate(LIFECYCLE_GATES)] + security_lifecycle_gates(),
         }
 
     def invoke(self):
         self.fixture.save()
-        return subprocess.run([sys.executable, str(ROOT / "tools/release.py"), "chart", "--manifest",
+        return subprocess.run([sys.executable, str(ROOT / "tools/release.py"), "image", "--manifest",
                                str(self.fixture.manifest_path), "--phase", "publish"],
                               env=self.fixture.env, text=True, capture_output=True, timeout=30)
 
@@ -301,7 +369,7 @@ class RuntimePersistenceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         content = json.dumps(self.evidence())
         for value in ("pod-amd64-pg15", "pod-arm64-pg18", "lease-amd64-pg16", "lease-arm64-pg17",
-                      AMD64, ARM64, IMAGE_SHA, CHART_SHA, "server observed version", "client observed version", "16.15"):
+                      AMD64, ARM64, IMAGE_SHA, "server observed version", "client observed version", "16.15"):
             self.assertIn(value, content, "Expiring Actions coordinates cannot replace durable measured release evidence")
 
     def test_packaged_psql_version_is_sanitized_in_signed_immutable_evidence(self):
@@ -365,6 +433,20 @@ class RuntimePersistenceTests(unittest.TestCase):
         self.assertFalse([call for call in subsequent if call["mutation"]])
         self.assertFalse([call for call in subsequent if "actions/" in " ".join(call["args"])])
 
+
+
+class ChartDraftRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="epco-legacy-chart-draft-")
+        self.addCleanup(temporary.cleanup)
+        self.fixture = ReleaseFixture(temporary.name)
+
+    def invoke(self):
+        self.fixture.save()
+        return subprocess.run([sys.executable, str(ROOT / "tools/release.py"), "chart", "--manifest",
+                               str(self.fixture.manifest_path), "--phase", "publish"],
+                              env=self.fixture.env, text=True, capture_output=True, timeout=30)
+
     def test_bind_runtime_records_current_attempt(self):
         self.fixture.env["GITHUB_RUN_ATTEMPT"] = "2"
         self.fixture.save()
@@ -385,7 +467,10 @@ class RuntimePersistenceTests(unittest.TestCase):
 
     def save_finalized_draft(self):
         manifest = self.fixture.manifest
+        self.fixture.state["runtime_payload"] = measured_runtime(manifest, self.fixture.manifest_path.parent)
         manifest["measured_runtime"] = copy.deepcopy(self.fixture.state["runtime_payload"])
+        self.assertNotIn("reused_image_runtime", manifest["measured_runtime"])
+        self.assertEqual(len(manifest["measured_runtime"]["observed_runtime"]), 8)
         runtime_file = self.fixture.manifest_path.parent / "release-runtime.json"
         runtime_file.write_text(json.dumps(manifest["measured_runtime"], sort_keys=True))
         manifest["assets"].append({"kind": "runtime_evidence", "path": runtime_file.name, "sha256": checksum(runtime_file.read_bytes())})
@@ -427,6 +512,31 @@ class RuntimePersistenceTests(unittest.TestCase):
         self.assertEqual(original, {path.name: path.read_bytes() for path in snapshot.iterdir()})
         self.assertTrue(any(call["tool"] == "gh" and call["args"][:2] == ["release", "verify"] for call in self.fixture.calls()))
         self.assertTrue(any(call["tool"] == "gh" and call["args"][:2] == ["release", "verify-asset"] for call in self.fixture.calls()))
+
+    def test_legacy_finalized_draft_recovers_with_original_image_without_durable_runtime(self):
+        snapshot = self.save_finalized_draft()
+        before = {path.name: path.read_bytes() for path in snapshot.iterdir()}
+        directory = self.fixture.root / "accepted-image"
+        original = copy.deepcopy(self.fixture.state["releases"]["v0.1.0"]["_manifest"])
+        original.pop("measured_runtime")
+        original["assets"] = [entry for entry in original["assets"] if entry["kind"] not in ("runtime_evidence", "evidence")]
+        (directory / "release-runtime.json").unlink()
+        evidence = {**original, "image_source_sha": original["source_sha"],
+                    "image_index_digest": original["image"]["index_digest"], "chart_digest": None}
+        evidence_file = directory / "release-evidence.json"
+        evidence_file.write_text(json.dumps(evidence))
+        original["assets"].append({"kind": "evidence", "path": evidence_file.name, "sha256": checksum(evidence_file.read_bytes())})
+        (directory / "SHA256SUMS").write_text("".join(f'{entry["sha256"]}  {entry["path"]}\n' for entry in original["assets"]))
+        (directory / "manifest.json").write_text(json.dumps(original))
+        self.fixture.state["releases"]["v0.1.0"] = self.fixture.release(original, directory)
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(result.stdout)["completed"])
+        self.assertEqual(before, {path.name: path.read_bytes() for path in snapshot.iterdir()})
+        self.assertTrue(any(call["tool"] == "gh" and call["args"][:3] == ["release", "verify", "v0.1.0"] for call in self.fixture.calls()))
+        self.assertFalse([call for call in self.fixture.calls() if
+                          (call["tool"] == "cosign" and call["args"][0] in ("sign", "sign-blob")) or
+                          (call["tool"] == "gh" and call["args"][:2] == ["release", "upload"])])
 
     def test_complete_finalized_draft_reuses_recorded_successful_attempt_after_a_later_failure(self):
         self.save_finalized_draft()
@@ -675,6 +785,10 @@ class PreparationBehaviorTests(unittest.TestCase):
         self.assertIsNotNone(checkpoint, "Candidate must have a durable early draft")
         before = {entry["name"]: entry["digest"] for entry in checkpoint["assets"]}
         self.fixture.state["runtime_payload"] = measured_runtime(manifest, manifest_path.parent)
+        payload = self.fixture.state["runtime_payload"]
+        payload.pop("observed_runtime")
+        payload["reused_image_runtime"] = manifest["reused_image_runtime"]
+        payload["gates"] = {"platforms": "reused", "runtime": "reused", "lifecycle": "success", "pg15-18": "reused"}
         manifest["runtime_evidence"] = {"run_id": 900, "run_attempt": 1, "artifact_id": 901}
         manifest_path.write_text(json.dumps(manifest))
         self.fixture.save()

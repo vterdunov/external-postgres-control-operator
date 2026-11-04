@@ -196,6 +196,19 @@ class SecurityDefaultsTests(DeliveryCase):
         rendered = self.render(*overrides)
         return rendered_objects(rendered, self.environment, self.directory)
 
+    def test_replica_count_defaults_to_one_and_zero_scales_manager_down(self):
+        for overrides, expected in (((), 1), (("--set", "replicaCount=0"), 0)):
+            with self.subTest(expected=expected):
+                manager = next(obj for obj in self.parsed_render(*overrides) if obj["kind"] == "Deployment")
+                self.assertEqual(manager["spec"]["replicas"], expected)
+
+    def test_replica_count_rejects_negative_fraction_and_string(self):
+        for value in ("-1", "0.5", '"1"'):
+            with self.subTest(value=value):
+                result = self.helm("template", "epco", "charts/external-postgres-control-operator",
+                                   "--set-json", "replicaCount=" + value)
+                self.assertNotEqual(result.returncode, 0, "replicas must be a nonnegative integer")
+
     def test_default_pod_security_is_explicit_and_restricted(self):
         objects = self.parsed_render()
         manager = next(obj for obj in objects if obj["kind"] == "Deployment")
@@ -380,7 +393,7 @@ class SecurityInstallValuesTests(DeliveryCase):
     def test_missing_or_invalid_selected_values_refuse_before_any_cluster_write(self):
         package = self.package_fixture()
         invalid = self.directory / "invalid-values.json"
-        invalid.write_text(json.dumps({"replicaCount": 0}))
+        invalid.write_text(json.dumps({"replicaCount": -1}))
         for path in (self.directory / "missing-values.yaml", invalid):
             with self.subTest(path=path.name):
                 (self.directory / "calls.jsonl").write_text("")
