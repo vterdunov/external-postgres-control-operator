@@ -105,67 +105,6 @@ jobs:
           path: candidate/
           if-no-files-found: error
           retention-days: 7
-  runtime:
-    name: Runtime ${{ matrix.platform.architecture }} PostgreSQL ${{ matrix.postgres }}
-    needs: [preflight, prepare]
-    runs-on: ${{ matrix.platform.runner }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      max-parallel: 4
-      matrix:
-        postgres: [15, 16, 17, 18]
-        platform:
-          - architecture: amd64
-            runner: ubuntu-24.04
-          - architecture: arm64
-            runner: ubuntu-24.04-arm
-    env:
-      EPCO_E2E_INSTALL_MODE: chart
-      EPCO_PG_VERSION: ${{ matrix.postgres }}
-      EPCO_E2E_PROJECT_DIR: ${{ github.workspace }}/application-source
-      EPCO_ARTIFACTS_DIR: ${{ github.workspace }}/reports/installed
-    steps:
-      - name: Checkout release orchestration
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-      - name: Checkout original application behavior
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: ${{ needs.preflight.outputs.image_source_sha }}
-          path: application-source
-          persist-credentials: false
-      - name: Pinned tools
-        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-        with:
-          version: 2026.9.15
-      - name: Download exact candidate
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: release-candidate-${{ github.run_attempt }}
-          path: candidate
-      - name: Bind released inputs and image
-        run: |
-          mise exec -- python3 tools/release_ci.py workspace --manifest candidate/manifest.json --application application-source
-          mise exec -- python3 tools/release_ci.py environment --manifest candidate/manifest.json
-      - name: Verify and start public native image
-        env:
-          IMAGE_VERSION: ${{ github.ref_name }}
-        run: |
-          docker pull "$EPCO_E2E_IMAGE_REFERENCE"
-          version=$(mise exec -- python3 -c 'import json; print(json.load(open("candidate/manifest.json"))["image"]["version"])')
-          mise exec -- python3 tools/platform_check.py --image "$EPCO_E2E_IMAGE_REFERENCE" --version "$version" --source "$EPCO_DELIVERY_IMAGE_SOURCE_SHA"
-      - name: Run original application PG acceptance with digest pulls
-        run: mise exec -- bash test/e2e/run.sh
-      - name: Retain observed acceptance
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: release-installed-${{ github.run_attempt }}-${{ matrix.platform.architecture }}-pg${{ matrix.postgres }}
-          path: reports/
-          if-no-files-found: error
-          retention-days: 7
   lifecycle:
     name: Delivery lifecycle
     needs: [preflight, prepare]
@@ -212,7 +151,7 @@ jobs:
           retention-days: 7
   acceptance:
     name: Runtime acceptance
-    needs: [prepare, runtime, lifecycle]
+    needs: [prepare, lifecycle]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -222,21 +161,15 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - name: Pinned Python tooling
+      - name: Pinned tools
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: 2026.9.15
-          install_args: uv
       - name: Download candidate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-candidate-${{ github.run_attempt }}
           path: candidate
-      - name: Download installed observations
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          pattern: release-installed-${{ github.run_attempt }}-*
-          path: reports
       - name: Download lifecycle observations
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:

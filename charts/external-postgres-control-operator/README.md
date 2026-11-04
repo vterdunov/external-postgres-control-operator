@@ -41,6 +41,9 @@ be explicitly reviewed and declared by the generator; version numbers alone
 never authorize a schema upgrade or downgrade. Generated compatibility metadata
 must travel with the verified chart package.
 
+`replicaCount` defaults to `1`. Set it to `0` to pause reconciliation;
+restore a positive count to resume it and complete pending finalizers.
+
 The manager runs as UID/GID 65532 with Restricted Pod Security settings,
 including `privileged: false`. Namespace admission labels belong to your cluster
 policy; this chart does not manage them.

@@ -105,6 +105,11 @@ class CRDBundleTests(unittest.TestCase):
                     self.assertEqual(checkpoint.extractfile("candidate/crds.yaml").read(), path.read_bytes())
 
                 fixture.state["runtime_payload"] = measured_runtime(manifest, fixture.output)
+                if stream == "chart":
+                    payload = fixture.state["runtime_payload"]
+                    payload.pop("observed_runtime")
+                    payload["reused_image_runtime"] = manifest["reused_image_runtime"]
+                    payload["gates"] = {"platforms": "reused", "runtime": "reused", "lifecycle": "success", "pg15-18": "reused"}
                 manifest["runtime_evidence"] = {"run_id": 900, "run_attempt": 1, "artifact_id": 901}
                 manifest_path = fixture.output / "manifest.json"
                 manifest_path.write_text(json.dumps(manifest))
