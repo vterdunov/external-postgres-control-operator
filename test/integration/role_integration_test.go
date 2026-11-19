@@ -75,6 +75,13 @@ func roleExists(ctx context.Context, f *Fixture, name string) bool {
 	return exists
 }
 
+func roleCatalogRevision(ctx context.Context, f *Fixture, name string) string {
+	var revision string
+	ExpectWithOffset(1, f.Admin.QueryRowContext(ctx,
+		"SELECT xmin::text FROM pg_catalog.pg_authid WHERE rolname=$1", name).Scan(&revision)).To(Succeed())
+	return revision
+}
+
 func roleLogin(ctx context.Context, f *Fixture, name, password string) string {
 	db, err := f.Server.Open(f.Database, name, password)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
@@ -190,6 +197,26 @@ var _ = Describe("DatabaseRole PostgreSQL reconciliation", func() {
 			Scan(&login, &superuser, &replication, &bypass)).To(Succeed())
 		Expect(login).To(BeTrue())
 		Expect(superuser || replication || bypass).To(BeFalse())
+	}, NodeTimeout(25*time.Second))
+
+	It("reapplies an unchanged managed password when the verifier is readable", func(ctx SpecContext) {
+		name := roleName(fixture)
+		session := roleSession(ctx, fixture, false)
+		desired := pgroles.RoleDesired{Name: name, Password: new(fixture.Password), Spec: epco.DatabaseRoleSpec{Login: true}}
+		apply := func() {
+			if _, err := session.Apply(ctx, desired); err != nil {
+				Fail("applying the managed password failed", 1)
+			}
+		}
+		apply()
+		var scram bool
+		Expect(fixture.Admin.QueryRowContext(ctx,
+			"SELECT rolpassword LIKE 'SCRAM-SHA-256$%' FROM pg_catalog.pg_authid WHERE rolname=$1", name).
+			Scan(&scram)).To(Succeed())
+		Expect(scram).To(BeTrue(), "the administrative role can read a SCRAM verifier")
+		before := roleCatalogRevision(ctx, fixture, name)
+		apply()
+		Expect(roleCatalogRevision(ctx, fixture, name)).NotTo(Equal(before), "repeat apply must write a new SQL role tuple")
 	}, NodeTimeout(25*time.Second))
 
 	DescribeTable("replaces negative infinity password expiration with desired state",

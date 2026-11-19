@@ -29,6 +29,7 @@ ACL recovery is scoped to the live CR UID and selected endpoint. Journal checkpo
 | --- | --- |
 | [Project roadmap](roadmap.md) | Selected runtime scope, delivery stages, gates, and progress records |
 | [API baseline](api-proposal.md) | Accepted fields/defaults, credentials, connection outputs, declarative ACLs, lifecycle, and deferred public API |
+| [ADR 0001 - Password reconciliation interval](adr/0001-password-reconciliation-interval.md) | Decision and measurements for scheduling password reconciliation |
 | [ExternalPostgres readiness](externalpostgres.md) | Current connection runtime, status reasons, and operational limits |
 | [Cross-namespace access](cross-namespace-access.md) | Namespace authorization, selector semantics, denial/resumption, and resource placement |
 | [SQL object ownership](sql-object-ownership.md) | SQL-name management keys, recorded-manager conflicts, retry behavior, endpoint changes, and leadership |

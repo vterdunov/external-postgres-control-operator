@@ -397,7 +397,9 @@ var _ = Describe("R3 Database ACL durable recovery", Ordered, ContinueOnFailure,
 		setCreate(ctx)
 		r := databaseRecoveryReconciler(environment.Client, pg.NewDatabaseFactory())
 		database = recoverDatabaseReady(ctx, environment.Client, r, database)
-		generation := database.Generation
+		activeA := database.Status.ActiveACLTarget
+		bindingsA := r4ACLBindings(database)
+		Expect(bindingsA).To(HaveLen(1))
 		other, err := Start(ctx, Options{Version: os.Getenv("EPCO_PG_VERSION"), RunID: postgres.RunID,
 			ArtifactsDir: os.Getenv("EPCO_ARTIFACTS_DIR")})
 		Expect(err).NotTo(HaveOccurred())
@@ -451,6 +453,26 @@ var _ = Describe("R3 Database ACL durable recovery", Ordered, ContinueOnFailure,
 			secret.Data[roleCAKey] = ca
 			Expect(environment.Client.Update(ctx, secret)).To(Succeed())
 		}
+		database.Spec.Permissions = nil
+		Expect(environment.Client.Update(ctx, database)).To(Succeed())
+		selectTarget(otherFixture)
+		database = recoverDatabaseReady(ctx, environment.Client, r, database)
+		Expect(database.Status.ActiveACLTarget).NotTo(Equal(activeA),
+			"an endpoint without ACL work still advances the active target")
+		Expect(r4ACLBindings(database)).To(Equal(bindingsA), "the inactive endpoint retains its cleanup responsibility")
+		Expect(permissionDatabaseGrant(ctx, otherFixture, name, grantee, "CREATE")).To(BeFalse())
+		Expect(permissionDatabaseGrant(ctx, fixture, name, grantee, "CREATE")).To(BeTrue())
+
+		selectTarget(fixture)
+		setCreate(ctx)
+		database = recoverDatabaseReady(ctx, environment.Client, r, database)
+		Expect(database.Status.ActiveACLTarget).To(Equal(activeA))
+		reboundA := r4ACLBindings(database)
+		Expect(reboundA).To(HaveLen(1))
+		Expect(reboundA[0].BindingRevision).NotTo(Equal(bindingsA[0].BindingRevision),
+			"returning to A re-resolves SQL identities")
+
+		generation := database.Generation
 		selectTarget(otherFixture)
 		database = recoverDatabaseReady(ctx, environment.Client, r, database)
 		Expect(database.Generation).To(Equal(generation))

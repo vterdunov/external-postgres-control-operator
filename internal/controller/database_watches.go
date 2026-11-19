@@ -90,9 +90,6 @@ func (r *DatabaseReconciler) SetupWithManager(manager ctrl.Manager) error {
 		before, after := e.ObjectOld.(*epco.DatabaseRole), e.ObjectNew.(*epco.DatabaseRole)
 		return before.Generation != after.Generation || before.Status.HasManagedSQL != after.Status.HasManagedSQL || before.Status.AppliedGeneration != after.Status.AppliedGeneration || before.Status.SecretResourceVersion != after.Status.SecretResourceVersion || before.Status.GeneratedPasswordInitialized != after.Status.GeneratedPasswordInitialized || !equality.Semantic.DeepEqual(before.Status.PasswordApplied, after.Status.PasswordApplied) || !equality.Semantic.DeepEqual(before.DeletionTimestamp, after.DeletionTimestamp) || roleReadiness(before) != roleReadiness(after)
 	}}
-	descriptors := predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
-		return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration() || !equality.Semantic.DeepEqual(e.ObjectOld.GetDeletionTimestamp(), e.ObjectNew.GetDeletionTimestamp())
-	}}
 	namespaces := predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
 		return !equality.Semantic.DeepEqual(e.ObjectOld.GetLabels(), e.ObjectNew.GetLabels())
 	}}
@@ -100,7 +97,7 @@ func (r *DatabaseReconciler) SetupWithManager(manager ctrl.Manager) error {
 		For(&epco.Database{}, builder.WithPredicates(primary)).
 		Watches(&epco.Database{}, handler.EnqueueRequestsFromMapFunc(r.databasesForDatabase), builder.WithPredicates(ownership)).
 		Watches(&epco.DatabaseRole{}, handler.EnqueueRequestsFromMapFunc(r.databasesForRole), builder.WithPredicates(owners)).
-		Watches(&epco.ExternalPostgres{}, handler.EnqueueRequestsFromMapFunc(r.databasesForCluster), builder.WithPredicates(descriptors)).
+		Watches(&epco.ExternalPostgres{}, handler.EnqueueRequestsFromMapFunc(r.databasesForCluster), builder.WithPredicates(externalPostgresDependencyEvents)).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.databasesForSecret), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.databasesForNamespace), builder.WithPredicates(namespaces)).
 		Complete(r)
