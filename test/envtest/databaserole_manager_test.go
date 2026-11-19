@@ -47,6 +47,11 @@ func (f *watchedRoleFactory) appliedHost() string {
 	}
 	return f.applyHosts[len(f.applyHosts)-1]
 }
+func (f *watchedRoleFactory) applyCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.applyHosts)
+}
 func (f *watchedRoleFactory) dropCount() int { f.mu.Lock(); defer f.mu.Unlock(); return f.drops }
 
 type watchedRoleSession struct {
@@ -77,7 +82,7 @@ func (s *watchedRoleSession) Drop(context.Context, string) error {
 }
 func (*watchedRoleSession) Close(context.Context) error { return nil }
 
-func startRoleManager(ctx context.Context, factory *watchedRoleFactory) {
+func startRoleManager(ctx context.Context, factory *watchedRoleFactory) client.Reader {
 	builder, err := postgres.NewConfigBuilder()
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	instance, err := environment.StartManager(ctx, harness.ManagerOptions{
@@ -98,6 +103,7 @@ func startRoleManager(ctx context.Context, factory *watchedRoleFactory) {
 		defer cancel()
 		Expect(instance.Stop(stopCtx)).To(Succeed())
 	})
+	return instance.Manager.GetCache()
 }
 func createRoleDescriptor(ctx context.Context, access *epco.ClusterAccess) *epco.ExternalPostgres {
 	admin := &corev1.Secret{
@@ -140,6 +146,52 @@ func expectRoleStatus(ctx context.Context, role *epco.DatabaseRole,
 }
 
 var _ = Describe("DatabaseRole manager watches", func() {
+	It("ignores descriptor status heartbeats and preserves lifecycle and periodic work", func(ctx SpecContext) {
+		cluster := createRoleDescriptor(ctx, nil)
+		cluster.Finalizers = []string{"postgresql.epco.io/watch-test-hold"}
+		Expect(environment.Client.Update(ctx, cluster)).To(Succeed())
+		replacementSpec := *cluster.Spec.DeepCopy()
+		factory := &watchedRoleFactory{}
+		cache := startRoleManager(ctx, factory)
+		role := &epco.DatabaseRole{Namespace: namespace.Name, Name: roleTestApplication,
+			Finalizers: []string{controller.RoleFinalizer},
+			Spec:       epco.DatabaseRoleSpec{Cluster: epco.ClusterReference{Name: cluster.Name}},
+		}
+		Expect(scope.Create(ctx, role)).To(Succeed())
+		expectRoleStatus(ctx, role, metav1.ConditionTrue, "Ready")
+		beforeHeartbeat := factory.applyCount()
+		generation := cluster.Generation
+		cluster.Status.LastSuccessfulReconcileTime = new(metav1.Now())
+		Expect(environment.Client.Status().Update(ctx, cluster)).To(Succeed())
+		Expect(cluster.Generation).To(Equal(generation))
+		Eventually(func(g Gomega) {
+			cached := &epco.ExternalPostgres{}
+			g.Expect(cache.Get(ctx, client.ObjectKeyFromObject(cluster), cached)).To(Succeed())
+			g.Expect(cached.ResourceVersion).To(Equal(cluster.ResourceVersion))
+		}).WithContext(ctx).WithTimeout(10*time.Second).Should(Succeed(), "the descriptor watch received the heartbeat")
+		Consistently(factory.applyCount).WithContext(ctx).WithTimeout(time.Second).
+			Should(Equal(beforeHeartbeat), "a descriptor status heartbeat must not start a SQL role reconciliation")
+
+		Expect(environment.Client.Delete(ctx, cluster)).To(Succeed())
+		latestRole := expectRoleStatus(ctx, role, metav1.ConditionFalse, "DependenciesNotReady")
+		Expect(latestRole.Status.Message).To(Equal("The ExternalPostgres is being deleted"))
+		latestCluster := &epco.ExternalPostgres{}
+		Expect(environment.Client.Get(ctx, client.ObjectKeyFromObject(cluster), latestCluster)).To(Succeed())
+		latestCluster.Finalizers = nil
+		Expect(environment.Client.Update(ctx, latestCluster)).To(Succeed())
+
+		replacement := &epco.ExternalPostgres{Namespace: cluster.Namespace, Name: cluster.Name, Spec: replacementSpec}
+		replacement.Spec.Connection.Host = "periodic.example"
+		replacement.Spec.ReconcileInterval = "1s"
+		Eventually(func() error { return scope.Create(ctx, replacement) }).WithContext(ctx).
+			WithTimeout(10 * time.Second).Should(Succeed())
+		Eventually(factory.appliedHost).WithContext(ctx).WithTimeout(10 * time.Second).Should(Equal("periodic.example"))
+		expectRoleStatus(ctx, role, metav1.ConditionTrue, "Ready")
+		afterReplacement := factory.applyCount()
+		Eventually(factory.applyCount).WithContext(ctx).WithTimeout(10*time.Second).
+			Should(BeNumerically(">", afterReplacement), "the role keeps reconciling on its own timer")
+	}, NodeTimeout(60*time.Second))
+
 	It("watches sources and descriptor changes without role-generation changes", func(ctx SpecContext) {
 		factory := &watchedRoleFactory{}
 		startRoleManager(ctx, factory)

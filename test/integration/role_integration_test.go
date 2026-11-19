@@ -75,6 +75,13 @@ func roleExists(ctx context.Context, f *Fixture, name string) bool {
 	return exists
 }
 
+func roleCatalogRevision(ctx context.Context, f *Fixture, name string) string {
+	var revision string
+	ExpectWithOffset(1, f.Admin.QueryRowContext(ctx,
+		"SELECT xmin::text FROM pg_catalog.pg_authid WHERE rolname=$1", name).Scan(&revision)).To(Succeed())
+	return revision
+}
+
 func roleLogin(ctx context.Context, f *Fixture, name, password string) string {
 	db, err := f.Server.Open(f.Database, name, password)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
@@ -190,6 +197,26 @@ var _ = Describe("DatabaseRole PostgreSQL reconciliation", func() {
 			Scan(&login, &superuser, &replication, &bypass)).To(Succeed())
 		Expect(login).To(BeTrue())
 		Expect(superuser || replication || bypass).To(BeFalse())
+	}, NodeTimeout(25*time.Second))
+
+	It("leaves a matching SCRAM password untouched and repairs visible SQL password drift", func(ctx SpecContext) {
+		const password = "managed-password"
+		name := roleName(fixture)
+		session := roleSession(ctx, fixture, false)
+		desired := pgroles.RoleDesired{Name: name, Password: new(password), Spec: epco.DatabaseRoleSpec{Login: true}}
+		_, err := session.Apply(ctx, desired)
+		Expect(err).NotTo(HaveOccurred())
+		roleSQL(ctx, fixture, "GRANT CONNECT ON DATABASE "+quoteIdentifier(fixture.Database)+" TO "+quoteIdentifier(name))
+		before := roleCatalogRevision(ctx, fixture, name)
+		_, err = session.Apply(ctx, desired)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(roleCatalogRevision(ctx, fixture, name)).To(Equal(before), "healthy role must not get a new SQL tuple")
+
+		roleSQL(ctx, fixture, "ALTER ROLE "+quoteIdentifier(name)+" PASSWORD 'externally-changed'")
+		Expect(roleLogin(ctx, fixture, name, password)).To(Equal("28P01"))
+		_, err = session.Apply(ctx, desired)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(roleLogin(ctx, fixture, name, password)).To(BeEmpty())
 	}, NodeTimeout(25*time.Second))
 
 	DescribeTable("replaces negative infinity password expiration with desired state",

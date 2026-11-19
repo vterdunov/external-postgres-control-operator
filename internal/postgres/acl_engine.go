@@ -39,6 +39,34 @@ func cloneACLTargets(targets []epco.ManagedACLTarget) []epco.ManagedACLTarget {
 func aclTargetKey(t epco.ManagedACLTarget) string {
 	return fmt.Sprintf("%q/%d/%q", t.Host, t.Port, t.Database)
 }
+
+func (d ACLDesired) targetIndex() int {
+	return slices.IndexFunc(d.Targets, func(target epco.ManagedACLTarget) bool {
+		return target.Host == d.Target.Host && target.Port == d.Target.Port && target.Database == d.Target.Database
+	})
+}
+
+func (d ACLDesired) targetBindings() []epco.ACLBinding {
+	if index := d.targetIndex(); index >= 0 {
+		return d.Targets[index].Bindings
+	}
+	return d.Target.Bindings
+}
+
+func isDatabaseConnect(binding epco.ACLBinding) bool {
+	return binding.Class == aclClassDatabase && binding.Privilege == aclConnect
+}
+
+func (s *databaseSession) newACLJournal(d ACLDesired) *aclEngine {
+	e := &aclEngine{session: s, desired: d, targets: cloneACLTargets(d.Targets), index: d.targetIndex()}
+	if e.index < 0 {
+		e.index = len(e.targets)
+		e.targets = append(e.targets, *d.Target.DeepCopy())
+	}
+	e.trusted = e.targets[e.index].BindingRevision == d.BindingRevision
+	return e
+}
+
 func (s *databaseSession) newACLEngine(ctx context.Context, d ACLDesired, needTarget bool) (*aclEngine, func(), error) {
 	state, err := s.Inspect(ctx, d.Name)
 	if err != nil {
@@ -47,18 +75,8 @@ func (s *databaseSession) newACLEngine(ctx context.Context, d ACLDesired, needTa
 	if !state.Exists {
 		return nil, nil, &Failure{DatabaseNotFound, databaseNotFoundMessage}
 	}
-	e := &aclEngine{session: s, desired: d, serviceRoleDemand: aclServiceRoleDemand(d, state), targets: cloneACLTargets(d.Targets), index: -1}
-	for i := range e.targets {
-		if aclTargetKey(e.targets[i]) == aclTargetKey(d.Target) {
-			e.index = i
-			break
-		}
-	}
-	if e.index < 0 {
-		e.targets = append(e.targets, d.Target)
-		e.index = len(e.targets) - 1
-	}
-	e.trusted = e.targets[e.index].BindingRevision == d.BindingRevision
+	e := s.newACLJournal(d)
+	e.serviceRoleDemand = aclServiceRoleDemand(d, state)
 	cleanup := func() {}
 	if needTarget {
 		if !state.AllowConnections {
@@ -157,17 +175,33 @@ func (s *databaseSession) ReconcileACL(ctx context.Context, d ACLDesired) (*ACLR
 	if err = preflightACL(state, d.Spec); err != nil {
 		return nil, err
 	}
+	declarations := aclDeclarations(d.Spec)
+	if d.ConnectionOnly {
+		declarations = slices.DeleteFunc(declarations, func(d aclDeclaration) bool {
+			return !isDatabaseConnect(d.binding)
+		})
+	}
+	history := slices.ContainsFunc(d.targetBindings(), func(binding epco.ACLBinding) bool {
+		return !d.ConnectionOnly || isDatabaseConnect(binding)
+	})
+	if len(declarations) == 0 && (d.Observe || !history) {
+		if !state.Exists {
+			return nil, &Failure{DatabaseNotFound, databaseNotFoundMessage}
+		}
+		if d.Observe {
+			return &ACLResult{Targets: d.Targets}, nil
+		}
+		// Record the selected target even without work. Returning to a previous
+		// target must re-resolve bindings instead of trusting its old OIDs.
+		journal := s.newACLJournal(d)
+		err = journal.checkpoint(ctx)
+		return journal.result(), err
+	}
 	e, cleanup, err := s.newACLEngine(ctx, d, !d.ConnectionOnly && aclNeedsTarget(d.Spec, d.Targets, d.Target))
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-	declarations := aclDeclarations(d.Spec)
-	if d.ConnectionOnly {
-		declarations = slices.DeleteFunc(declarations, func(d aclDeclaration) bool {
-			return d.binding.Class != aclClassDatabase || d.binding.Privilege != aclConnect
-		})
-	}
 	var first error
 	if !d.Observe {
 		if err = e.prepareIntent(ctx, declarations); err != nil {

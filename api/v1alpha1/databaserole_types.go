@@ -121,6 +121,19 @@ type DatabaseRoleStatus struct {
 	// PasswordApplied records the exact credential-free input snapshot accepted by SQL.
 	// +optional
 	PasswordApplied *PasswordApplicationReceipt `json:"passwordApplied,omitempty"`
+	// PasswordWrite records the last committed password write for PasswordApplied.
+	// +optional
+	PasswordWrite *RolePasswordWrite `json:"passwordWrite,omitempty"`
+}
+
+// RolePasswordWrite identifies a committed write without recording credential material.
+type RolePasswordWrite struct {
+	// RoleOID identifies the PostgreSQL role that accepted the password.
+	RoleOID int64 `json:"roleOID"`
+	// ServerStartUnixMicro is the connected PostgreSQL server's startup time.
+	ServerStartUnixMicro int64 `json:"serverStartUnixMicro"`
+	// LastWriteUnixMicro is the operator's time immediately after the write committed.
+	LastWriteUnixMicro int64 `json:"lastWriteUnixMicro"`
 }
 
 // PasswordApplicationReceipt identifies configured inputs, never credential bytes.

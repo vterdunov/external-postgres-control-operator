@@ -19,7 +19,9 @@ import tarfile
 import tempfile
 
 
-CRD_NAMES = {'externalpostgres.postgresql.epco.io', 'databaseroles.postgresql.epco.io', 'databases.postgresql.epco.io'}
+ROLE_CRD_NAME = 'databaseroles.postgresql.epco.io'
+CRD_NAMES = {'externalpostgres.postgresql.epco.io', ROLE_CRD_NAME, 'databases.postgresql.epco.io'}
+ROLE_CRD_V020 = 'sha256:f7dbe4e93edeab04012aba92efd061d025084ff7659b1c5caa0981f9f47a71ca'
 
 
 def crd_fingerprint(spec):
@@ -40,6 +42,21 @@ def crd_fingerprint(spec):
         normalized.pop('preserveUnknownFields')
     data = json.dumps(normalized, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
     return 'sha256:' + hashlib.sha256(data.encode()).hexdigest()
+
+
+def compatible_crd_fingerprints(name, spec, candidate):
+    if name != ROLE_CRD_NAME or len(spec['versions']) != 1:
+        return [candidate]
+    # Allow the published 0.2.0 role schema only when the sole schema
+    # difference is the new optional password-write evidence in status.
+    predecessor = copy.deepcopy(spec)
+    schema = predecessor['versions'][0]['schema']['openAPIV3Schema']
+    status = schema.get('properties', {}).get('status', {})
+    if ('passwordWrite' not in status.get('required', [])
+            and status.get('properties', {}).pop('passwordWrite', None) is not None
+            and crd_fingerprint(predecessor) == ROLE_CRD_V020):
+        return [candidate, ROLE_CRD_V020]
+    return [candidate]
 
 
 def crd_objects(sources):
@@ -210,10 +227,11 @@ def main():
     objects = crd_objects(sources)
     compatibility = {'apiVersion': 1, 'crds': {}}
     for obj in objects:
+        name = obj['metadata']['name']
         fingerprint = crd_fingerprint(obj['spec'])
-        compatibility['crds'][obj['metadata']['name']] = {
+        compatibility['crds'][name] = {
             'candidateFingerprint': fingerprint,
-            'compatibleFingerprints': [fingerprint],
+            'compatibleFingerprints': compatible_crd_fingerprints(name, obj['spec'], fingerprint),
         }
     expected[Path('generated/crds.json')] = (json.dumps(objects, sort_keys=True, indent=2) + '\n').encode()
     expected[Path('crd-compatibility.json')] = (json.dumps(compatibility, sort_keys=True, indent=2) + '\n').encode()

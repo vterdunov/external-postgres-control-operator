@@ -403,6 +403,30 @@ spec:
                 - sourceResourceVersion
                 - sourceUID
                 type: object
+              passwordWrite:
+                description: PasswordWrite records the last committed password write
+                  for PasswordApplied.
+                properties:
+                  lastWriteUnixMicro:
+                    description: LastWriteUnixMicro is the operator's time immediately
+                      after the write committed.
+                    format: int64
+                    type: integer
+                  roleOID:
+                    description: RoleOID identifies the PostgreSQL role that accepted
+                      the password.
+                    format: int64
+                    type: integer
+                  serverStartUnixMicro:
+                    description: ServerStartUnixMicro is the connected PostgreSQL
+                      server's startup time.
+                    format: int64
+                    type: integer
+                required:
+                - lastWriteUnixMicro
+                - roleOID
+                - serverStartUnixMicro
+                type: object
               secretResourceVersion:
                 description: SecretResourceVersion identifies the password source
                   version applied to SQL.

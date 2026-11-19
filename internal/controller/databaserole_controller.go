@@ -147,10 +147,11 @@ func (r *DatabaseRoleReconciler) reconcileRoleSession(ctx context.Context, role 
 		return r.roleError(ctx, role, err, interval)
 	}
 	receipt := passwordApplicationReceipt(role, cluster, source)
+	previousPasswordWrite := recentPasswordWrite(role, receipt, r.now())
 	endpoint := roleEndpoint(role, cluster)
 	index := endpointIndex(role, endpoint)
 	previous := role.Status.ManagedEndpoints[index]
-	desired := postgres.RoleDesired{Name: name, Spec: role.Spec, Password: password,
+	desired := postgres.RoleDesired{Name: name, Spec: role.Spec, Password: password, PreviousPasswordWrite: previousPasswordWrite,
 		TrackedMemberships: slices.Clone(previous.Memberships), TrackedParameters: slices.Clone(previous.Parameters)}
 	desired.CheckpointMembership = func(ctx context.Context, binding epco.RoleMembershipBinding, pending bool) error {
 		intent := &role.Status.ManagedEndpoints[index]
@@ -165,15 +166,13 @@ func (r *DatabaseRoleReconciler) reconcileRoleSession(ctx context.Context, role 
 				return current.Role == binding.Role && current.Member == binding.Member && current.Grantor == binding.Grantor
 			})
 		}
-		if err := boundRoleStatus(role); err != nil {
+		if err := boundRoleApplyStatus(role, receipt); err != nil {
 			return err
 		}
 		return r.Client.Status().Update(ctx, role)
 	}
 	addRoleCleanupIntent(role, index, state, name)
-	budget := role.DeepCopy()
-	budget.Status.PasswordApplied = receipt
-	if err = boundRoleStatus(budget); err != nil {
+	if err = boundRoleApplyStatus(role, receipt); err != nil {
 		return r.roleError(ctx, role, err, interval)
 	}
 	if err = r.Client.Status().Update(ctx, role); err != nil {
@@ -189,13 +188,20 @@ func (r *DatabaseRoleReconciler) reconcileRoleSession(ctx context.Context, role 
 	role.Status.ManagedEndpoints[index].Memberships = result.Memberships
 	role.Status.ManagedEndpoints[index].Parameters = result.Parameters
 	role.Status.PasswordApplied = receipt
+	role.Status.PasswordWrite = previousPasswordWrite
 	role.Status.SecretResourceVersion = ""
+	now := r.now()
 	if receipt != nil {
 		role.Status.SecretResourceVersion = receipt.SourceResourceVersion
+		if write := result.PasswordWrite; write != nil {
+			role.Status.PasswordWrite = &epco.RolePasswordWrite{
+				RoleOID: int64(write.RoleOID), ServerStartUnixMicro: write.ServerStartUnixMicro, LastWriteUnixMicro: now.UnixMicro(),
+			}
+		}
 	}
 	role.Status.HasManagedSQL = true
 	role.Status.AppliedGeneration = role.Generation
-	role.Status.LastSuccessfulReconcileTime = new(metav1.NewTime(r.now()))
+	role.Status.LastSuccessfulReconcileTime = new(metav1.NewTime(now))
 	return r.roleStatus(ctx, role, true, "Ready", "The SQL role and requested password are reconciled", interval)
 }
 
