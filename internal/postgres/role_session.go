@@ -71,9 +71,9 @@ func inspectRole(ctx context.Context, q roleQuerier, name string) (*RoleState, e
 		return nil, err
 	}
 	var expiry pgtype.Timestamptz
-	err := q.QueryRow(ctx, `SELECT oid,rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,
+	err := q.QueryRow(ctx, `SELECT rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,
 		rolbypassrls,rolconnlimit,COALESCE(pg_catalog.shobj_description(oid,'pg_authid'),''),rolvaliduntil
-		FROM pg_catalog.pg_roles WHERE rolname OPERATOR(pg_catalog.=) $1`, name).Scan(&state.OID, &state.Login, &state.Inherit, &state.Superuser,
+		FROM pg_catalog.pg_roles WHERE rolname OPERATOR(pg_catalog.=) $1`, name).Scan(&state.Login, &state.Inherit, &state.Superuser,
 		&state.CreateDB, &state.CreateRole, &state.Replication, &state.BypassRLS, &state.ConnectionLimit, &state.Comment, &expiry)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return state, nil

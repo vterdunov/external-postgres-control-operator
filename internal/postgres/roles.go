@@ -36,7 +36,6 @@ type RoleSession interface {
 // RoleState is an inspection snapshot, including grantors and role-wide settings.
 type RoleState struct {
 	Exists                                                                  bool
-	OID                                                                     uint32
 	Name, AdminUser                                                         string
 	MutationGrantor, BootstrapUser                                          string
 	ServerVersion, MaxIdentifierLength                                      int
@@ -51,13 +50,11 @@ type RoleState struct {
 
 // RoleDesired contains one desired role and durable cleanup intent.
 type RoleDesired struct {
-	Name     string
-	Spec     epco.DatabaseRoleSpec
-	Password *string
-	// PreviousPasswordWrite must match the current inputs and be recent. The SQL target is checked separately.
-	PreviousPasswordWrite *epco.RolePasswordWrite
-	TrackedMemberships    []epco.RoleMembershipBinding
-	TrackedParameters     []string
+	Name               string
+	Spec               epco.DatabaseRoleSpec
+	Password           *string
+	TrackedMemberships []epco.RoleMembershipBinding
+	TrackedParameters  []string
 	// CheckpointMembership persists an exact candidate before SQL. A false
 	// pending value retires only an absent, rolled-back candidate.
 	CheckpointMembership func(context.Context, epco.RoleMembershipBinding, bool) error
@@ -65,15 +62,8 @@ type RoleDesired struct {
 
 // RoleApplyResult contains only changes confirmed after complete reconciliation.
 type RoleApplyResult struct {
-	Memberships   []epco.RoleMembershipBinding
-	Parameters    []string
-	PasswordWrite *RolePasswordTarget
-}
-
-// RolePasswordTarget identifies the role and server of a committed password write.
-type RolePasswordTarget struct {
-	RoleOID              uint32
-	ServerStartUnixMicro int64
+	Memberships []epco.RoleMembershipBinding
+	Parameters  []string
 }
 
 type roleFactory struct{}

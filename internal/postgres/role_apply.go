@@ -44,36 +44,19 @@ func (s *roleSession) Apply(ctx context.Context, desired RoleDesired) (*RoleAppl
 		desired.TrackedParameters[i] = CanonicalRoleParameterName(name, state.ServerVersion)
 	}
 	var recovery, readOnly bool
-	var passwordCatalog rolePasswordCatalog
-	probe := "SELECT pg_catalog.pg_is_in_recovery(), pg_catalog.current_setting('transaction_read_only')::pg_catalog.bool"
-	destinations := []any{&recovery, &readOnly}
-	if desired.Password != nil {
-		probe += `, pg_catalog.pg_postmaster_start_time(),
-			pg_catalog.has_column_privilege('pg_catalog.pg_authid', 'oid', 'SELECT') AND
-			pg_catalog.has_column_privilege('pg_catalog.pg_authid', 'rolpassword', 'SELECT')`
-		destinations = append(destinations, &passwordCatalog.started, &passwordCatalog.readable)
-	}
-	if err = tx.QueryRow(bounded, probe).Scan(destinations...); err != nil {
+	if err = tx.QueryRow(bounded, "SELECT pg_catalog.pg_is_in_recovery(), pg_catalog.current_setting('transaction_read_only')::pg_catalog.bool").Scan(&recovery, &readOnly); err != nil {
 		return nil, roleFailure(err)
 	}
 	if recovery || readOnly {
 		return nil, &Failure{NotWritable, readOnlyMessage}
 	}
-	writePassword, err := passwordCatalog.needsWrite(bounded, tx, state, desired)
-	if err != nil {
-		return nil, roleFailure(err)
-	}
-	if err = applyAttributes(bounded, tx, state, desired, writePassword); err != nil {
+	if err = applyAttributes(bounded, tx, state, desired); err != nil {
 		return nil, roleFailure(err)
 	}
 	// Refresh membership defaults and CREATE ROLE's automatic administrative bindings.
-	previousOID := state.OID
 	state, err = inspectRole(bounded, tx, desired.Name)
 	if err != nil {
 		return nil, roleFailure(err)
-	}
-	if desired.Password != nil && (!state.Exists || (previousOID != 0 && state.OID != previousOID)) {
-		return nil, &Failure{DependenciesNotReady, "The SQL role changed during password reconciliation"}
 	}
 	bindings, err := applyMemberships(bounded, tx, state, desired)
 	if err != nil {
@@ -86,18 +69,14 @@ func (s *roleSession) Apply(ctx context.Context, desired RoleDesired) (*RoleAppl
 	if err = tx.Commit(bounded); err != nil {
 		return nil, roleFailure(err)
 	}
-	result := &RoleApplyResult{Memberships: bindings, Parameters: names}
-	if writePassword {
-		result.PasswordWrite = &RolePasswordTarget{RoleOID: state.OID, ServerStartUnixMicro: passwordCatalog.started.UnixMicro()}
-	}
-	return result, nil
+	return &RoleApplyResult{Memberships: bindings, Parameters: names}, nil
 }
 
 func literal(value string) string {
 	return "E'" + strings.ReplaceAll(strings.ReplaceAll(value, "\\", "\\\\"), "'", "''") + "'"
 }
 
-func applyAttributes(ctx context.Context, q roleQuerier, state *RoleState, desired RoleDesired, writePassword bool) error {
+func applyAttributes(ctx context.Context, q roleQuerier, state *RoleState, desired RoleDesired) error {
 	spec := desired.Spec
 	options := make([]string, 0, 10)
 	inherit, limit := true, int64(-1)
@@ -139,13 +118,16 @@ func applyAttributes(ctx context.Context, q roleQuerier, state *RoleState, desir
 	} else if state.ValidUntil != nil || state.ValidUntilNegativeInfinity {
 		options = append(options, "VALID UNTIL 'infinity'")
 	}
-	if writePassword {
+	if desired.Password != nil {
+		if strings.ContainsRune(*desired.Password, 0) {
+			return &Failure{InvalidSecret, "Role password must not contain a NUL byte"}
+		}
 		verifier, err := passwordVerifier(*desired.Password)
 		if err != nil {
 			return err
 		}
 		options = append(options, "PASSWORD "+literal(verifier))
-	} else if desired.Password == nil && spec.DisablePassword {
+	} else if spec.DisablePassword {
 		options = append(options, "PASSWORD NULL")
 	}
 	verb := "ALTER ROLE "

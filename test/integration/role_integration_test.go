@@ -199,24 +199,24 @@ var _ = Describe("DatabaseRole PostgreSQL reconciliation", func() {
 		Expect(superuser || replication || bypass).To(BeFalse())
 	}, NodeTimeout(25*time.Second))
 
-	It("leaves a matching SCRAM password untouched and repairs visible SQL password drift", func(ctx SpecContext) {
-		const password = "managed-password"
+	It("reapplies an unchanged managed password when the verifier is readable", func(ctx SpecContext) {
 		name := roleName(fixture)
 		session := roleSession(ctx, fixture, false)
-		desired := pgroles.RoleDesired{Name: name, Password: new(password), Spec: epco.DatabaseRoleSpec{Login: true}}
-		_, err := session.Apply(ctx, desired)
-		Expect(err).NotTo(HaveOccurred())
-		roleSQL(ctx, fixture, "GRANT CONNECT ON DATABASE "+quoteIdentifier(fixture.Database)+" TO "+quoteIdentifier(name))
+		desired := pgroles.RoleDesired{Name: name, Password: new(fixture.Password), Spec: epco.DatabaseRoleSpec{Login: true}}
+		apply := func() {
+			if _, err := session.Apply(ctx, desired); err != nil {
+				Fail("applying the managed password failed", 1)
+			}
+		}
+		apply()
+		var scram bool
+		Expect(fixture.Admin.QueryRowContext(ctx,
+			"SELECT rolpassword LIKE 'SCRAM-SHA-256$%' FROM pg_catalog.pg_authid WHERE rolname=$1", name).
+			Scan(&scram)).To(Succeed())
+		Expect(scram).To(BeTrue(), "the administrative role can read a SCRAM verifier")
 		before := roleCatalogRevision(ctx, fixture, name)
-		_, err = session.Apply(ctx, desired)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(roleCatalogRevision(ctx, fixture, name)).To(Equal(before), "healthy role must not get a new SQL tuple")
-
-		roleSQL(ctx, fixture, "ALTER ROLE "+quoteIdentifier(name)+" PASSWORD 'externally-changed'")
-		Expect(roleLogin(ctx, fixture, name, password)).To(Equal("28P01"))
-		_, err = session.Apply(ctx, desired)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(roleLogin(ctx, fixture, name, password)).To(BeEmpty())
+		apply()
+		Expect(roleCatalogRevision(ctx, fixture, name)).NotTo(Equal(before), "repeat apply must write a new SQL role tuple")
 	}, NodeTimeout(25*time.Second))
 
 	DescribeTable("replaces negative infinity password expiration with desired state",

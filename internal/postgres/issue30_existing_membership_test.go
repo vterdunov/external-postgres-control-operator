@@ -64,8 +64,8 @@ func (*issue30MembershipCatalog) QueryRow(_ context.Context, query string, _ ...
 		return issue30CatalogRow{values: []any{issue30ExistingAdmin, 160015, 63}}
 	case strings.Contains(query, "SELECT bootstrap.rolname"):
 		return issue30CatalogRow{values: []any{"catalog_bootstrap", issue30ExistingAdmin}}
-	case strings.Contains(query, "SELECT oid,rolcanlogin"):
-		return issue30CatalogRow{values: []any{uint32(42), true, true, false, false, false, false, false, int64(-1), "", pgtype.Timestamptz{}}}
+	case strings.Contains(query, "SELECT rolcanlogin"):
+		return issue30CatalogRow{values: []any{true, true, false, false, false, false, false, int64(-1), "", pgtype.Timestamptz{}}}
 	default:
 		return issue30CatalogRow{err: fmt.Errorf("unsupported catalog query: %s", query)}
 	}

@@ -2,9 +2,8 @@
   "apiVersion": 1,
   "crds": {
     "databaseroles.postgresql.epco.io": {
-      "candidateFingerprint": "sha256:e145ca61379054ad467a6d915a10f70446345dffd3119f3f09d2e9acd1cde425",
+      "candidateFingerprint": "sha256:f7dbe4e93edeab04012aba92efd061d025084ff7659b1c5caa0981f9f47a71ca",
       "compatibleFingerprints": [
-        "sha256:e145ca61379054ad467a6d915a10f70446345dffd3119f3f09d2e9acd1cde425",
         "sha256:f7dbe4e93edeab04012aba92efd061d025084ff7659b1c5caa0981f9f47a71ca"
       ]
     },
