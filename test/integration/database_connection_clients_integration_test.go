@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,6 +28,7 @@ const (
 	r4JDBCDriver  = "jdbc"
 	r4LibPQDriver = "libpq"
 	r4JDBCDigest  = "cab1cd67cfa25c25de4348e532298028288a877ba01c77d1619fe45416193387"
+	r4JDBCMaxSize = 2 << 20
 )
 
 // These consumers use actual client parsers, not Go's URL decoder. Credentials
@@ -51,20 +53,11 @@ func r4NewApplicationClients(ctx context.Context) *r4ApplicationClients {
 	if cached := os.Getenv("EPCO_TEST_JDBC_JAR"); cached != "" {
 		jar, err = os.ReadFile(cached)
 		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		ExpectWithOffset(1, r4CheckJDBCDigest(jar, r4JDBCDigest)).To(Succeed())
 	} else {
-		request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet,
-			"https://repo.maven.apache.org/maven2/org/postgresql/postgresql/"+r4JDBCVersion+
-				"/postgresql-"+r4JDBCVersion+".jar", nil)
-		ExpectWithOffset(1, requestErr).NotTo(HaveOccurred())
-		response, requestErr := (&http.Client{Timeout: 30 * time.Second}).Do(request)
-		ExpectWithOffset(1, requestErr).NotTo(HaveOccurred())
-		ExpectWithOffset(1, response.StatusCode).To(Equal(http.StatusOK))
-		jar, err = io.ReadAll(io.LimitReader(response.Body, 2<<20))
-		ExpectWithOffset(1, response.Body.Close()).To(Succeed())
+		jar, err = r4DownloadJDBC(ctx, &http.Client{Timeout: 30 * time.Second}, r4JDBCDigest)
 		ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	}
-	digest := sha256.Sum256(jar)
-	ExpectWithOffset(1, hex.EncodeToString(digest[:])).To(Equal(r4JDBCDigest), "pinned pgJDBC artifact checksum")
 	ExpectWithOffset(1, os.WriteFile(c.jdbc, jar, 0600)).To(Succeed())
 	library := "/opt/homebrew/opt/libpq/lib/libpq.dylib"
 	args := []string{"-std=c11", "-Wall", "-Wextra", "-Werror", "-o", c.libpq,
@@ -96,6 +89,59 @@ func r4NewApplicationClients(ctx context.Context) *r4ApplicationClients {
 	ExpectWithOffset(1, exec.CommandContext(ctx, "cc", args...).Run()).To(Succeed(), "compile suite libpq ABI consumer")
 	return c
 }
+
+func r4DownloadJDBC(ctx context.Context, client *http.Client, expectedDigest string) ([]byte, error) {
+	const jar = "postgresql-" + r4JDBCVersion + ".jar"
+	sources := [...]string{
+		"https://repo.maven.apache.org/maven2/org/postgresql/postgresql/" + r4JDBCVersion + "/" + jar,
+		"https://jdbc.postgresql.org/download/" + jar,
+	}
+	var downloadErr error
+	for _, source := range sources {
+		if err := ctx.Err(); err != nil {
+			return nil, errors.Join(downloadErr, err)
+		}
+		body, err := r4FetchJDBC(ctx, client, source)
+		if err != nil {
+			downloadErr = errors.Join(downloadErr, fmt.Errorf("download pgJDBC from %s: %w", source, err))
+			continue
+		}
+		if len(body) > r4JDBCMaxSize {
+			return nil, errors.Join(downloadErr, fmt.Errorf("pgJDBC from %s exceeds %d bytes", source, r4JDBCMaxSize))
+		}
+		if err = r4CheckJDBCDigest(body, expectedDigest); err != nil {
+			return nil, errors.Join(downloadErr, fmt.Errorf("pgJDBC from %s: %w", source, err))
+		}
+		return body, nil
+	}
+	return nil, downloadErr
+}
+
+func r4FetchJDBC(ctx context.Context, client *http.Client, source string) ([]byte, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+	if err != nil {
+		return nil, err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	if response.StatusCode != http.StatusOK {
+		statusErr := fmt.Errorf("HTTP %d", response.StatusCode)
+		return nil, errors.Join(statusErr, response.Body.Close())
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, r4JDBCMaxSize+1))
+	return body, errors.Join(err, response.Body.Close())
+}
+
+func r4CheckJDBCDigest(jar []byte, expected string) error {
+	digest := sha256.Sum256(jar)
+	if actual := hex.EncodeToString(digest[:]); actual != expected {
+		return fmt.Errorf("pinned pgJDBC artifact checksum mismatch: got %s, want %s", actual, expected)
+	}
+	return nil
+}
+
 func r4ClientEnvironment() []string {
 	var env []string
 	for _, value := range os.Environ() {

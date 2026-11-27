@@ -14,8 +14,9 @@ and runtime dependencies from the digest-pinned PostgreSQL 18.6 mirror on GHCR.
 Docker pulls the exact mirrored reference, reusing cached layers. The immutable
 local image ID is shared by library extraction and
 consumer execution. The suite fetches
-the JDBC jar from Maven and verifies its SHA256. `EPCO_TEST_JDBC_JAR` can select a
-local jar with the same verified checksum. Credentials reach these clients only
+the JDBC jar from Maven Central with the official pgJDBC download site as a
+fallback and verifies its SHA256. `EPCO_TEST_JDBC_JAR` can select a local jar
+with the same verified checksum. Credentials reach these clients only
 through private stdin and files, with child diagnostic output suppressed.
 
 The suite uses one disposable container on a random loopback port. Every spec gets
