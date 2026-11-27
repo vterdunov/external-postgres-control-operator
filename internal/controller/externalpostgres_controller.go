@@ -16,6 +16,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -102,6 +103,13 @@ func (r *ExternalPostgresReconciler) Reconcile(ctx context.Context, request ctrl
 }
 
 func freshCheck() ctrl.Result { return ctrl.Result{RequeueAfter: time.Millisecond} }
+
+// Ignore readiness heartbeats while accepting same-key descriptor replacements.
+var externalPostgresDependencyEvents = predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+	return e.ObjectOld.GetUID() != e.ObjectNew.GetUID() ||
+		e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration() ||
+		!equality.Semantic.DeepEqual(e.ObjectOld.GetDeletionTimestamp(), e.ObjectNew.GetDeletionTimestamp())
+}}
 
 func reconcileInterval(cluster *epco.ExternalPostgres) time.Duration {
 	interval, err := time.ParseDuration(string(cluster.Spec.ReconcileInterval))

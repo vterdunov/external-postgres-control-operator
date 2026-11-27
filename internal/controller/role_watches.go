@@ -101,7 +101,7 @@ func (r *DatabaseRoleReconciler) SetupWithManager(manager ctrl.Manager) error {
 		For(&epco.DatabaseRole{}, builder.WithPredicates(primary)).
 		Watches(&epco.DatabaseRole{}, handler.EnqueueRequestsFromMapFunc(r.rolesForRole), builder.WithPredicates(dependencies)).
 		Watches(&epco.Database{}, handler.EnqueueRequestsFromMapFunc(r.rolesForDatabaseOutputs), builder.WithPredicates(outputs)).
-		Watches(&epco.ExternalPostgres{}, handler.EnqueueRequestsFromMapFunc(r.rolesForCluster), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
+		Watches(&epco.ExternalPostgres{}, handler.EnqueueRequestsFromMapFunc(r.rolesForCluster), builder.WithPredicates(externalPostgresDependencyEvents)).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.rolesForSecret), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.rolesForNamespace), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Complete(r)

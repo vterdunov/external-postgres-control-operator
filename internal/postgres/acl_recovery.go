@@ -74,7 +74,7 @@ func (e *aclEngine) cleanupHistory(ctx context.Context, declarations []aclDeclar
 	history := slices.Clone(e.targets[e.index].Bindings)
 	var first error
 	for _, old := range history {
-		if e.desired.ConnectionOnly && (old.Class != aclClassDatabase || old.Privilege != aclConnect) {
+		if e.desired.ConnectionOnly && !isDatabaseConnect(old) {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
@@ -299,6 +299,12 @@ func (s *databaseSession) PrepareACL(ctx context.Context, d ACLDesired) (*ACLRes
 		if err != nil {
 			return &ACLResult{Targets: d.Targets}, err
 		}
+	}
+	// Database OWNER changes can rewrite grantors on all database privileges.
+	if !slices.ContainsFunc(d.targetBindings(), func(binding epco.ACLBinding) bool {
+		return !d.ConnectionOnly || binding.Class == aclClassDatabase
+	}) {
+		return &ACLResult{Targets: d.Targets}, nil
 	}
 	e, cleanup, err := s.newACLEngine(ctx, d, !d.ConnectionOnly && aclNeedsTarget(epco.DatabaseSpec{}, d.Targets, d.Target))
 	if err != nil {
