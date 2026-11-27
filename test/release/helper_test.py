@@ -649,9 +649,14 @@ class PreparationBehaviorTests(unittest.TestCase):
         self.assertFalse(any(call["tool"] == "helm" and call["args"][0] == "push" for call in self.fixture.calls()), "Image validation chart must remain local")
 
     def test_chart_seed_rejects_tag_that_differs_from_source_metadata(self):
-        self.fixture.env["GITHUB_REF"] = "refs/tags/chart-v0.2.2"
-        result = self.helper("seed", "--stream", "chart", "--output", self.directory / "seed.json")
+        chart = self.fixture.source / "charts/external-postgres-control-operator/Chart.yaml"
+        chart.write_text("apiVersion: v2\nname: external-postgres-control-operator\nversion: 1.2.3\nappVersion: '1.0.0'\n")
+        self.fixture.env["GITHUB_REF"] = "refs/tags/chart-v1.2.4"
+        seed = self.directory / "seed.json"
+        result = self.helper("seed", "--stream", "chart", "--output", seed)
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("chart source version must match selected chart tag", result.stderr)
+        self.assertFalse(seed.exists())
         self.assertFalse([call for call in self.fixture.calls() if call["mutation"]])
 
     def test_chart_prepare_rejects_original_signature_failure_before_chart_write(self):
