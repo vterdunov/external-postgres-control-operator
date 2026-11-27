@@ -104,9 +104,10 @@ func (r *ExternalPostgresReconciler) Reconcile(ctx context.Context, request ctrl
 
 func freshCheck() ctrl.Result { return ctrl.Result{RequeueAfter: time.Millisecond} }
 
-// The descriptor's readiness probe reports status independently of dependent SQL work.
+// Ignore readiness heartbeats while accepting same-key descriptor replacements.
 var externalPostgresDependencyEvents = predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
-	return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration() ||
+	return e.ObjectOld.GetUID() != e.ObjectNew.GetUID() ||
+		e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration() ||
 		!equality.Semantic.DeepEqual(e.ObjectOld.GetDeletionTimestamp(), e.ObjectNew.GetDeletionTimestamp())
 }}
 
